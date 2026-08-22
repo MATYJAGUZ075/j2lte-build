@@ -42,10 +42,12 @@ jobs:
           curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo \
             -o "$HOME/.bin/repo"
           chmod a+x "$HOME/.bin/repo"
+          # GITHUB_PATH solo aplica a pasos siguientes: exportar tambien en este paso
+          export PATH="$HOME/.bin:$PATH"
           echo "$HOME/.bin" >> "$GITHUB_PATH"
           git config --global user.name  "j2lte-ci"
           git config --global user.email "ci@users.noreply.github.com"
-          repo version
+          "$HOME/.bin/repo" version
 
       - name: "F) repo init LineageOS 20.0 (shallow + partial clone)"
         run: |

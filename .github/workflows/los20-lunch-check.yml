@@ -158,18 +158,35 @@ jobs:
           ls prebuilts/gcc/linux-x86/arm/ 2>/dev/null
           test -x prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin/arm-linux-androidkernel-as \
             && echo "GNU as (arm-linux-androidkernel-) OK"
-
-      - name: "3B) Verificacion gralloc.exynos5 (fuentes SLSI integradas)"
+      - name: "3B) Verificacion HAL graficas SLSI (gralloc/hwcomposer/memtrack)"
         run: |
           cd "$HOME/los20"
-          echo "=== repo fork re-gateado presente ==="
-          test -d hardware/samsung_slsi/exynos3475-cm/gralloc || { echo "FALTA fork gralloc"; exit 1; }
-          grep -n 'TARGET_SLSI_VARIANT' hardware/samsung_slsi/exynos3475-cm/Android.mk
-          grep -n 'LOCAL_MODULE := gralloc.exynos5' hardware/samsung_slsi/exynos3475-cm/gralloc/Android.mk
-          echo "=== headers base cm presentes ==="
-          test -f hardware/samsung_slsi-cm/exynos/include/exynos_format.h && echo "exynos_format.h OK"
-          echo "=== declaracion del paquete por exynos5.mk ==="
-          grep -A2 'PRODUCT_PACKAGES' hardware/samsung_slsi/exynos5/exynos5.mk
+
+          echo "=== exynos (base): gates y modulos ==="
+          test -d hardware/samsung_slsi/exynos/gralloc || { echo "FALTA gralloc/"; exit 1; }
+          grep -n 'TARGET_SLSI_VARIANT), bsp' hardware/samsung_slsi/exynos/Android.mk
+          grep -n 'LOCAL_MODULE := gralloc.' hardware/samsung_slsi/exynos/gralloc/Android.mk
+          grep -n 'LOCAL_MODULE := hwcomposer.exynos5' hardware/samsung_slsi/exynos/libhwc_tiny/Android.mk || true
+          grep -n 'LOCAL_MODULE := hwcomposer.' hardware/samsung_slsi/exynos/libhwc/Android.mk
+          grep -n 'LOCAL_MODULE := memtrack.' hardware/samsung_slsi/exynos/libmemtrack/Android.mk
+          echo "--- flags BoardConfig que activan los dirs ---"
+          grep -nE 'BOARD_USES_EXYNOS5_COMMON_GRALLOC|BOARD_USES_VPP' \
+            device/samsung/universal3475-common/BoardConfigCommon.mk
+
+          echo "=== exynos5 (LineageOS 17.1): headers requeridos por el base ==="
+          for h in ExynosRect.h ExynosCamera.h content_protect.h sec_g2ddrm.h \
+                   videodev2_exynos_camera_ext.h; do
+            test -f "hardware/samsung_slsi/exynos5/include/$h" && echo "OK $h" || { echo "FALTA $h"; exit 1; }
+          done
+          echo "--- declaracion de paquetes graficos en su exynos5.mk ---"
+          grep -E 'gralloc.exynos5|hwcomposer.exynos5|memtrack.exynos5' hardware/samsung_slsi/exynos5/exynos5.mk
+
+          echo "=== openmax (Exynos3475 cm-14.1) ==="
+          test -d hardware/samsung_slsi/openmax/include/khronos && echo "include/khronos OK" || { echo "FALTA include/khronos"; exit 1; }
+          grep -rn 'LOCAL_MODULE := libOMX.Exynos.AVC.Decoder' hardware/samsung_slsi/openmax --include='*.mk' | head -2
+
+          echo "=== referencia cruzada del tree: libvideocodec -> khronos ==="
+          grep -n 'openmax/include/khronos' hardware/samsung_slsi/exynos/libvideocodec/Android.mk
 
       - name: "I+J) Informe final (STEP_SUMMARY)"
         if: always()

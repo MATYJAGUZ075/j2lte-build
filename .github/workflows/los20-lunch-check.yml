@@ -164,7 +164,7 @@ jobs:
 
           echo "=== exynos (base): gates y modulos ==="
           test -d hardware/samsung_slsi/exynos/gralloc || { echo "FALTA gralloc/"; exit 1; }
-          grep -n 'TARGET_SLSI_VARIANT), bsp' hardware/samsung_slsi/exynos/Android.mk
+          grep -nE 'TARGET_SLSI_VARIANT\),\s*bsp' hardware/samsung_slsi/exynos/Android.mk
           grep -n 'LOCAL_MODULE := gralloc.' hardware/samsung_slsi/exynos/gralloc/Android.mk
           grep -n 'LOCAL_MODULE := hwcomposer.exynos5' hardware/samsung_slsi/exynos/libhwc_tiny/Android.mk || true
           grep -n 'LOCAL_MODULE := hwcomposer.' hardware/samsung_slsi/exynos/libhwc/Android.mk

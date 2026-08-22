@@ -1,22 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
   <!-- Dependencias SLSI requeridas por device-common.mk (herencias exynos5/exynos3475).
-       Origen: org Exynos3475, ramas segun lineage.dependencies. -->
+       Corregido tras SyncFailFastError: exynos5 no existe en org Exynos3475;
+       se usa el linaro de samsungexynos7420 (referencia LOS20 del analisis).
+       Ramas verificadas por ls-remote el 2026-08-22. -->
   <remote name="exynos" fetch="https://github.com/Exynos3475" />
+  <remote name="linaro7420" fetch="https://github.com/samsungexynos7420" />
 
   <project name="android_hardware_samsung_slsi_exynos"
            path="hardware/samsung_slsi/exynos"
-           remote="exynos" revision="lineage-19.1" />
+           remote="exynos" revision="lineage-17.1" />
 
-  <project name="android_hardware_samsung_slsi_exynos5"
+  <project name="android_hardware_samsung_slsi-linaro_exynos5"
            path="hardware/samsung_slsi/exynos5"
-           remote="exynos" revision="lineage-19.1" />
+           remote="linaro7420" revision="lineage-20" />
 
   <project name="android_hardware_samsung_slsi_exynos3475"
            path="hardware/samsung_slsi/exynos3475"
            remote="exynos" revision="lineage-17.1" />
 
-  <project name="android_hardware_samsung_slsi_openmax"
+  <project name="android_hardware_samsung_slsi-linaro_openmax"
            path="hardware/samsung_slsi/openmax"
-           remote="exynos" revision="lineage-19.1" />
+           remote="linaro7420" revision="lineage-20" />
 </manifest>

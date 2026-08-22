@@ -147,6 +147,30 @@ jobs:
           ls -la vendor/samsung/j2lte/j2lte-vendor.mk \
                  vendor/samsung/universal3475-common/universal3475-common-vendor.mk || true
 
+      - name: "K-1/K-2) Prebuilts clang/gcc del arbol LOS 20 (auditoria kernel)"
+        run: |
+          cd "$HOME/los20"
+          echo "=== K-1: versiones clang prebuilt disponibles ==="
+          ls prebuilts/clang/host/linux-x86/ | head -30
+          echo "--- r416183b presente?"
+          test -d prebuilts/clang/host/linux-x86/clang-r416183b/bin && echo "SI" || echo "NO"
+          echo "=== K-2: toolchains gcc arm para CROSS_COMPILE/GNU as ==="
+          ls prebuilts/gcc/linux-x86/arm/ 2>/dev/null
+          test -x prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin/arm-linux-androidkernel-as \
+            && echo "GNU as (arm-linux-androidkernel-) OK"
+
+      - name: "3B) Verificacion gralloc.exynos5 (fuentes SLSI integradas)"
+        run: |
+          cd "$HOME/los20"
+          echo "=== repo fork re-gateado presente ==="
+          test -d hardware/samsung_slsi/exynos3475-cm/gralloc || { echo "FALTA fork gralloc"; exit 1; }
+          grep -n 'TARGET_SLSI_VARIANT' hardware/samsung_slsi/exynos3475-cm/Android.mk
+          grep -n 'LOCAL_MODULE := gralloc.exynos5' hardware/samsung_slsi/exynos3475-cm/gralloc/Android.mk
+          echo "=== headers base cm presentes ==="
+          test -f hardware/samsung_slsi-cm/exynos/include/exynos_format.h && echo "exynos_format.h OK"
+          echo "=== declaracion del paquete por exynos5.mk ==="
+          grep -A2 'PRODUCT_PACKAGES' hardware/samsung_slsi/exynos5/exynos5.mk
+
       - name: "I+J) Informe final (STEP_SUMMARY)"
         if: always()
         run: |

@@ -22,4 +22,17 @@
   <project name="android_hardware_samsung_slsi-linaro_openmax"
            path="hardware/samsung_slsi/openmax"
            remote="linaro7420" revision="lineage-20" />
+
+  <!-- Gralloc BSP del SoC exacto (Fase 3B): fork re-gateado cm->bsp,
+       provee gralloc.exynos5. Base: Exynos3475 -cm_exynos3475 lineage-15.1. -->
+  <project name="android_hardware_samsung_slsi-cm_exynos3475"
+           path="hardware/samsung_slsi/exynos3475-cm"
+           remote="maty" revision="lineage-20-j2lte" />
+
+  <!-- Base SLSI-cm con headers requeridos por gralloc (exynos_format.h).
+       Path canonico hardware/samsung_slsi-cm/exynos tal como lo referencian
+       los LOCAL_C_INCLUDES del HAL. -->
+  <project name="android_hardware_samsung_slsi-cm_exynos"
+           path="hardware/samsung_slsi-cm/exynos"
+           remote="exynos" revision="lineage-15.1" />
 </manifest>

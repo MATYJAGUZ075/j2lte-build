@@ -1,0 +1,122 @@
+name: LOS20 sync test (storage probe)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sync-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+
+    steps:
+      - name: Checkout infra repo (manifests)
+        uses: actions/checkout@v4
+
+      - name: "A) Disco al iniciar"
+        run: |
+          echo "=== df -h ==="; df -h
+          echo "=== df -h / ==="; df -h /
+          echo "=== df -h /home ==="; df -h /home
+
+      - name: "B) Cleanup seguro del runner"
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false   # conservamos swap (util mas adelante)
+
+      - name: "C) Disco tras cleanup"
+        run: df -h
+
+      - name: "D+E) Dependencias e instalacion de repo"
+        run: |
+          set -e
+          sudo apt-get update -qq
+          sudo apt-get install -y git-lfs python3 curl
+          git lfs install || true
+          mkdir -p "$HOME/.bin"
+          curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo \
+            -o "$HOME/.bin/repo"
+          chmod a+x "$HOME/.bin/repo"
+          echo "$HOME/.bin" >> "$GITHUB_PATH"
+          git config --global user.name  "j2lte-ci"
+          git config --global user.email "ci@users.noreply.github.com"
+          repo version
+
+      - name: "F) repo init LineageOS 20.0 (shallow + partial clone)"
+        run: |
+          set -e
+          mkdir -p "$HOME/los20" && cd "$HOME/los20"
+          repo init \
+            -u https://github.com/LineageOS/android.git \
+            -b lineage-20.0 \
+            --git-lfs \
+            --depth=1 \
+            --partial-clone \
+            --clone-filter=blob:none \
+            --no-use-superproject
+          df -h /
+
+      - name: "G) local_manifest j2lte"
+        run: |
+          set -e
+          cd "$HOME/los20"
+          mkdir -p .repo/local_manifests
+          cp "$GITHUB_WORKSPACE/manifests/j2lte.xml" .repo/local_manifests/j2lte.xml
+          cat .repo/local_manifests/j2lte.xml
+
+      - name: "I) repo sync (-c --no-tags; shallow/partial ya en init)"
+        run: |
+          set -e
+          cd "$HOME/los20"
+          time repo sync -c --no-tags --fail-fast -j4
+
+      - name: "J) Medicion post-sync"
+        if: always()
+        run: |
+          cd "$HOME/los20" || exit 1
+          echo "=== df -h ==="; df -h
+          echo "=== du -sh . ==="; du -sh .
+          echo "=== du -sh .repo ==="; du -sh .repo
+          echo "=== du -sh device ==="; du -sh device
+          echo "=== du -sh kernel ==="; du -sh kernel
+          echo "=== du -sh vendor ==="; du -sh vendor
+          echo "=== proyectos en la raiz ==="; ls | tee /tmp/projects.txt; wc -l < /tmp/projects.txt
+
+      - name: "K+L+M) Verificacion de arboles, commits y envsetup"
+        run: |
+          set -e
+          cd "$HOME/los20"
+
+          echo "=== K) Arboles requeridos ==="
+          for d in device/samsung/j2lte device/samsung/universal3475-common \
+                   kernel/samsung/exynos3475 vendor/samsung; do
+            test -d "$d" && echo "OK  $d" || { echo "FALTA $d"; exit 1; }
+          done
+
+          echo "=== L) Commits nuestros presentes ==="
+          KERNEL_SHA="$(git -C kernel/samsung/exynos3475 rev-parse HEAD)"
+          DEVICE_SHA="$(git -C device/samsung/j2lte rev-parse HEAD)"
+          COMMON_SHA="$(git -C device/samsung/universal3475-common rev-parse HEAD)"
+          VENDOR_SHA="$(git -C vendor/samsung rev-parse HEAD)"
+          echo "kernel=$KERNEL_SHA device=$DEVICE_SHA common=$COMMON_SHA vendor=$VENDOR_SHA"
+
+          test "$KERNEL_SHA" = "16370b5d7963bfdd03fb5d196848a3addded79ee" \
+            && echo "OK kernel 16370b5d796" || { echo "ERROR kernel HEAD inesperado"; exit 1; }
+          test "$DEVICE_SHA" = "8857f0cb5229f4c579d63c4a71f7e56b0c9f03b4" \
+            && echo "OK j2lte 8857f0c" || { echo "ERROR j2lte HEAD inesperado"; exit 1; }
+          test "$COMMON_SHA" = "c5ad21725e89f5f1f4ab6769fc202bb901d23a1e" \
+            && echo "OK common c5ad217" || { echo "ERROR common HEAD inesperado"; exit 1; }
+          echo "vendor HEAD (informativo, rama limpia): $VENDOR_SHA"
+
+          echo "=== M) source build/envsetup.sh (sin lunch ni build) ==="
+          bash -c 'source build/envsetup.sh && echo "ENVSETUP OK"'
+          echo "STOP antes de lunch/build, segun plan."
+
+      - name: "Resumen final de espacio"
+        if: always()
+        run: df -h

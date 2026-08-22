@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <remote name="maty" fetch="https://github.com/MATYJAGUZ075" />
+
+  <!-- Esqueleto LOS20 (commits protegidos en FASE 2A) -->
+  <project name="android_device_samsung_j2lte"
+           path="device/samsung/j2lte"
+           remote="maty" revision="lineage-17.1" />
+
+  <project name="android_device_samsung_universal3475-common"
+           path="device/samsung/universal3475-common"
+           remote="maty" revision="lineage-17.1" />
+
+  <!-- Kernel con soporte Clang (16370b5d796) -->
+  <project name="android_kernel_samsung_exynos3475"
+           path="kernel/samsung/exynos3475"
+           remote="maty" revision="lineage-17.1" />
+
+  <!-- Blobs: fork público, rama limpia -->
+  <project name="android_vendor_samsung"
+           path="vendor/samsung"
+           remote="maty" revision="lineage-17.1" />
+</manifest>

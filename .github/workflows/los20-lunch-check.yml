@@ -1,7 +1,21 @@
+# NOTA DE PERSISTENCIA: el checkout completo de LineageOS (~70-105 GB en
+# $HOME/los20) NO se persiste entre runs: los runners hospedados son efímeros y
+# actions/cache tiene un límite de 10 GB/repo, insuficiente para el árbol.
+# El repo init + repo sync de cada run ES el mecanismo intencional de
+# actualización de fuentes (~18 min). Lo único que se cachea es ccache
+# (compilaciones), preparado para los futuros builds; el cache de ccache es
+# independiente del estado de .repo.
 name: LOS20 lunch check (no build)
 
 on:
   workflow_dispatch:
+
+env:
+  # Preparado para los futuros builds: el sistema de build de Lineage usa
+  # USE_CCACHE/CCACHE_EXEC (BoardConfigKernel.mk). No afecta los checks actuales.
+  USE_CCACHE: "true"
+  CCACHE_EXEC: "/usr/bin/ccache"
+  CCACHE_DIR: "/home/runner/.ccache-j2lte"
 
 jobs:
   lunch-check:
@@ -27,11 +41,22 @@ jobs:
           docker-images: true
           swap-storage: false
 
-      - name: "Dependencias e instalacion de repo"
+      - name: "Restore cache ccache (j2lte/LOS20)"
+        id: ccache_restore
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.ccache-j2lte
+          # Clave única por run para guardar una entrada nueva; restore-keys
+          # permite reutilizar la entrada más reciente de runs compatibles.
+          key: ccache-j2lte-los20-${{ github.run_id }}
+          restore-keys: |
+            ccache-j2lte-los20-
+
+      - name: "Dependencias e instalacion de repo (+ ccache)"
         run: |
           set -e
           sudo apt-get update -qq
-          sudo apt-get install -y git-lfs python3 curl
+          sudo apt-get install -y git-lfs python3 curl ccache
           git lfs install || true
           mkdir -p "$HOME/.bin"
           curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo \
@@ -42,6 +67,14 @@ jobs:
           git config --global user.name  "j2lte-ci"
           git config --global user.email "ci@users.noreply.github.com"
           "$HOME/.bin/repo" version
+          echo "=== ccache ==="
+          ccache --version | head -1
+          mkdir -p "$CCACHE_DIR"
+          ccache -M 8G >/dev/null          # margen bajo el limite de 10 GB del cache
+          ccache -o compiler_check=content
+          ccache -o namespace=j2lte-los20
+          echo "--- cache restaurado? ${{ steps.ccache_restore.outputs.cache-hit != 'true' && 'MISS (entrada nueva)' || 'HIT' }}"
+          du -sh "$CCACHE_DIR" 2>/dev/null || echo "(cache vacio)"
 
       - name: "repo init LineageOS 20.0 (shallow + partial clone)"
         run: |
@@ -202,6 +235,26 @@ jobs:
             df -h
             du -sh . .repo device kernel vendor hardware 2>/dev/null || true
             tail -30 /tmp/lunch.log 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: "Diagnostico ccache (hits/misses/ubicacion)"
+        if: always()
+        run: |
+          echo "=== ccache: ubicacion ==="
+          echo "CCACHE_DIR=$CCACHE_DIR"
+          echo "=== ccache: estadisticas ==="
+          ccache -s 2>/dev/null || true
+          echo "=== tamano del cache ==="
+          du -sh "$CCACHE_DIR" 2>/dev/null || echo "(vacío)"
+          {
+            echo "## ccache"
+            echo
+            echo "- Restaurado: ${{ steps.ccache_restore.outputs.cache-hit == 'true' && 'HIT' || 'MISS' }}"
+            echo "- Ubicacion: \`$CCACHE_DIR\`"
+            echo '```'
+            ccache -s 2>/dev/null || true
+            du -sh "$CCACHE_DIR" 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 

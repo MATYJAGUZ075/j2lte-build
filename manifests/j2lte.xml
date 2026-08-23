@@ -16,6 +16,14 @@
            path="kernel/samsung/exynos3475"
            remote="maty" revision="lineage-17.1" />
 
+  <!-- FIX-025: hardware/samsung pineado a lineage-20 (contiene hidl/touch,
+       macloader, wifiloader, modemloader, ril y audio). Sin pin, roomservice
+       elegía revisión impredecible y Kati veía vendor.lineage.touch@1.0
+       inexistente. -->
+  <project name="android_hardware_samsung"
+           path="hardware/samsung"
+           remote="los" revision="lineage-20" />
+
   <!-- Blobs: fork público, rama limpia -->
   <project name="android_vendor_samsung"
            path="vendor/samsung"

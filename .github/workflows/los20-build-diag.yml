@@ -179,7 +179,8 @@ jobs:
           echo "=== modulo en module_info.json ==="
           grep -o '"vendor.lineage.touch@1.0-service.samsung"' out/soong/module_info.json | head -2
           grep -o '"android.hardware.graphics.composer@2.1-service"' out/soong/module_info.json | head -2
-          echo "=== DF FINAL"
+
+      - name: "DF FINAL"
         if: always()
         run: df -h /
 

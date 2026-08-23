@@ -1,0 +1,175 @@
+# los20-build-stages.yml — BUILD INCREMENTAL POR STAGES (FIX-028)
+#
+# Estrategia: quemar errores baratos (kernel/DT/boot/recovery) antes de
+# intentar systemimage/bacon (que requieren FIX-014 infra, FIX-014 BLOCKED).
+#
+# Stages disponibles (verificados en build/make/core/Makefile lineage-20.0
+# y mkbootimg.mk de hardware/samsung lineage-20):
+#   dtimage          -> dt.img            (compila el kernel; BOARD_KERNEL_SEPARATED_DT=true)
+#   bootimage        -> boot.img          (kernel + dt.img + ramdisk)
+#   recoveryimage    -> recovery.img      (BOARD_RECOVERYIMAGE_PARTITION_SIZE definida)
+#   systemimage-guard-> system.img        (REQUIERE >=70G libres; FIX-014)
+#
+# NO incluye bacon. ccache compartido con lunch-check/build-full (ff585b8).
+
+name: LOS20 build stages (incremental)
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: 'target a compilar'
+        required: true
+        default: 'dtimage'
+        type: choice
+        options:
+          - dtimage
+          - bootimage
+          - recoveryimage
+          - systemimage-guard
+      min_free_gb:
+        description: 'GB libres mínimos post-sync (solo exigido por systemimage-guard)'
+        required: false
+        default: '5'
+
+concurrency:
+  group: los20-stages
+  cancel-in-progress: false
+
+jobs:
+  stage-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+
+    env:
+      USE_CCACHE: true
+      CCACHE_EXEC: "/usr/bin/ccache"
+      CCACHE_DIR: "/home/runner/.ccache-j2lte"
+      STAGE: ${{ github.event.inputs.stage }}
+      MIN_FREE_GB: ${{ github.event.inputs.min_free_gb }}
+
+    steps:
+      - name: Checkout infra repo (manifests)
+        uses: actions/checkout@v4
+
+      - name: Liberar espacio en disco
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false
+
+      - name: "Disco ANTES"
+        run: df -h /
+
+      - name: Restore cache ccache (compartido)
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.ccache-j2lte
+          key: ccache-j2lte-los20-${{ github.run_id }}
+          restore-keys: |
+            ccache-j2lte-los20-
+
+      - name: Dependencias e instalación de repo (+ ccache)
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y git-lfs python3 curl ccache
+          mkdir -p "$HOME/bin"
+          curl -s https://storage.googleapis.com/git-repo-downloads/repo > "$HOME/bin/repo"
+          chmod a+x "$HOME/bin/repo"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+          git config --global user.name  "j2lte-ci"
+          git config --global user.email "j2lte-ci@users.noreply.github.com"
+          git lfs install
+          ccache --version | head -1
+          ccache -M 8G >/dev/null
+          ccache -o compiler_check=content
+          ccache -o namespace=j2lte-los20
+
+      - name: repo init LineageOS 20.0
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -e
+          mkdir -p "$HOME/los20"
+          cd "$HOME/los20"
+          repo init --depth=1 -u https://github.com/LineageOS/android.git -b lineage-20.0 --git-lfs
+
+      - name: "local_manifests: j2lte + SLSI deps"
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -e
+          mkdir -p "$HOME/los20/.repo/local_manifests"
+          cp "$GITHUB_WORKSPACE/manifests/j2lte.xml"      "$HOME/los20/.repo/local_manifests/j2lte.xml"
+          cp "$GITHUB_WORKSPACE/manifests/j2lte-slsi.xml" "$HOME/los20/.repo/local_manifests/j2lte-slsi.xml"
+
+      - name: repo sync (-c --no-tags)
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -e
+          cd "$HOME/los20"
+          time repo sync -c --no-tags --fail-fast -j4
+          echo "=== DF POST-SYNC ==="; df -h /
+
+      - name: source envsetup.sh + lunch lineage_j2lte-userdebug
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          source build/envsetup.sh
+          lunch lineage_j2lte-userdebug
+
+      - name: "GUARD de disco para systemimage-guard"
+        if: ${{ github.event.inputs.stage == 'systemimage-guard' }}
+        run: |
+          set -e
+          AVAIL_GB=$(df --output=avail -BG / | tail -1 | tr -dc '0-9')
+          MIN=${{ github.event.inputs.min_free_gb || 70 }}
+          echo "Libres: ${AVAIL_GB}G / requeridos ${MIN}G"
+          if [ "${AVAIL_GB}" -lt "${MIN}" ]; then
+            echo "::error::INFRASTRUCTURE-BLOCKED (FIX-014): ${AVAIL_GB}G < ${MIN}G. systemimage no debe ejecutarse aquí."
+            exit 90
+          fi
+
+      - name: "MEDICIÓN out/ ANTES"
+        working-directory: /home/runner/los20
+        run: du -sm out 2>/dev/null | awk '{printf "%8.2f GB out/ antes\n", $1/1024}' || echo "out/ no existe aún"
+
+      - name: mka ${{ github.event.inputs.stage }}
+        working-directory: /home/runner/los20
+        run: |
+          set -o pipefail
+          source build/envsetup.sh
+          lunch lineage_j2lte-userdebug >/dev/null
+          time mka "${STAGE}" -j"$(nproc)" 2>&1 | tee /tmp/stage.log
+          RC=${PIPESTATUS[0]}
+          echo "STAGE_EXIT=${RC}"
+          exit "$RC"
+
+      - name: "MEDICIÓN después + artefactos"
+        if: always()
+        working-directory: /home/runner/los20
+        run: |
+          set +e
+          df -h /
+          du -sm out 2>/dev/null | awk '{printf "%8.2f GB out/\n", $1/1024}'
+          echo "=== productos ==="
+          ls -la out/target/product/j2lte/ 2>/dev/null | head -25
+          echo "=== dt.img ==="
+          ls -la out/target/product/j2lte/dt.img 2>/dev/null || echo "(sin dt.img)"
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          cp out/target/product/j2lte/dt.img   "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null || true
+          cp out/target/product/j2lte/boot.img "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null || true
+          cp out/target/product/j2lte/recovery.img "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null || true
+          cp /tmp/stage.log "$GITHUB_WORKSPACE/artifacts/stage.log" 2>/dev/null || true
+
+      - name: Upload artefactos del stage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage-${{ github.event.inputs.stage }}-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: ignore

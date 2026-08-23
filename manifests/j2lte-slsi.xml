@@ -10,9 +10,10 @@
   <remote name="exynos" fetch="https://github.com/Exynos3475" />
   <remote name="los"    fetch="https://github.com/LineageOS" />
 
+  <!-- FIX-023: fork con gate de RootPA (no construible en lineage-20.0) -->
   <project name="android_hardware_samsung_slsi_exynos3475"
            path="hardware/samsung_slsi/exynos3475"
-           remote="exynos" revision="lineage-17.1" />
+           remote="maty" revision="lineage-17.1" />
 
   <project name="android_hardware_samsung_slsi_exynos"
            path="hardware/samsung_slsi/exynos"

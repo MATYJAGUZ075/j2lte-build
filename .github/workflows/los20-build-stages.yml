@@ -5,8 +5,9 @@
 #
 # Stages disponibles (verificados en build/make/core/Makefile lineage-20.0
 # y mkbootimg.mk de hardware/samsung lineage-20):
-#   dtimage          -> dt.img            (compila el kernel; BOARD_KERNEL_SEPARATED_DT=true)
-#   bootimage        -> boot.img          (kernel + dt.img + ramdisk)
+#   FIX-028: dtimage/dt.img eliminados — el kernel compila zImage-dtb
+#   (CONFIG_BUILD_ARM_APPENDED_DTB_IMAGE=y), no hay DT separado.
+#   bootimage        -> boot.img          (zImage-dtb + ramdisk)
 #   recoveryimage    -> recovery.img      (BOARD_RECOVERYIMAGE_PARTITION_SIZE definida)
 #   systemimage-guard-> system.img        (REQUIERE >=70G libres; FIX-014)
 #
@@ -20,10 +21,9 @@ on:
       stage:
         description: 'target a compilar'
         required: true
-        default: 'dtimage'
+        default: 'bootimage'
         type: choice
         options:
-          - dtimage
           - bootimage
           - recoveryimage
           - systemimage-guard

@@ -186,10 +186,16 @@ jobs:
             n=$(grep -c "android.hardware.graphics.composer@2.1-service" "$f" 2>/dev/null)
             [ "$n" != "0" ] && echo "$n  $f"
           done
-          echo "=== ALL_MODULES touch en late-mk ==="
-          grep -o "ALL_MODULES.vendor.lineage.touch@1.0-service.samsung[^ ]*" out/soong/late-*.mk 2>/dev/null | head -4
-          echo "=== PATH de composer en late-mk (control) ==="
-          grep -o "ALL_MODULES.android.hardware.graphics.composer@2.1-service.PATH[:= ][^ ]*" out/soong/late-*.mk 2>/dev/null | head -3
+          echo "=== Android.bp.list: touch presente? ==="
+          grep -c "hardware/samsung/hidl/touch/Android.bp" out/.module_paths/Android.bp.list
+          echo "=== control: composer en bp.list ==="
+          grep -c "graphics/composer/2.1/default/Android.bp" out/.module_paths/Android.bp.list
+          echo "=== Android.bp completo de hidl/touch ==="
+          cat hardware/samsung/hidl/touch/Android.bp
+          echo "=== git log hidl/touch (últimos cambios) ==="
+          git -C hardware/samsung log --oneline -3 -- hidl/touch/
+          echo "=== hidl_defaults definido? ==="
+          grep -rn '"hidl_defaults"' system/libhidl/base/Android.bp system/libhidl/Android.bp 2>/dev/null | head -3
 
       - name: "DF FINAL"
         if: always()

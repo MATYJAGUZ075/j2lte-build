@@ -1,0 +1,2 @@
+repo=j2lte-build HEAD=fa3fe9a fecha=2026-08-23T19:43:27+00:00 motivo=forense touch
+3c402e6b63a5d03e607b4617e5c414f8b41a7666ad517db632177c64949404ff  .github/workflows/los20-build-diag.yml

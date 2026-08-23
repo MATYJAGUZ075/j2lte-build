@@ -163,23 +163,7 @@ jobs:
           du -sm out 2>/dev/null | awk '{printf "%8.2f GB  out/\n", $1/1024}'
           df -h /
 
-      - name: "FORENSE: touch module (solo lectura)"
-        if: always()
-        working-directory: /home/runner/los20
-        run: |
-          set +e
-          echo "=== hardware/samsung synced SHA ==="
-          git -C hardware/samsung rev-parse HEAD
-          git -C hardware/samsung log --oneline -1
-          echo "=== hidl/touch presente? ==="
-          ls hardware/samsung/hidl/touch/ | head -8
-          grep -c "vendor.lineage.touch@1.0-service.samsung" hardware/samsung/hidl/touch/Android.bp
-          echo "=== modulo en out/soong/Android.mk ==="
-          grep -c "vendor.lineage.touch@1.0-service.samsung" out/soong/Android.mk
-          echo "=== modulo en module_info.json ==="
-          grep -o '"vendor.lineage.touch@1.0-service.samsung"' out/soong/module_info.json | head -2
-          grep -o '"android.hardware.graphics.composer@2.1-service"' out/soong/module_info.json | head -2
-          echo "=== DF FINAL"
+      - name: "DF FINAL"
         if: always()
         run: df -h /
 

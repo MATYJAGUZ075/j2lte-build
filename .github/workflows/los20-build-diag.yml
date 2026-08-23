@@ -1,0 +1,182 @@
+# los20-build-diag.yml — DIAGNÓSTICO de disco y validación Soong (FIX-019)
+#
+# Objetivo: MEDIR, no compilar imágenes.
+#   1) repo init + manifests + repo sync (LOS20 + j2lte)
+#   2) lunch lineage_j2lte-userdebug (roomservice resuelve dependencies)
+#   3) medición detallada del árbol: total, .repo (project-objects/projects),
+#      prebuilts desglosado, top-level ordenado, out/
+#   4) evidencia para poda: referencias a ".repo/" en archivos de build
+#   5) opcional (input validate_soong=true): `mka nothing` — valida que Soong
+#      parsea TODO el árbol (incluye nuestros shims) sin compilar imágenes,
+#      y mide el tamaño mínimo que genera out/
+#
+# NO ejecuta bacon. NO borra nada. NO toca los otros workflows ni manifests.
+
+name: LOS20 diag (measure disk + soong check)
+
+on:
+  workflow_dispatch:
+    inputs:
+      validate_soong:
+        description: 'ejecutar mka nothing al final (valida Soong/Ninja)'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+concurrency:
+  group: los20-diag
+  cancel-in-progress: false
+
+jobs:
+  diag:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+
+    env:
+      USE_CCACHE: true
+      CCACHE_EXEC: "/usr/bin/ccache"
+      CCACHE_DIR: "/home/runner/.ccache-j2lte"
+
+    steps:
+      - name: Checkout infra repo (manifests)
+        uses: actions/checkout@v4
+
+      - name: Liberar espacio en disco
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false
+
+      - name: "Disco ANTES"
+        run: df -h /
+
+      - name: Restore cache ccache (compartido)
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.ccache-j2lte
+          key: ccache-j2lte-los20-${{ github.run_id }}
+          restore-keys: |
+            ccache-j2lte-los20-
+
+      - name: Dependencias e instalación de repo (+ ccache)
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y git-lfs python3 curl ccache
+          mkdir -p "$HOME/bin"
+          curl -s https://storage.googleapis.com/git-repo-downloads/repo > "$HOME/bin/repo"
+          chmod a+x "$HOME/bin/repo"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+          git config --global user.name  "j2lte-ci"
+          git config --global user.email "j2lte-ci@users.noreply.github.com"
+          git lfs install
+          ccache --version | head -1
+          ccache -M 8G >/dev/null
+          ccache -o compiler_check=content
+          ccache -o namespace=j2lte-los20
+
+      - name: repo init LineageOS 20.0
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -e
+          mkdir -p "$HOME/los20"
+          cd "$HOME/los20"
+          repo init --depth=1 -u https://github.com/LineageOS/android.git -b lineage-20.0 --git-lfs
+
+      - name: "local_manifests: j2lte + SLSI deps"
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -e
+          mkdir -p "$HOME/los20/.repo/local_manifests"
+          cp "$GITHUB_WORKSPACE/manifests/j2lte.xml"      "$HOME/los20/.repo/local_manifests/j2lte.xml"
+          cp "$GITHUB_WORKSPACE/manifests/j2lte-slsi.xml" "$HOME/los20/.repo/local_manifests/j2lte-slsi.xml"
+          cat "$HOME/los20/.repo/local_manifests/"*.xml
+
+      - name: repo sync (-c --no-tags)
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -e
+          cd "$HOME/los20"
+          time repo sync -c --no-tags --fail-fast -j4
+          echo "=== DF POST-SYNC ==="; df -h /
+
+      - name: lunch lineage_j2lte-userdebug (roomservice resuelve deps)
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          source build/envsetup.sh
+          lunch lineage_j2lte-userdebug
+          echo "LUNCH_EXIT=$?"
+          echo "=== DF POST-LUNCH ==="; df -h /
+          echo "=== LOCAL_MANIFESTS FINALES ==="
+          ls -la .repo/local_manifests/ && cat .repo/local_manifests/*.xml | head -80
+
+      - name: "MEDICIONES: total y top-level"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== TOTAL árbol ==="; du -sh . 2>/dev/null
+          echo "=== TOP-LEVEL ordenado ==="
+          du -sm */ .repo 2>/dev/null | sort -rn | awk '{printf "%8.2f GB  %s\n", $1/1024, $2}'
+          echo "=== .repo desglose ==="
+          du -sm .repo/* 2>/dev/null | sort -rn | awk '{printf "%8.2f GB  %s\n", $1/1024, $2}'
+          echo "=== project-objects vs projects ==="
+          du -sm .repo/project-objects .repo/projects 2>/dev/null | awk '{printf "%8.2f GB  %s\n", $1/1024, $2}'
+          echo "=== DF ==="; df -h /
+
+      - name: "MEDICIONES: prebuilts desglosado"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== prebuilts/*/ ==="
+          du -sm prebuilts/*/ 2>/dev/null | sort -rn | awk '{printf "%8.2f GB  %s\n", $1/1024, $2}' | head -30
+          echo "=== clang/gcc concretos ==="
+          du -sm prebuilts/clang/host/linux-x86/*/ prebuilts/gcc/linux-x86/*/*/ 2>/dev/null | sort -rn | awk '{printf "%8.2f GB  %s\n", $1/1024, $2}'
+
+      - name: "PODA-EVIDENCIA: referencias a .repo/ en archivos de build"
+        working-directory: /home/runner/los20
+        run: |
+          echo "Referencias a '.repo/' fuera de .repo (si el build las necesita, la poda directa sería insegura):"
+          grep -rn "\.repo/" \
+            --include="*.mk" --include="*.bp" \
+            device vendor build/make hardware frameworks packages external kernel/samsung \
+            2>/dev/null | grep -v "^\./\.repo" | head -40
+          echo "(fin — si solo aparecen comentarios/rutas de extract-files, la poda de objects es viable)"
+
+      - name: mka nothing (Soong/Ninja full-tree check, sin imágenes)
+        if: ${{ github.event.inputs.validate_soong == 'true' }}
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          source build/envsetup.sh
+          lunch lineage_j2lte-userdebug >/dev/null
+          time mka nothing
+          echo "=== OUT tras mka nothing ==="
+          du -sm out 2>/dev/null | awk '{printf "%8.2f GB  out/\n", $1/1024}'
+          df -h /
+
+      - name: "DF FINAL"
+        if: always()
+        run: df -h /
+
+      - name: Upload resumen diagnóstico
+        if: always()
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          mkdir -p "$GITHUB_WORKSPACE/diag"
+          {
+            date -u
+            echo "== df final =="; df -h /
+            echo "== du top-level =="; du -sm */ .repo 2>/dev/null | sort -rn | head -40
+            echo "== .repo =="; du -sm .repo/* 2>/dev/null | sort -rn | head -15
+            echo "== out =="; du -sm out 2>/dev/null || true
+          } > "$GITHUB_WORKSPACE/diag/resumen.txt" 2>&1 || true

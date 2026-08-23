@@ -1,0 +1,4 @@
+repo=j2lte-build branch=main HEAD=03f4460 fecha=2026-08-23T14:51:02+00:00
+archivos_a_crear=.github/workflows/los20-build-diag.yml (NUEVO, sin tocar los otros)
+3368c0de1b733a425578e90fe137574a715321eb747b7a05c50f349bb57e6624  .github/workflows/los20-lunch-check.yml
+2d65cd5368cce9aad8a1dd9d0e1527db99c9f08d42adb046d9e41b0fdb48bbed  .github/workflows/los20-build-full.yml

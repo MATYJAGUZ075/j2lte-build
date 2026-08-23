@@ -1,0 +1,268 @@
+# NOTA DE PERSISTENCIA: el checkout completo de LineageOS (~70-105 GB en
+# $HOME/los20) NO se persiste entre runs: los runners hospedados son efímeros y
+# actions/cache tiene un límite de 10 GB/repo, insuficiente para el árbol.
+# El repo init + repo sync de cada run ES el mecanismo intencional de
+# actualización de fuentes (~18 min). Lo único que se cachea es ccache
+# (compilaciones), preparado para los futuros builds; el cache de ccache es
+# independiente del estado de .repo.
+name: LOS20 lunch check (no build)
+
+on:
+  workflow_dispatch:
+
+env:
+  # Preparado para los futuros builds: el sistema de build de Lineage usa
+  # USE_CCACHE/CCACHE_EXEC (BoardConfigKernel.mk). No afecta los checks actuales.
+  USE_CCACHE: "true"
+  CCACHE_EXEC: "/usr/bin/ccache"
+  CCACHE_DIR: "/home/runner/.ccache-j2lte"
+
+jobs:
+  lunch-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+
+    steps:
+      - name: Checkout infra repo (manifests)
+        uses: actions/checkout@v4
+
+      - name: "Disco al iniciar"
+        run: |
+          df -h
+
+      - name: "Cleanup seguro del runner"
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false
+
+      - name: "Restore cache ccache (j2lte/LOS20)"
+        id: ccache_restore
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.ccache-j2lte
+          # Clave única por run para guardar una entrada nueva; restore-keys
+          # permite reutilizar la entrada más reciente de runs compatibles.
+          key: ccache-j2lte-los20-${{ github.run_id }}
+          restore-keys: |
+            ccache-j2lte-los20-
+
+      - name: "Dependencias e instalacion de repo (+ ccache)"
+        run: |
+          set -e
+          sudo apt-get update -qq
+          sudo apt-get install -y git-lfs python3 curl ccache
+          git lfs install || true
+          mkdir -p "$HOME/.bin"
+          curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo \
+            -o "$HOME/.bin/repo"
+          chmod a+x "$HOME/.bin/repo"
+          export PATH="$HOME/.bin:$PATH"
+          echo "$HOME/.bin" >> "$GITHUB_PATH"
+          git config --global user.name  "j2lte-ci"
+          git config --global user.email "ci@users.noreply.github.com"
+          "$HOME/.bin/repo" version
+          echo "=== ccache ==="
+          ccache --version | head -1
+          mkdir -p "$CCACHE_DIR"
+          ccache -M 8G >/dev/null          # margen bajo el limite de 10 GB del cache
+          ccache -o compiler_check=content
+          ccache -o namespace=j2lte-los20
+          echo "--- cache restaurado? ${{ steps.ccache_restore.outputs.cache-hit != 'true' && 'MISS (entrada nueva)' || 'HIT' }}"
+          du -sh "$CCACHE_DIR" 2>/dev/null || echo "(cache vacio)"
+
+      - name: "repo init LineageOS 20.0 (shallow + partial clone)"
+        run: |
+          set -e
+          mkdir -p "$HOME/los20" && cd "$HOME/los20"
+          repo init \
+            -u https://github.com/LineageOS/android.git \
+            -b lineage-20.0 \
+            --git-lfs \
+            --depth=1 \
+            --partial-clone \
+            --clone-filter=blob:none \
+            --no-use-superproject
+
+      - name: "local_manifests: j2lte + SLSI deps"
+        run: |
+          set -e
+          cd "$HOME/los20"
+          mkdir -p .repo/local_manifests
+          cp "$GITHUB_WORKSPACE/manifests/j2lte.xml"      .repo/local_manifests/j2lte.xml
+          cp "$GITHUB_WORKSPACE/manifests/j2lte-slsi.xml" .repo/local_manifests/j2lte-slsi.xml
+          cat .repo/local_manifests/*.xml
+
+      - name: "repo sync (-c --no-tags)"
+        run: |
+          set -e
+          cd "$HOME/los20"
+          time repo sync -c --no-tags --fail-fast -j4
+          df -h /
+
+      - name: "A) source build/envsetup.sh + B) lunch lineage_j2lte-userdebug"
+        id: lunch
+        run: |
+          set -e
+          cd "$HOME/los20"
+
+          echo "=== NOTA DOCUMENTADA ==="
+          echo "El target 'j2lte-userdebug' NO es valido en LOS 20:"
+          echo "AndroidProducts.mk declara COMMON_LUNCH_CHOICES = lineage_j2lte-*."
+          echo "(No se ejecuta 'lunch j2lte-userdebug' para no contaminar el entorno.)"
+          echo ""
+
+          echo "=== A) source build/envsetup.sh ==="
+          source build/envsetup.sh
+          echo "ENVSETUP OK"
+
+          echo "=== B) lunch lineage_j2lte-userdebug (solo configuracion, sin build) ==="
+          set +e
+          lunch lineage_j2lte-userdebug 2>&1 | tee /tmp/lunch.log
+          LUNCH_RC=${PIPESTATUS[0]}
+          set -e
+          echo "LUNCH_EXIT=$LUNCH_RC"
+          if [ "$LUNCH_RC" -ne 0 ]; then
+            echo "::error::lunch lineage_j2lte-userdebug fallo (rc=$LUNCH_RC). Ver /tmp/lunch.log"
+            exit "$LUNCH_RC"
+          fi
+          echo "LUNCH OK"
+
+      - name: "C) Variables TARGET_* tras lunch"
+        if: steps.lunch.outcome == 'success'
+        run: |
+          cd "$HOME/los20"
+          bash -c '
+            set -e
+            source build/envsetup.sh >/dev/null
+            lunch lineage_j2lte-userdebug >/dev/null 2>&1
+            echo "TARGET_PRODUCT=$TARGET_PRODUCT"
+            echo "TARGET_BUILD_VARIANT=$TARGET_BUILD_VARIANT"
+            echo "TARGET_DEVICE=$TARGET_DEVICE"
+            echo "OUT_DIR=$OUT_DIR"
+          '
+
+      - name: "D) Arboles del dispositivo"
+        run: |
+          cd "$HOME/los20"
+          ls -la device/samsung/j2lte
+          ls -la device/samsung/universal3475-common
+
+      - name: "E) Configuracion declarada del dispositivo"
+        run: |
+          cd "$HOME/los20"
+          echo "===== AndroidProducts.mk =====";   sed -n '1,240p' device/samsung/j2lte/AndroidProducts.mk
+          echo "===== lineage_j2lte.mk =====";     sed -n '1,240p' device/samsung/j2lte/lineage_j2lte.mk
+          echo "===== BoardConfig.mk (j2lte) ====="; sed -n '1,240p' device/samsung/j2lte/BoardConfig.mk
+
+      - name: "F) Referencias j2lte en los arboles"
+        run: |
+          cd "$HOME/los20"
+          grep -R "j2lte" device/samsung/j2lte device/samsung/universal3475-common 2>/dev/null | head -200 || true
+
+      - name: "G) Configuracion del kernel"
+        run: |
+          cd "$HOME/los20"
+          grep -E 'TARGET_KERNEL|BOARD_KERNEL|TARGET_BOARD_PLATFORM|TARGET_SOC|TARGET_BOOTLOADER' \
+            device/samsung/j2lte/BoardConfig.mk \
+            device/samsung/universal3475-common/BoardConfigCommon.mk 2>/dev/null || true
+
+      - name: "H) Proprietary files declarados"
+        run: |
+          cd "$HOME/los20"
+          find device/samsung/j2lte device/samsung/universal3475-common -maxdepth 2 \
+            -type f \( -name '*proprietary*' -o -name 'proprietary-files.txt' \) -print
+          ls -la vendor/samsung/j2lte/j2lte-vendor.mk \
+                 vendor/samsung/universal3475-common/universal3475-common-vendor.mk || true
+
+      - name: "K-1/K-2) Prebuilts clang/gcc del arbol LOS 20 (auditoria kernel)"
+        run: |
+          cd "$HOME/los20"
+          echo "=== K-1: versiones clang prebuilt disponibles ==="
+          ls prebuilts/clang/host/linux-x86/ | head -30
+          echo "--- r416183b presente?"
+          test -d prebuilts/clang/host/linux-x86/clang-r416183b/bin && echo "SI" || echo "NO"
+          echo "=== K-2: toolchains gcc arm para CROSS_COMPILE/GNU as ==="
+          ls prebuilts/gcc/linux-x86/arm/ 2>/dev/null
+          test -x prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin/arm-linux-androidkernel-as \
+            && echo "GNU as (arm-linux-androidkernel-) OK"
+      - name: "3B) Verificacion HAL graficas SLSI (gralloc/hwcomposer/memtrack)"
+        run: |
+          cd "$HOME/los20"
+
+          echo "=== exynos (base): gates y modulos ==="
+          test -d hardware/samsung_slsi/exynos/gralloc || { echo "FALTA gralloc/"; exit 1; }
+          grep -nE 'TARGET_SLSI_VARIANT\),\s*bsp' hardware/samsung_slsi/exynos/Android.mk
+          grep -n 'LOCAL_MODULE := gralloc.' hardware/samsung_slsi/exynos/gralloc/Android.mk
+          grep -n 'LOCAL_MODULE := hwcomposer.exynos5' hardware/samsung_slsi/exynos/libhwc_tiny/Android.mk || true
+          grep -n 'LOCAL_MODULE := hwcomposer.' hardware/samsung_slsi/exynos/libhwc/Android.mk
+          grep -n 'LOCAL_MODULE := memtrack.' hardware/samsung_slsi/exynos/libmemtrack/Android.mk
+          echo "--- flags BoardConfig que activan los dirs ---"
+          grep -nE 'BOARD_USES_EXYNOS5_COMMON_GRALLOC|BOARD_USES_VPP' \
+            device/samsung/universal3475-common/BoardConfigCommon.mk
+
+          echo "=== exynos5 (LineageOS 17.1): headers requeridos por el base ==="
+          for h in ExynosRect.h ExynosCamera.h content_protect.h sec_g2ddrm.h \
+                   videodev2_exynos_camera_ext.h; do
+            test -f "hardware/samsung_slsi/exynos5/include/$h" && echo "OK $h" || { echo "FALTA $h"; exit 1; }
+          done
+          echo "--- declaracion de paquetes graficos en su exynos5.mk ---"
+          grep -E 'gralloc.exynos5|hwcomposer.exynos5|memtrack.exynos5' hardware/samsung_slsi/exynos5/exynos5.mk
+
+          echo "=== openmax (Exynos3475 cm-14.1) ==="
+          test -d hardware/samsung_slsi/openmax/include/khronos && echo "include/khronos OK" || { echo "FALTA include/khronos"; exit 1; }
+          grep -rn 'LOCAL_MODULE := libOMX.Exynos.AVC.Decoder' hardware/samsung_slsi/openmax --include='*.mk' | head -2
+
+          echo "=== referencia cruzada del tree: libvideocodec -> khronos ==="
+          grep -n 'openmax/include/khronos' hardware/samsung_slsi/exynos/libvideocodec/Android.mk
+
+      - name: "I+J) Informe final (STEP_SUMMARY)"
+        if: always()
+        run: |
+          cd "$HOME/los20" 2>/dev/null || cd "$HOME"
+          {
+            echo "# LOS20 lunch check — informe"
+            echo
+            echo "- Sync: shallow+partial, lineage-20.0 + manifests j2lte.xml + j2lte-slsi.xml"
+            echo "- Lunch probado: lineage_j2lte-userdebug (j2lte-userdebug no es target valido en T)"
+            echo
+            echo '```'
+            df -h
+            du -sh . .repo device kernel vendor hardware 2>/dev/null || true
+            tail -30 /tmp/lunch.log 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: "Diagnostico ccache (hits/misses/ubicacion)"
+        if: always()
+        run: |
+          echo "=== ccache: ubicacion ==="
+          echo "CCACHE_DIR=$CCACHE_DIR"
+          echo "=== ccache: estadisticas ==="
+          ccache -s 2>/dev/null || true
+          echo "=== tamano del cache ==="
+          du -sh "$CCACHE_DIR" 2>/dev/null || echo "(vacío)"
+          {
+            echo "## ccache"
+            echo
+            echo "- Restaurado: ${{ steps.ccache_restore.outputs.cache-hit == 'true' && 'HIT' || 'MISS' }}"
+            echo "- Ubicacion: \`$CCACHE_DIR\`"
+            echo '```'
+            ccache -s 2>/dev/null || true
+            du -sh "$CCACHE_DIR" 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: "Guardar logs completos como artifact"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: los20-lunch-check-logs
+          path: |
+            /tmp/lunch.log
+          if-no-files-found: ignore

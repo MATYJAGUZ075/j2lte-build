@@ -1,0 +1,177 @@
+# los20-build-full.yml — PRIMER BUILD COMPLETO de LineageOS 20 para j2lte
+#
+# FIX-018 (2026-08-23): separado del lunch-check (que permanece intacto).
+#
+# IMPORTANTE / FIX-014 (INFRASTRUCTURE-BLOCKED):
+#   El runner hospedado ubuntu-24.04 (~145G disco, 4 vCPU, 16G RAM) NO alcanza
+#   para un bacon completo: tras repo sync quedan ~17G libres y out/ necesita
+#   50–90G adicionales. Por eso este workflow tiene un GUARD de disco que
+#   aborta temprano si el espacio libre post-sync es menor al mínimo exigido.
+#
+#   Para ejecutar un build real hace falta un runner con recursos suficientes
+#   (recomendado: self-hosted con >=16 vCPU, >=64G RAM, >=400G SSD libres).
+#   Uso futuro con self-hosted:
+#     gh workflow run los20-build-full.yml -f runner_label=<label> -f mode=bacon
+#
+# ccache: reutiliza EXACTAMENTE la configuración de ff585b8
+#   (/home/runner/.ccache-j2lte, prefijo de clave ccache-j2lte-los20-*).
+
+name: LOS20 build full (guarded)
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner_label:
+        description: 'runs-on label (ubuntu-24.04 | self-hosted label)'
+        required: false
+        default: 'ubuntu-24.04'
+      mode:
+        description: 'modo del run'
+        required: false
+        default: 'lunch-only'
+        type: choice
+        options:
+          - lunch-only
+          - full-bacon
+      min_free_gb:
+        description: 'GB libres mínimos post-sync para permitir bacon'
+        required: false
+        default: '70'
+
+concurrency:
+  group: los20-full-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ${{ github.event.inputs.runner_label || 'ubuntu-24.04' }}
+    timeout-minutes: 350
+
+    env:
+      USE_CCACHE: true
+      CCACHE_EXEC: "/usr/bin/ccache"
+      CCACHE_DIR: "/home/runner/.ccache-j2lte"
+
+    steps:
+      - name: Checkout infra repo (manifests)
+        uses: actions/checkout@v4
+
+      - name: Liberar espacio en disco
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false
+
+      - name: Restore cache ccache (compartido con lunch-check)
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.ccache-j2lte
+          key: ccache-j2lte-los20-${{ github.run_id }}
+          restore-keys: |
+            ccache-j2lte-los20-
+
+      - name: Dependencias e instalación de repo (+ ccache)
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y git-lfs python3 curl ccache
+          mkdir -p "$HOME/bin"
+          curl -s https://storage.googleapis.com/git-repo-downloads/repo > "$HOME/bin/repo"
+          chmod a+x "$HOME/bin/repo"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+          git config --global user.name  "j2lte-ci"
+          git config --global user.email "j2lte-ci@users.noreply.github.com"
+          git lfs install
+          echo "=== ccache ==="
+          ccache --version | head -1
+          ccache -M 8G >/dev/null
+          ccache -o compiler_check=content
+          ccache -o namespace=j2lte-los20
+
+      - name: repo init LineageOS 20.0
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -e
+          mkdir -p "$HOME/los20"
+          cd "$HOME/los20"
+          repo init \
+            --depth=1 \
+            -u https://github.com/LineageOS/android.git \
+            -b lineage-20.0 \
+            --git-lfs
+
+      - name: "local_manifests: j2lte + SLSI deps"
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -e
+          mkdir -p .repo/local_manifests 2>/dev/null || true
+          mkdir -p "$HOME/los20/.repo/local_manifests"
+          cp "$GITHUB_WORKSPACE/manifests/j2lte.xml"      "$HOME/los20/.repo/local_manifests/j2lte.xml"
+          cp "$GITHUB_WORKSPACE/manifests/j2lte-slsi.xml" "$HOME/los20/.repo/local_manifests/j2lte-slsi.xml"
+          cat "$HOME/los20/.repo/local_manifests/"*.xml
+
+      - name: repo sync (-c --no-tags)
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -e
+          cd "$HOME/los20"
+          time repo sync -c --no-tags --fail-fast -j4
+          df -h /
+
+      - name: GUARD espacio post-sync (FIX-014)
+        run: |
+          set -e
+          AVAIL_GB=$(df --output=avail -BG / | tail -1 | tr -dc '0-9')
+          MIN=${{ github.event.inputs.min_free_gb || 70 }}
+          echo "Libres post-sync: ${AVAIL_GB}G (mínimo requerido para bacon: ${MIN}G)"
+          if [ "${AVAIL_GB}" -lt "${MIN}" ]; then
+            echo "::error::INFRASTRUCTURE-BLOCKED (FIX-014): ${AVAIL_GB}G libres < ${MIN}G requeridos para out/ + ccache + margen. No se ejecuta bacon."
+            exit 90
+          fi
+          MODE='${{ github.event.inputs.mode }}'
+          if [ "$MODE" != "full-bacon" ]; then
+            echo "mode=lunch-only -> guard superado, se continúa solo hasta lunch."
+          fi
+
+      - name: source envsetup.sh + lunch lineage_j2lte-userdebug
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          source build/envsetup.sh
+          lunch lineage_j2lte-userdebug
+          echo "LUNCH_EXIT=$?"
+
+      - name: mka bacon (build completo)
+        if: ${{ github.event.inputs.mode == 'full-bacon' }}
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          export USE_CCACHE=true
+          export CCACHE_EXEC=/usr/bin/ccache
+          mka bacon -j"$(nproc)" 2>&1 | tee /tmp/bacon.log
+          echo "BACON_RC=$?"
+
+      - name: Resumen y artefactos
+        if: always()
+        working-directory: /home/runner/los20
+        run: |
+          df -h /
+          echo "=== out/target (si existe) ==="
+          ls -la out/target/product/* 2>/dev/null || echo "(sin productos)"
+          if compgen -G "out/target/product/*/*.zip" > /dev/null; then
+            mkdir -p "$GITHUB_WORKSPACE/artifacts"
+            cp out/target/product/*/*.zip "$GITHUB_WORKSPACE/artifacts/" || true
+          fi
+
+      - name: Upload target files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: j2lte-target-files-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: ignore

@@ -1,0 +1,2 @@
+repo=j2lte-build branch=main HEAD=769fceb fecha=2026-08-23T13:03:59+00:00
+1604bf5cb84d6a031b2057000f1db48959b3027573daa0be1085b632081a9c34  .github/workflows/los20-build-full.yml

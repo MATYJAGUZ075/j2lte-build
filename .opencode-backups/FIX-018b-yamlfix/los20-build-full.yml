@@ -105,7 +105,7 @@ jobs:
             -b lineage-20.0 \
             --git-lfs
 
-      - name: "local_manifests: j2lte + SLSI deps"
+      - name: local_manifests: j2lte + SLSI deps
         working-directory: ${{ github.workspace }}
         run: |
           set -e

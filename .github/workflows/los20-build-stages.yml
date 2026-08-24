@@ -197,6 +197,8 @@ jobs:
           set -o pipefail
           source build/envsetup.sh
           lunch lineage_j2lte-userdebug >/dev/null
+          # FIX-045: inicializar la secuencia con el TARGET principal
+          ALL_T="${TARGET}"
           # FIX-044: validar EXTRA separadamente — systemimage solo es legítimo
           # como TARGET principal cuando viene de stage=systemimage-guard.
           if [ -n "$EXTRA" ]; then

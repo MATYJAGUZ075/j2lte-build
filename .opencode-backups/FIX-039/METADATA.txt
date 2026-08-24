@@ -1,0 +1,3 @@
+repo=j2lte-build HEAD=d048837 fecha=2026-08-24T18:45:55+00:00
+motivo=FIX-039 recolectar system.img en artifacts
+7495367b7f0c39d772b70c5c94c84fd5bce252804c65508a646f5c1b6a5d9d4a  .github/workflows/los20-build-stages.yml

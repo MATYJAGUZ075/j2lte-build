@@ -227,7 +227,6 @@ jobs:
           cp out/target/product/j2lte/dt.img   "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null || true
           cp out/target/product/j2lte/boot.img "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null || true
           cp out/target/product/j2lte/recovery.img "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null || true
-          cp out/target/product/j2lte/system.img "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null || true
           cp /tmp/stage.log "$GITHUB_WORKSPACE/artifacts/stage.log" 2>/dev/null || true
 
       - name: Upload artefactos del stage

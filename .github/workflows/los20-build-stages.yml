@@ -197,16 +197,26 @@ jobs:
           set -o pipefail
           source build/envsetup.sh
           lunch lineage_j2lte-userdebug >/dev/null
-          ALL_T="${TARGET}"
-          EXTRA="${{ github.event.inputs.extra_targets }}"
-          if [ -n "$EXTRA" ]; then ALL_T="$ALL_T,$EXTRA"; fi
+          # FIX-044: validar EXTRA separadamente — systemimage solo es legítimo
+          # como TARGET principal cuando viene de stage=systemimage-guard.
+          if [ -n "$EXTRA" ]; then
+            OLD_IFS="$IFS"; IFS=','
+            for e in $EXTRA; do
+              case "$e" in
+                systemimage|systemimage-guard)
+                  echo "::error::FIX-014: 'systemimage' no está permitido en extra_targets. Único camino: stage=systemimage-guard." ; exit 67 ;;
+                bootimage|recoveryimage) ;;
+                *) echo "::error::target extra no permitido: $e"; exit 66 ;;
+              esac
+            done
+            IFS="$OLD_IFS"
+            ALL_T="$ALL_T,$EXTRA"
+          fi
           echo "SECUENCIA=$ALL_T"
           IFS=','
           for t in $ALL_T; do
             case "$t" in
-              systemimage|systemimage-guard)
-                echo "::error::FIX-014: 'systemimage' solo puede compilarse vía stage=systemimage-guard (guard de disco). Retíralo de extra_targets."; exit 67 ;;
-              bootimage|recoveryimage) ;;
+              bootimage|recoveryimage|systemimage) ;;
               *) echo "::error::target no permitido en secuencia: $t"; exit 66 ;;
             esac
             echo "== mka $t =="

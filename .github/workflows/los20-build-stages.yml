@@ -98,6 +98,10 @@ jobs:
           git config --global user.name  "j2lte-ci"
           git config --global user.email "j2lte-ci@users.noreply.github.com"
           git lfs install
+          # FIX-046: clang-3289846 prebuilt (RenderScript bitcode) enlaza
+          # libncurses.so.5, eliminada en ubuntu-24.04. Symlink a ncurses6.
+          sudo ln -sf /usr/lib/x86_64-linux-gnu/libncurses.so.6 \
+                      /usr/lib/x86_64-linux-gnu/libncurses.so.5 || true
           ccache --version | head -1
           ccache -M 8G >/dev/null
           ccache -o compiler_check=content

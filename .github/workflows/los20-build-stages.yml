@@ -142,10 +142,8 @@ jobs:
           set -e
           cd "$HOME/los20"
           echo "=== TAMAÑOS ANTES ==="
-          du -sm prebuilts/remoteexecution-client prebuilts/abi-dumps \
-                 prebuilts/android-emulator 2>/dev/null || true
+          du -sm prebuilts/remoteexecution-client prebuilts/android-emulator 2>/dev/null || true
           rm -rf prebuilts/remoteexecution-client \
-                 prebuilts/abi-dumps \
                  prebuilts/android-emulator
           echo "=== DF POST-PODA-PREBUILTS ==="; df -h /
 
@@ -185,16 +183,6 @@ jobs:
           echo "REQUESTED_STAGE=$REQ"
           echo "RESOLVED_TARGET=$TARGET"
           echo "TARGET=$TARGET" >> "$GITHUB_ENV"
-
-      - name: "Validación mka nothing (pre-systemimage)"
-        if: ${{ github.event.inputs.stage == 'systemimage-guard' }}
-        working-directory: /home/runner/los20
-        run: |
-          set -o pipefail
-          source build/envsetup.sh
-          lunch lineage_j2lte-userdebug >/dev/null
-          time mka nothing -j"$(nproc)" 2>&1 | tee /tmp/nothing.log || { RC=${PIPESTATUS[0]}; echo "NOTHING_EXIT=$RC"; exit "$RC"; }
-          du -sm out | awk '{printf "%8.2f GB out/ tras validación\n", $1/1024}'
 
       - name: ccache stats ANTES
         if: always()

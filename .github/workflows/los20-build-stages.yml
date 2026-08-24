@@ -143,11 +143,10 @@ jobs:
           cd "$HOME/los20"
           echo "=== TAMAÑOS ANTES ==="
           du -sm prebuilts/remoteexecution-client prebuilts/abi-dumps \
-                 prebuilts/android-emulator prebuilts/vndk 2>/dev/null || true
+                 prebuilts/android-emulator 2>/dev/null || true
           rm -rf prebuilts/remoteexecution-client \
                  prebuilts/abi-dumps \
-                 prebuilts/android-emulator \
-                 prebuilts/vndk
+                 prebuilts/android-emulator
           echo "=== DF POST-PODA-PREBUILTS ==="; df -h /
 
       - name: source envsetup.sh + lunch lineage_j2lte-userdebug

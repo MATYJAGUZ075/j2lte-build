@@ -156,13 +156,22 @@ jobs:
         working-directory: /home/runner/los20
         run: du -sm out 2>/dev/null | awk '{printf "%8.2f GB out/ antes\n", $1/1024}' || echo "out/ no existe aún"
 
+      - name: Resolver target real del stage
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          case "${STAGE}" in
+            systemimage-guard) echo "TARGET=systemimage" >> "$GITHUB_ENV" ;;
+            *)                 echo "TARGET=${STAGE}"    >> "$GITHUB_ENV" ;;
+          esac
+
       - name: mka ${{ github.event.inputs.stage }}
         working-directory: /home/runner/los20
         run: |
           set -o pipefail
           source build/envsetup.sh
           lunch lineage_j2lte-userdebug >/dev/null
-          time mka "${STAGE}" -j"$(nproc)" 2>&1 | tee /tmp/stage.log
+          time mka "${TARGET}" -j"$(nproc)" 2>&1 | tee /tmp/stage.log
           RC=${PIPESTATUS[0]}
           echo "STAGE_EXIT=${RC}"
           exit "$RC"

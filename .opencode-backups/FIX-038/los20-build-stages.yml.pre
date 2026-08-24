@@ -194,9 +194,7 @@ jobs:
           IFS=','
           for t in $ALL_T; do
             case "$t" in
-              systemimage|systemimage-guard)
-                echo "::error::FIX-014: 'systemimage' solo puede compilarse vía stage=systemimage-guard (guard de disco). Retíralo de extra_targets."; exit 67 ;;
-              bootimage|recoveryimage) ;;
+              bootimage|recoveryimage|systemimage) ;;
               *) echo "::error::target no permitido en secuencia: $t"; exit 66 ;;
             esac
             echo "== mka $t =="

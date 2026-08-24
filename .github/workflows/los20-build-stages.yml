@@ -31,6 +31,14 @@ on:
         description: 'GB libres mínimos post-sync (solo exigido por systemimage-guard)'
         required: false
         default: '5'
+      prune_repo:
+        description: 'eliminar .repo/projects+objects tras sync (~25G)'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - "true"
+          - "false"
 
 concurrency:
   group: los20-stages
@@ -114,6 +122,16 @@ jobs:
           cd "$HOME/los20"
           time repo sync -c --no-tags --fail-fast -j4
           echo "=== DF POST-SYNC ==="; df -h /
+
+      - name: Poda reversible de objetos git (.repo) - libera ~25G
+        if: ${{ github.event.inputs.prune_repo != 'false' }}
+        run: |
+          set -e
+          cd "$HOME/los20"
+          du -sm .repo/project-objects .repo/projects 2>/dev/null || true
+          rm -rf .repo/project-objects .repo/projects
+          echo "=== DF POST-PODA ==="; df -h /
+          echo "nota: los objetos git se re-descargan en futuros runs (aceptado)"
 
       - name: source envsetup.sh + lunch lineage_j2lte-userdebug
         working-directory: /home/runner/los20

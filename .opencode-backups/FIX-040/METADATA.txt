@@ -1,0 +1,3 @@
+repo=j2lte-build branch=main HEAD=17b5734 fecha=2026-08-24T20:18:47+00:00
+motivo=FIX-040 poda selectiva prebuilts + validacion mka nothing
+2e4b8117f66b6711fd9f7e5c7595a3a84f80a0398fde975452b4e292dc32e38b  .github/workflows/los20-build-stages.yml

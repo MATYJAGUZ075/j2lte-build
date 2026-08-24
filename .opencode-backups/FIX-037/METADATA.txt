@@ -1,0 +1,3 @@
+repo=j2lte-build branch=main HEAD=740a2dd fecha=2026-08-24T18:02:19+00:00
+motivo=FIX-037 validacion target + default 70G + ccache stats + multi-target
+29eec40bd18225aa83374e4d0c6f8e4414df24bbab853d50eb77e3ea3bd32e07  .github/workflows/los20-build-stages.yml

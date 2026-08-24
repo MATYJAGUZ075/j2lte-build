@@ -30,11 +30,7 @@ on:
       min_free_gb:
         description: 'GB libres mínimos post-sync (solo exigido por systemimage-guard)'
         required: false
-        default: '70'
-      extra_targets:
-        description: 'targets adicionales SECUENCIALES en el mismo runner (coma; solo bootimage/recoveryimage). Reutiliza out/ y evita repetir sync+lunch+kati'
-        required: false
-        default: ''
+        default: '5'
       prune_repo:
         description: 'eliminar .repo/projects+objects tras sync (~25G)'
         required: false
@@ -160,55 +156,25 @@ jobs:
         working-directory: /home/runner/los20
         run: du -sm out 2>/dev/null | awk '{printf "%8.2f GB out/ antes\n", $1/1024}' || echo "out/ no existe aún"
 
-      - name: "Resolver y validar REQUESTED_STAGE -> RESOLVED_TARGET"
+      - name: Resolver target real del stage
         working-directory: /home/runner/los20
         run: |
           set -e
-          REQ="${STAGE}"
-          case "$REQ" in
-            systemimage-guard) TARGET="systemimage" ;;
-            bootimage|recoveryimage) TARGET="$REQ" ;;
-            *) echo "::error::DISCREPANCIA stage/target: '$REQ' desconocido"; exit 64 ;;
+          case "${STAGE}" in
+            systemimage-guard) echo "TARGET=systemimage" >> "$GITHUB_ENV" ;;
+            *)                 echo "TARGET=${STAGE}"    >> "$GITHUB_ENV" ;;
           esac
-          echo "REQUESTED_STAGE=$REQ"
-          echo "RESOLVED_TARGET=$TARGET"
-          echo "TARGET=$TARGET" >> "$GITHUB_ENV"
 
-      - name: ccache stats ANTES
-        if: always()
-        working-directory: /home/runner/los20
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE"
-          ccache -s 2>/dev/null | tee "$GITHUB_WORKSPACE/ccache_before.txt" || true
-
-      - name: "mka targets (secuencial, reutiliza out/)"
+      - name: mka ${{ github.event.inputs.stage }}
         working-directory: /home/runner/los20
         run: |
           set -o pipefail
           source build/envsetup.sh
           lunch lineage_j2lte-userdebug >/dev/null
-          ALL_T="${TARGET}"
-          EXTRA="${{ github.event.inputs.extra_targets }}"
-          if [ -n "$EXTRA" ]; then ALL_T="$ALL_T,$EXTRA"; fi
-          echo "SECUENCIA=$ALL_T"
-          IFS=','
-          for t in $ALL_T; do
-            case "$t" in
-              bootimage|recoveryimage|systemimage) ;;
-              *) echo "::error::target no permitido en secuencia: $t"; exit 66 ;;
-            esac
-            echo "== mka $t =="
-            time mka "$t" -j"$(nproc)" 2>&1 | tee /tmp/stage.log || { RC=${PIPESTATUS[0]}; echo "STAGE_EXIT=$RC ($t)"; exit "$RC"; }
-            echo "OK: $t"
-            df -h /
-          done
-
-      - name: ccache stats DESPUÉS
-        if: always()
-        working-directory: /home/runner/los20
-        run: |
-          ccache -s 2>/dev/null | tee "$GITHUB_WORKSPACE/ccache_after.txt" || true
-          grep -E "Hit rate|Cache size|Misses" "$GITHUB_WORKSPACE/ccache_after.txt" | head -6 || true
+          time mka "${TARGET}" -j"$(nproc)" 2>&1 | tee /tmp/stage.log
+          RC=${PIPESTATUS[0]}
+          echo "STAGE_EXIT=${RC}"
+          exit "$RC"
 
       - name: "MEDICIÓN después + artefactos"
         if: always()

@@ -150,7 +150,7 @@ jobs:
                  prebuilts/abi-dumps \
                  prebuilts/android-emulator \
                  prebuilts/vndk \
-                 cts developers platform_testing
+                 cts developers platform_testing test
           echo "=== DESPUES ==="
           df -h /
 

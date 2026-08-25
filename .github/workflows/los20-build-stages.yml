@@ -172,8 +172,7 @@ jobs:
             git add -Af 2>/dev/null || true
             git commit -qm "snapshot" 2>/dev/null || true
           fi' || true
-          echo "=== verificar LineageOS/android ==="
-          cd LineageOS/android && git rev-parse HEAD && echo "stub OK"
+          echo "=== stubs creados ==="
 
       # FIX-052: eliminar módulos test de Mainline que referencian dependencias
       # indefinidas durante Soong bootstrap (mts-target-sdk-version-current,

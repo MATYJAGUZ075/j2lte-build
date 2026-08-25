@@ -23,7 +23,8 @@
            path="hardware/samsung_slsi/exynos5"
            remote="los" revision="lineage-17.1" />
 
+  <!-- FIX-050: fork con -Wno-switch para legacy SkypeHD OMX -->
   <project name="android_hardware_samsung_slsi_openmax"
            path="hardware/samsung_slsi/openmax"
-           remote="exynos" revision="cm-14.1" />
+           remote="maty" revision="lineage-17.1" />
 </manifest>

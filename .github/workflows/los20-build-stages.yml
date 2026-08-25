@@ -98,10 +98,17 @@ jobs:
           git config --global user.name  "j2lte-ci"
           git config --global user.email "j2lte-ci@users.noreply.github.com"
           git lfs install
-          # FIX-046: clang-3289846 prebuilt (RenderScript bitcode) enlaza
-          # libncurses.so.5, eliminada en ubuntu-24.04. Symlink a ncurses6.
+          # FIX-046/047: clang-3289846 prebuilt (RenderScript bitcode)
+          # requiere libncurses.so.5, libtinfo.so.5 y libc++.so — todas
+          # ausentes/renombradas en ubuntu-24.04. Dependencias completas
+          # verificadas con ldd sobre el binario real.
           sudo ln -sf /usr/lib/x86_64-linux-gnu/libncurses.so.6 \
                       /usr/lib/x86_64-linux-gnu/libncurses.so.5 || true
+          sudo ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 \
+                      /usr/lib/x86_64-linux-gnu/libtinfo.so.5 || true
+          sudo apt-get install -y libc++1 >/dev/null 2>&1 || \
+            sudo ln -sf /usr/lib/x86_64-linux-gnu/libc++.so.1 \
+                        /usr/lib/x86_64-linux-gnu/libc++.so || true
           ccache --version | head -1
           ccache -M 8G >/dev/null
           ccache -o compiler_check=content

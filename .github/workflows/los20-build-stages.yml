@@ -165,13 +165,7 @@ jobs:
         run: |
           set -e
           cd "$HOME/los20"
-          repo forall -c 'if [ ! -e .git/objects ] && [ ! -f .git ]; then
-            git init -q
-            git config user.email "ci@localhost"
-            git config user.name "CI"
-            git add -Af 2>/dev/null || true
-            git commit -qm "snapshot" 2>/dev/null || true
-          fi' || true
+          repo forall -c 'rm -f .git && git init -q && git config user.email "ci@localhost" && git config user.name "CI" && git add -Af 2>/dev/null; git commit -qm "snapshot" 2>/dev/null; true'
           echo "=== stubs creados ==="
 
       # FIX-052: eliminar módulos test de Mainline que referencian dependencias

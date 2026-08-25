@@ -138,21 +138,25 @@ jobs:
           time repo sync -c --no-tags --fail-fast -j4
           echo "=== DF POST-SYNC ==="; df -h /
 
-      # FIX-051: NO podar .repo (rompe repo manifest para build-manifest.xml).
-      # FIX-040+051: podar prebuilts no esenciales + source trees innecesarios.
-      - name: "Poda selectiva post-sync (~22.5G) - FIX-040 + FIX-051"
+      - name: Poda reversible de objetos git (.repo) - libera ~25G
+        if: ${{ github.event.inputs.prune_repo != 'false' }}
         run: |
           set -e
           cd "$HOME/los20"
-          echo "=== ANTES ==="
-          df -h /
+          du -sm .repo/project-objects .repo/projects 2>/dev/null || true
+          rm -rf .repo/project-objects .repo/projects
+          echo "=== DF POST-PODA ==="; df -h /
+          echo "nota: los objetos git se re-descargan en futuros runs (aceptado)"
+
+      - name: "Poda selectiva de prebuilts (~19G) - FIX-040"
+        run: |
+          set -e
+          cd "$HOME/los20"
+          echo "=== TAMAÑOS ANTES ==="
+          du -sm prebuilts/remoteexecution-client prebuilts/android-emulator 2>/dev/null || true
           rm -rf prebuilts/remoteexecution-client \
-                 prebuilts/abi-dumps \
-                 prebuilts/android-emulator \
-                 prebuilts/vndk \
-                 cts developers platform_testing test
-          echo "=== DESPUES ==="
-          df -h /
+                 prebuilts/android-emulator
+          echo "=== DF POST-PODA-PREBUILTS ==="; df -h /
 
       - name: source envsetup.sh + lunch lineage_j2lte-userdebug
         working-directory: /home/runner/los20

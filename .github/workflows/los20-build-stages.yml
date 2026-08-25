@@ -158,6 +158,17 @@ jobs:
                  prebuilts/android-emulator
           echo "=== DF POST-PODA-PREBUILTS ==="; df -h /
 
+      # FIX-052: eliminar módulos test de Mainline que referencian dependencias
+      # indefinidas durante Soong bootstrap (mts-target-sdk-version-current,
+      # cts_defaults). No afectan la funcionalidad del sistema.
+      - name: Remover módulos test rotos de Mainline
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          rm -rf packages/modules/Connectivity/nearby/tests \
+                 packages/modules/Wifi/service/tests/mts
+          echo "=== test modules rotos eliminados ==="
+
       - name: source envsetup.sh + lunch lineage_j2lte-userdebug
         working-directory: /home/runner/los20
         run: |

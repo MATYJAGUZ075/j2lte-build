@@ -36,7 +36,7 @@ on:
         required: false
         default: ''
       prune_repo:
-        description: 'poda selectiva post-sync FIX-054 (~21.5G: prebuilts RBE/abi/emulator + cts/test/etc). Desactivar solo para diagnosticar si la poda rompe algo'
+        description: 'eliminar .repo/projects+objects tras sync (~25G)'
         required: false
         default: 'true'
         type: choice
@@ -59,9 +59,6 @@ jobs:
       CCACHE_DIR: "/home/runner/.ccache-j2lte"
       STAGE: ${{ github.event.inputs.stage }}
       MIN_FREE_GB: ${{ github.event.inputs.min_free_gb }}
-      # FIX-057: faltaba el mapeo del input extra_targets — $EXTRA en el paso
-      # mka estaba siempre vacío y el input era código muerto.
-      EXTRA: ${{ github.event.inputs.extra_targets }}
 
     steps:
       - name: Checkout infra repo (manifests)
@@ -145,7 +142,6 @@ jobs:
       # Podar SOLO prebuilts no esenciales y source trees innecesarios.
       # Preserva estructura git completa para repo manifest -r.
       - name: "Poda selectiva post-sync (~21.5G) - FIX-054"
-        if: ${{ github.event.inputs.prune_repo != 'false' }}
         run: |
           set -e
           cd "$HOME/los20"
@@ -270,7 +266,10 @@ jobs:
           du -sm out 2>/dev/null | awk '{printf "%8.2f GB out/\n", $1/1024}'
           echo "=== productos ==="
           ls -la out/target/product/j2lte/ 2>/dev/null | head -25
+          echo "=== dt.img ==="
+          ls -la out/target/product/j2lte/dt.img 2>/dev/null || echo "(sin dt.img)"
           mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          cp out/target/product/j2lte/dt.img   "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null || true
           cp out/target/product/j2lte/boot.img "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null || true
           cp out/target/product/j2lte/recovery.img "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null || true
           cp out/target/product/j2lte/system.img "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null || true

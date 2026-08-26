@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <!-- FIX-056 — VARIANTE B: manifest "slim" opcional.
+       NO reemplaza j2lte.xml ni j2lte-slsi.xml: se copia ADICIONALMENTE a
+       .repo/local_manifests/ para que estos 24 proyectos NUNCA se
+       descarguen. Equivale a la poda post-sync de FIX-054 pero movida al
+       nivel de manifest: ahorra también el espacio de .repo/project-objects
+       que FIX-054 preserva (~20-25G adicionales estimados; medir en CI).
+
+       Reversibilidad: basta NO copiar este archivo → sync idéntico al actual.
+
+       RIESGO DOCUMENTADO: el conjunto replica EXACTAMENTE la lista FIX-054,
+       incluyendo test/. Evidencia previa (revert ea0c373) indicaba que art
+       necesita csuite_test de test/ en Kati; ningún run ha validado aún mka
+       con esta lista completa. Si el build falla por eso, quitar las
+       entradas platform/test/* de este archivo (y del paso FIX-054) es la
+       corrección mínima.
+
+       Nombres verificados contra:
+       https://raw.githubusercontent.com/LineageOS/android/lineage-20.0/default.xml -->
+
+  <remove-project name="LineageOS/android_cts" />
+  <remove-project name="platform/developers/build" />
+  <remove-project name="platform/platform_testing" />
+  <remove-project name="platform/prebuilts/abi-dumps/ndk" />
+  <remove-project name="platform/prebuilts/abi-dumps/platform" />
+  <remove-project name="platform/prebuilts/abi-dumps/vndk" />
+  <remove-project name="platform/prebuilts/android-emulator" />
+  <remove-project name="platform/prebuilts/remoteexecution-client" />
+
+  <remove-project name="platform/test/app_compat/csuite" />
+  <remove-project name="platform/test/cts-root" />
+  <remove-project name="platform/test/framework" />
+  <remove-project name="platform/test/mlts/benchmark" />
+  <remove-project name="platform/test/mlts/models" />
+  <remove-project name="platform/test/mts" />
+  <remove-project name="platform/test/vts" />
+  <remove-project name="platform/test/vts-testcase/fuzz" />
+  <remove-project name="platform/test/vts-testcase/hal" />
+  <remove-project name="platform/test/vts-testcase/hal-trace" />
+  <remove-project name="platform/test/vts-testcase/kernel" />
+  <remove-project name="platform/test/vts-testcase/nbu" />
+  <remove-project name="platform/test/vts-testcase/performance" />
+  <remove-project name="platform/test/vts-testcase/security" />
+  <remove-project name="platform/test/vts-testcase/vndk" />
+  <remove-project name="platform/test/catbox" />
+</manifest>

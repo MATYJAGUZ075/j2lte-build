@@ -30,7 +30,7 @@ on:
       min_free_gb:
         description: 'GB libres mínimos post-sync (solo exigido por systemimage-guard)'
         required: false
-        default: '70'
+        default: '40'
       extra_targets:
         description: 'targets adicionales SECUENCIALES en el mismo runner (coma; solo bootimage/recoveryimage). Reutiliza out/ y evita repetir sync+lunch+kati'
         required: false

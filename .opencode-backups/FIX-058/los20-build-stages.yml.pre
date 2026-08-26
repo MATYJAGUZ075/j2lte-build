@@ -43,14 +43,6 @@ on:
         options:
           - "true"
           - "false"
-      slim_manifest:
-        description: 'FIX-056/058: no descargar los 24 proyectos de j2lte-slim.xml (ahorra ~20G+ y elimina riesgo repo manifest sobre worktrees ausentes)'
-        required: false
-        default: 'true'
-        type: choice
-        options:
-          - "true"
-          - "false"
 
 concurrency:
   group: los20-stages
@@ -64,8 +56,7 @@ jobs:
     env:
       USE_CCACHE: true
       CCACHE_EXEC: "/usr/bin/ccache"
-      # FIX-058: CCACHE_DIR se resuelve dinámicamente (GITHUB_ENV) tras medir
-      # /mnt en el paso de dependencias; default fallback = home del runner.
+      CCACHE_DIR: "/home/runner/.ccache-j2lte"
       STAGE: ${{ github.event.inputs.stage }}
       MIN_FREE_GB: ${{ github.event.inputs.min_free_gb }}
       # FIX-057: faltaba el mapeo del input extra_targets — $EXTRA en el paso
@@ -90,30 +81,10 @@ jobs:
       - name: "Disco ANTES"
         run: df -h /
 
-      # FIX-058: resolver CCACHE_DIR midiendo /mnt ANTES de restaurar el
-      # caché. No se asume tamaño: si /mnt no existe o tiene <10G libres,
-      # fallback al home del runner (comportamiento previo).
-      - name: "Resolver CCACHE_DIR midiendo /mnt - FIX-058"
-        run: |
-          set -e
-          MNT_FREE_GB=$(df --output=avail -BG /mnt 2>/dev/null | tail -1 | tr -dc '0-9' || echo 0)
-          echo "/mnt libre: ${MNT_FREE_GB:-0}G"
-          if [ -d /mnt ] && [ "${MNT_FREE_GB:-0}" -ge 10 ]; then
-            sudo mkdir -p /mnt/ccache-j2lte
-            sudo chown -R "$(id -u):$(id -g)" /mnt/ccache-j2lte
-            CCACHE_DIR=/mnt/ccache-j2lte
-            echo "ccache -> /mnt/ccache-j2lte"
-          else
-            CCACHE_DIR=/home/runner/.ccache-j2lte
-            echo "ccache -> home (fallback)"
-          fi
-          mkdir -p "$CCACHE_DIR"
-          echo "CCACHE_DIR=$CCACHE_DIR" >> "$GITHUB_ENV"
-
       - name: Restore cache ccache (compartido)
         uses: actions/cache@v4
         with:
-          path: ${{ env.CCACHE_DIR }}
+          path: /home/runner/.ccache-j2lte
           key: ccache-j2lte-los20-${{ github.run_id }}
           restore-keys: |
             ccache-j2lte-los20-
@@ -142,8 +113,6 @@ jobs:
             sudo ln -sf /usr/lib/x86_64-linux-gnu/libc++.so.1 \
                         /usr/lib/x86_64-linux-gnu/libc++.so || true
           ccache --version | head -1
-          # FIX-058: CCACHE_DIR ya resuelto por el paso anterior (GITHUB_ENV)
-          echo "CCACHE_DIR=$CCACHE_DIR ($(df -h "$CCACHE_DIR" | tail -1 | awk '{print $4}') libres en ese volumen)"
           ccache -M 8G >/dev/null
           ccache -o compiler_check=content
           ccache -o namespace=j2lte-los20
@@ -156,21 +125,13 @@ jobs:
           cd "$HOME/los20"
           repo init --depth=1 -u https://github.com/LineageOS/android.git -b lineage-20.0 --git-lfs
 
-      - name: "local_manifests: j2lte + SLSI deps (+ slim FIX-056)"
+      - name: "local_manifests: j2lte + SLSI deps"
         working-directory: ${{ github.workspace }}
         run: |
           set -e
           mkdir -p "$HOME/los20/.repo/local_manifests"
           cp "$GITHUB_WORKSPACE/manifests/j2lte.xml"      "$HOME/los20/.repo/local_manifests/j2lte.xml"
           cp "$GITHUB_WORKSPACE/manifests/j2lte-slsi.xml" "$HOME/los20/.repo/local_manifests/j2lte-slsi.xml"
-          # FIX-058: activar FIX-056 — los 24 proyectos de j2lte-slim.xml no se
-          # sincronizan nunca (ahorra ~20G y elimina riesgo repo manifest -r).
-          if [ "${{ github.event.inputs.slim_manifest || 'true' }}" != "false" ]; then
-            cp "$GITHUB_WORKSPACE/manifests/j2lte-slim.xml" "$HOME/los20/.repo/local_manifests/j2lte-slim.xml"
-            echo "slim_manifest ACTIVO"
-          else
-            echo "slim_manifest desactivado por input"
-          fi
 
       - name: repo sync (-c --no-tags)
         working-directory: ${{ github.workspace }}
@@ -212,22 +173,6 @@ jobs:
           rm -rf packages/modules/Connectivity/nearby/tests \
                  packages/modules/Wifi/service/tests/mts
           echo "=== test modules rotos eliminados ==="
-
-      # FIX-058: diagnóstico SOLO LECTURA — medición real del árbol para
-      # decisiones basadas en datos (podas dirigidas / ubicación out/).
-      - name: "Diagnóstico disco (solo lectura) - FIX-058"
-        working-directory: /home/runner/los20
-        run: |
-          df -h /
-          df -h /mnt || echo "(sin /mnt)"
-          echo "=== top-30 dirs del árbol ==="
-          du -sm ./* 2>/dev/null | sort -rn | head -30
-          echo "=== .repo detalle ==="
-          du -sm .repo/project-objects .repo/projects .repo/manifests 2>/dev/null || true
-          echo "=== out/ ==="
-          du -sm out 2>/dev/null || echo "(out no existe)"
-          echo "=== ccache ==="
-          du -sm "$CCACHE_DIR" 2>/dev/null || echo "(ccache vacío)"
 
       - name: source envsetup.sh + lunch lineage_j2lte-userdebug
         working-directory: /home/runner/los20

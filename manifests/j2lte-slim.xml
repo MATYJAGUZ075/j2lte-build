@@ -28,7 +28,6 @@
   <remove-project name="platform/prebuilts/android-emulator" />
   <remove-project name="platform/prebuilts/remoteexecution-client" />
 
-  <remove-project name="platform/test/app_compat/csuite" />
   <remove-project name="platform/test/cts-root" />
   <remove-project name="platform/test/framework" />
   <remove-project name="platform/test/mlts/benchmark" />

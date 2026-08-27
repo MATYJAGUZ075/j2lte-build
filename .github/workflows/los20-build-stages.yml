@@ -1,4 +1,30 @@
 # los20-build-stages.yml
+#
+# LineageOS 20 - Samsung J2 / j2lte
+#
+# Estrategia de almacenamiento:
+#   repo sync
+#       ↓
+#   limpieza SOLO de prebuilts grandes/regenerables
+#       ↓
+#   guard de systemimage
+#       ↓
+#   build
+#
+# IMPORTANTE:
+# NO eliminar .repo/project-objects ni .repo/projects.
+# Eso rompió repo manifest -r en runs anteriores.
+#
+# FIX-028:
+# El kernel genera zImage-dtb con DTB incorporado.
+# No se genera dt.img separado.
+#
+# FIX-029:
+# Adaptación Clang del kernel 3.10 ya realizada.
+#
+# Objetivo:
+# Recuperar espacio post-sync sin podar código fuente ni
+# romper los metadatos Git de repo.
 
 name: LOS20 build stages
 
@@ -16,9 +42,9 @@ on:
           - recoveryimage
 
       min_free_gb:
-        description: 'GB libres mínimos para systemimage'
+        description: 'GB libres mínimos para systemimage después del cleanup'
         required: false
-        default: '70'
+        default: '40'
 
       extra_targets:
         description: 'Targets extra secuenciales (bootimage,recoveryimage)'
@@ -26,13 +52,13 @@ on:
         default: ''
 
       prune_repo:
-        description: 'Eliminar contenido no esencial después del sync'
+        description: 'Liberar espacio eliminando solo prebuilts grandes/regenerables (NO toca .repo)'
         required: true
-        default: 'false'
+        default: 'true'
         type: choice
         options:
-          - 'false'
           - 'true'
+          - 'false'
 
       prune_tests:
         description: 'Eliminar módulos/tests rotos conocidos'
@@ -88,6 +114,17 @@ jobs:
           docker-images: true
           swap-storage: false
 
+      - name: Disco ANTES
+        run: |
+          set -e
+          echo "=== DISCO ANTES ==="
+          df -h /
+          df -h /mnt || true
+
+      # ============================================================
+      # CCACHE
+      # ============================================================
+
       - name: Resolver CCACHE_DIR
         run: |
           set -e
@@ -107,7 +144,10 @@ jobs:
           fi
 
           mkdir -p "$CCACHE_DIR"
+
           echo "CCACHE_DIR=$CCACHE_DIR" >> "$GITHUB_ENV"
+
+          echo "CCACHE_DIR=$CCACHE_DIR"
 
       - name: Restore ccache
         uses: actions/cache@v4
@@ -117,12 +157,22 @@ jobs:
           restore-keys: |
             ccache-j2lte-los20-
 
+      # ============================================================
+      # DEPENDENCIAS
+      # ============================================================
+
       - name: Instalar dependencias
         run: |
           set -e
 
           sudo apt-get update
-          sudo apt-get install -y git-lfs python3 curl ccache libc++1
+
+          sudo apt-get install -y \
+            git-lfs \
+            python3 \
+            curl \
+            ccache \
+            libc++1
 
           mkdir -p "$HOME/bin"
 
@@ -131,6 +181,7 @@ jobs:
             > "$HOME/bin/repo"
 
           chmod a+x "$HOME/bin/repo"
+
           echo "$HOME/bin" >> "$GITHUB_PATH"
 
           git config --global user.name "j2lte-ci"
@@ -189,31 +240,79 @@ jobs:
                "$HOME/los20/.repo/local_manifests/j2lte-slim.xml"
           fi
 
+      # ============================================================
+      # REPO SYNC
+      # ============================================================
+
       - name: repo sync
         working-directory: /home/runner/los20
         run: |
           set -e
-          repo sync -c --no-tags --fail-fast -j4
+
+          echo "=== DISCO PRE-SYNC ==="
+          df -h /
+
+          time repo sync \
+            -c \
+            --no-tags \
+            --fail-fast \
+            -j4
+
+          echo "=== DISCO POST-SYNC ==="
           df -h /
 
       # ============================================================
-      # PODAS OPCIONALES
+      # LIMPIEZA DE ALMACENAMIENTO
+      #
+      # IMPORTANTE:
+      # NO tocar .repo/project-objects
+      # NO tocar .repo/projects
+      # NO crear git stubs
       # ============================================================
 
-      - name: Poda repo opcional
+      - name: Limpieza post-sync de prebuilts grandes
         if: ${{ github.event.inputs.prune_repo == 'true' }}
         working-directory: /home/runner/los20
         run: |
           set -e
 
+          echo "========================================"
+          echo "LIMPIEZA POST-SYNC"
+          echo "========================================"
+
+          echo "=== ANTES ==="
+          df -h /
+
+          echo
+          echo "=== TAMAÑOS ==="
+
+          du -sm \
+            prebuilts/remoteexecution-client \
+            prebuilts/android-emulator \
+            prebuilts/abi-dumps \
+            2>/dev/null || true
+
+          echo
+          echo "=== ELIMINANDO SOLO PREBUILTS ==="
+
           rm -rf \
             prebuilts/remoteexecution-client \
-            prebuilts/abi-dumps \
             prebuilts/android-emulator \
-            developers \
-            platform_testing
+            prebuilts/abi-dumps
 
+          echo
+          echo "=== DESPUÉS ==="
           df -h /
+
+          echo
+          echo "=== ESPACIO RECUPERADO ==="
+
+      # ============================================================
+      # TESTS
+      #
+      # DESACTIVADO POR DEFECTO.
+      # Solo usar si vuelve a aparecer el problema conocido.
+      # ============================================================
 
       - name: Poda de tests opcional
         if: ${{ github.event.inputs.prune_tests == 'true' }}
@@ -221,23 +320,49 @@ jobs:
         run: |
           set -e
 
-          rm -rf packages/modules/Connectivity/tests
-          rm -rf packages/modules/Wifi/service/tests/mts
-          rm -rf packages/modules/Permission/SafetyCenter/Config/tests
-          rm -rf frameworks/base/services/tests/PackageManagerServiceTests/host/test-apps/OverlayTarget
-          rm -rf packages/modules/IPsec/tests
+          echo "=== ELIMINANDO TESTS CONOCIDOS ==="
+
+          rm -rf \
+            packages/modules/Connectivity/tests \
+            packages/modules/Wifi/service/tests/mts \
+            packages/modules/Permission/SafetyCenter/Config/tests \
+            frameworks/base/services/tests/PackageManagerServiceTests/host/test-apps/OverlayTarget \
+            packages/modules/IPsec/tests
 
       # ============================================================
-      # DIAGNOSTICO
+      # DIAGNOSTICO POST-CLEANUP
       # ============================================================
 
-      - name: Diagnóstico de disco
+      - name: Diagnóstico de disco post-cleanup
         working-directory: /home/runner/los20
         run: |
+          set -e
+
+          echo "========================================"
+          echo "DIAGNÓSTICO POST-CLEANUP"
+          echo "========================================"
+
+          echo
+          echo "=== ROOT ==="
           df -h /
+
+          echo
+          echo "=== /mnt ==="
           df -h /mnt || true
-          du -sm ./* 2>/dev/null | sort -rn | head -20
+
+          echo
+          echo "=== TOP DIRECTORIOS ==="
+          du -sm ./* 2>/dev/null |
+            sort -rn |
+            head -20
+
+          echo
+          echo "=== OUT ==="
           du -sm out 2>/dev/null || true
+
+          echo
+          echo "=== .REPO ==="
+          du -sh .repo 2>/dev/null || true
 
       # ============================================================
       # BUILD CONFIG
@@ -291,15 +416,22 @@ jobs:
             tr -dc '0-9'
           )
 
-          MIN="${MIN_FREE_GB:-70}"
+          MIN="${MIN_FREE_GB:-40}"
+
+          echo "========================================"
+          echo "SYSTEMIMAGE DISK GUARD"
+          echo "========================================"
 
           echo "Espacio libre: ${AVAIL_GB}G"
           echo "Mínimo requerido: ${MIN}G"
 
           if [ "$AVAIL_GB" -lt "$MIN" ]; then
             echo "::error::No hay espacio suficiente para systemimage."
+            echo "::error::Libres: ${AVAIL_GB}G / requeridos: ${MIN}G"
             exit 90
           fi
+
+          echo "OK: espacio suficiente para iniciar systemimage."
 
       # ============================================================
       # BUILD
@@ -342,9 +474,13 @@ jobs:
           IFS=',' read -ra TARGETS <<< "$ALL_TARGETS"
 
           for target in "${TARGETS[@]}"; do
+
             echo "========================================"
             echo "BUILD: $target"
             echo "========================================"
+
+            echo "=== DISCO ANTES DEL TARGET ==="
+            df -h /
 
             time mka "$target" -j"$(nproc)" \
               2>&1 | tee /tmp/stage.log
@@ -353,10 +489,14 @@ jobs:
 
             if [ "$RC" -ne 0 ]; then
               echo "STAGE_EXIT=$RC ($target)"
+              echo "=== DISCO AL FALLAR ==="
+              df -h /
               exit "$RC"
             fi
 
             echo "OK: $target"
+
+            echo "=== DISCO DESPUÉS DEL TARGET ==="
             df -h /
           done
 
@@ -391,7 +531,10 @@ jobs:
           cp /tmp/stage.log \
              "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null
 
+          echo "=== DISCO FINAL ==="
           df -h /
+
+          echo "=== OUT ==="
           du -sm out 2>/dev/null || true
 
       - name: Upload artefactos

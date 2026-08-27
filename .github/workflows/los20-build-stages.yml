@@ -205,6 +205,9 @@ jobs:
       # FIX-052/059: eliminar tests que referencian módulos de test
       # ausentes en este checkout reducido. No son necesarios para
       # construir la ROM del dispositivo.
+            # FIX-052/059: eliminar tests que referencian módulos de test
+      # ausentes en este checkout reducido. No son necesarios para
+      # construir la ROM del dispositivo.
       - name: "Remover módulos test rotos de Mainline/Framework - FIX-059"
         working-directory: /home/runner/los20
         run: |
@@ -222,8 +225,11 @@ jobs:
           # Frameworks/base PackageManager: cts_support_defaults
           rm -rf frameworks/base/services/tests/PackageManagerServiceTests/host/test-apps/OverlayTarget
 
-          echo "=== módulos/test problemáticos eliminados ==="
+          # IPsec/IKE tests: framework-connectivity-test-defaults
+          rm -rf packages/modules/IPsec/tests
 
+          echo "=== módulos/test problemáticos eliminados ==="
+          
       # FIX-058: diagnóstico SOLO LECTURA — medición real del árbol para
       # decisiones basadas en datos (podas dirigidas / ubicación out/).
       - name: "Diagnóstico disco (solo lectura) - FIX-058"

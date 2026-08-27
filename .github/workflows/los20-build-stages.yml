@@ -1,56 +1,56 @@
-# los20-build-stages.yml — BUILD INCREMENTAL POR STAGES (FIX-028)
-#
-# Estrategia: quemar errores baratos (kernel/DT/boot/recovery) antes de
-# intentar systemimage/bacon (que requieren FIX-014 infra, FIX-014 BLOCKED).
-#
-# Stages disponibles (verificados en build/make/core/Makefile lineage-20.0
-# y mkbootimg.mk de hardware/samsung lineage-20):
-#   FIX-028: dtimage/dt.img eliminados — el kernel compila zImage-dtb
-#   (CONFIG_BUILD_ARM_APPENDED_DTB_IMAGE=y), no hay DT separado.
-#   bootimage        -> boot.img          (zImage-dtb + ramdisk)
-#   recoveryimage    -> recovery.img      (BOARD_RECOVERYIMAGE_PARTITION_SIZE definida)
-#   systemimage-guard-> system.img        (REQUIERE >=70G libres; FIX-014)
-#
-# NO incluye bacon. ccache compartido con lunch-check/build-full (ff585b8).
+# los20-build-stages.yml
 
-name: LOS20 build stages (incremental)
+name: LOS20 build stages
 
 on:
   workflow_dispatch:
     inputs:
       stage:
-        description: 'target a compilar'
+        description: 'Target principal'
         required: true
-        default: 'bootimage'
+        default: 'systemimage-guard'
         type: choice
         options:
+          - systemimage-guard
           - bootimage
           - recoveryimage
-          - systemimage-guard
+
       min_free_gb:
-        description: 'GB libres mínimos post-sync (solo exigido por systemimage-guard)'
+        description: 'GB libres mínimos para systemimage'
         required: false
-        default: '40'
+        default: '70'
+
       extra_targets:
-        description: 'targets adicionales SECUENCIALES en el mismo runner (coma; solo bootimage/recoveryimage). Reutiliza out/ y evita repetir sync+lunch+kati'
+        description: 'Targets extra secuenciales (bootimage,recoveryimage)'
         required: false
         default: ''
+
       prune_repo:
-        description: 'poda selectiva post-sync FIX-054 (~21.5G: prebuilts RBE/abi/emulator + cts/test/etc). Desactivar solo para diagnosticar si la poda rompe algo'
-        required: false
-        default: 'true'
+        description: 'Eliminar contenido no esencial después del sync'
+        required: true
+        default: 'false'
         type: choice
         options:
-          - "true"
-          - "false"
+          - 'false'
+          - 'true'
+
+      prune_tests:
+        description: 'Eliminar módulos/tests rotos conocidos'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
       slim_manifest:
-        description: 'FIX-056/058: no descargar los 24 proyectos de j2lte-slim.xml (ahorra ~20G+ y elimina riesgo repo manifest sobre worktrees ausentes)'
-        required: false
+        description: 'Usar manifest reducido j2lte-slim.xml'
+        required: true
         default: 'true'
         type: choice
         options:
-          - "true"
-          - "false"
+          - 'true'
+          - 'false'
 
 concurrency:
   group: los20-stages
@@ -63,20 +63,21 @@ jobs:
 
     env:
       USE_CCACHE: true
-      CCACHE_EXEC: "/usr/bin/ccache"
-      # FIX-058: CCACHE_DIR se resuelve dinámicamente (GITHUB_ENV) tras medir
-      # /mnt en el paso de dependencias; default fallback = home del runner.
+      CCACHE_EXEC: /usr/bin/ccache
       STAGE: ${{ github.event.inputs.stage }}
       MIN_FREE_GB: ${{ github.event.inputs.min_free_gb }}
-      # FIX-057: faltaba el mapeo del input extra_targets — $EXTRA en el paso
-      # mka estaba siempre vacío y el input era código muerto.
       EXTRA: ${{ github.event.inputs.extra_targets }}
 
     steps:
-      - name: Checkout infra repo (manifests)
+
+      # ============================================================
+      # INFRA
+      # ============================================================
+
+      - name: Checkout infra repo
         uses: actions/checkout@v4
 
-      - name: Liberar espacio en disco
+      - name: Liberar espacio del runner
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: true
@@ -87,30 +88,28 @@ jobs:
           docker-images: true
           swap-storage: false
 
-      - name: "Disco ANTES"
-        run: df -h /
-
-      # FIX-058: resolver CCACHE_DIR midiendo /mnt ANTES de restaurar el
-      # caché. No se asume tamaño: si /mnt no existe o tiene <10G libres,
-      # fallback al home del runner (comportamiento previo).
-      - name: "Resolver CCACHE_DIR midiendo /mnt - FIX-058"
+      - name: Resolver CCACHE_DIR
         run: |
           set -e
-          MNT_FREE_GB=$(df --output=avail -BG /mnt 2>/dev/null | tail -1 | tr -dc '0-9' || echo 0)
-          echo "/mnt libre: ${MNT_FREE_GB:-0}G"
+
+          MNT_FREE_GB=$(
+            df --output=avail -BG /mnt 2>/dev/null |
+            tail -1 |
+            tr -dc '0-9' || echo 0
+          )
+
           if [ -d /mnt ] && [ "${MNT_FREE_GB:-0}" -ge 10 ]; then
             sudo mkdir -p /mnt/ccache-j2lte
             sudo chown -R "$(id -u):$(id -g)" /mnt/ccache-j2lte
             CCACHE_DIR=/mnt/ccache-j2lte
-            echo "ccache -> /mnt/ccache-j2lte"
           else
             CCACHE_DIR=/home/runner/.ccache-j2lte
-            echo "ccache -> home (fallback)"
           fi
+
           mkdir -p "$CCACHE_DIR"
           echo "CCACHE_DIR=$CCACHE_DIR" >> "$GITHUB_ENV"
 
-      - name: Restore cache ccache (compartido)
+      - name: Restore ccache
         uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
@@ -118,237 +117,284 @@ jobs:
           restore-keys: |
             ccache-j2lte-los20-
 
-      - name: Dependencias e instalación de repo (+ ccache)
+      - name: Instalar dependencias
         run: |
           set -e
+
           sudo apt-get update
-          sudo apt-get install -y git-lfs python3 curl ccache
+          sudo apt-get install -y git-lfs python3 curl ccache libc++1
+
           mkdir -p "$HOME/bin"
-          curl -s https://storage.googleapis.com/git-repo-downloads/repo > "$HOME/bin/repo"
+
+          curl -s \
+            https://storage.googleapis.com/git-repo-downloads/repo \
+            > "$HOME/bin/repo"
+
           chmod a+x "$HOME/bin/repo"
           echo "$HOME/bin" >> "$GITHUB_PATH"
-          git config --global user.name  "j2lte-ci"
+
+          git config --global user.name "j2lte-ci"
           git config --global user.email "j2lte-ci@users.noreply.github.com"
+
           git lfs install
-          # FIX-046/047: clang-3289846 prebuilt (RenderScript bitcode)
-          # requiere libncurses.so.5, libtinfo.so.5 y libc++.so — todas
-          # ausentes/renombradas en ubuntu-24.04. Dependencias completas
-          # verificadas con ldd sobre el binario real.
-          sudo ln -sf /usr/lib/x86_64-linux-gnu/libncurses.so.6 \
-                      /usr/lib/x86_64-linux-gnu/libncurses.so.5 || true
-          sudo ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 \
-                      /usr/lib/x86_64-linux-gnu/libtinfo.so.5 || true
-          sudo apt-get install -y libc++1 >/dev/null 2>&1 || \
-            sudo ln -sf /usr/lib/x86_64-linux-gnu/libc++.so.1 \
-                        /usr/lib/x86_64-linux-gnu/libc++.so || true
-          ccache --version | head -1
-          # FIX-058: CCACHE_DIR ya resuelto por el paso anterior (GITHUB_ENV)
-          echo "CCACHE_DIR=$CCACHE_DIR ($(df -h "$CCACHE_DIR" | tail -1 | awk '{print $4}') libres en ese volumen)"
-          ccache -M 8G >/dev/null
+
+          sudo ln -sf \
+            /usr/lib/x86_64-linux-gnu/libncurses.so.6 \
+            /usr/lib/x86_64-linux-gnu/libncurses.so.5 || true
+
+          sudo ln -sf \
+            /usr/lib/x86_64-linux-gnu/libtinfo.so.6 \
+            /usr/lib/x86_64-linux-gnu/libtinfo.so.5 || true
+
+          sudo ln -sf \
+            /usr/lib/x86_64-linux-gnu/libc++.so.1 \
+            /usr/lib/x86_64-linux-gnu/libc++.so || true
+
+          ccache -M 8G
           ccache -o compiler_check=content
           ccache -o namespace=j2lte-los20
 
-      - name: repo init LineageOS 20.0
+      # ============================================================
+      # SOURCE
+      # ============================================================
+
+      - name: repo init
         working-directory: ${{ github.workspace }}
         run: |
           set -e
+
           mkdir -p "$HOME/los20"
           cd "$HOME/los20"
-          repo init --depth=1 -u https://github.com/LineageOS/android.git -b lineage-20.0 --git-lfs
 
-      - name: "local_manifests: j2lte + SLSI deps (+ slim FIX-056)"
-        working-directory: ${{ github.workspace }}
+          repo init \
+            --depth=1 \
+            -u https://github.com/LineageOS/android.git \
+            -b lineage-20.0 \
+            --git-lfs
+
+      - name: Configurar local manifests
         run: |
           set -e
+
           mkdir -p "$HOME/los20/.repo/local_manifests"
-          cp "$GITHUB_WORKSPACE/manifests/j2lte.xml"      "$HOME/los20/.repo/local_manifests/j2lte.xml"
-          cp "$GITHUB_WORKSPACE/manifests/j2lte-slsi.xml" "$HOME/los20/.repo/local_manifests/j2lte-slsi.xml"
-          # FIX-058: activar FIX-056 — los 24 proyectos de j2lte-slim.xml no se
-          # sincronizan nunca (ahorra ~20G y elimina riesgo repo manifest -r).
-          if [ "${{ github.event.inputs.slim_manifest || 'true' }}" != "false" ]; then
-            cp "$GITHUB_WORKSPACE/manifests/j2lte-slim.xml" "$HOME/los20/.repo/local_manifests/j2lte-slim.xml"
-            echo "slim_manifest ACTIVO"
-          else
-            echo "slim_manifest desactivado por input"
+
+          cp "$GITHUB_WORKSPACE/manifests/j2lte.xml" \
+             "$HOME/los20/.repo/local_manifests/j2lte.xml"
+
+          cp "$GITHUB_WORKSPACE/manifests/j2lte-slsi.xml" \
+             "$HOME/los20/.repo/local_manifests/j2lte-slsi.xml"
+
+          if [ "${{ github.event.inputs.slim_manifest }}" = "true" ]; then
+            cp "$GITHUB_WORKSPACE/manifests/j2lte-slim.xml" \
+               "$HOME/los20/.repo/local_manifests/j2lte-slim.xml"
           fi
 
-      - name: repo sync (-c --no-tags)
-        working-directory: ${{ github.workspace }}
+      - name: repo sync
+        working-directory: /home/runner/los20
         run: |
           set -e
-          cd "$HOME/los20"
-          time repo sync -c --no-tags --fail-fast -j4
-          echo "=== DF POST-SYNC ==="; df -h /
-
-      # FIX-054: NO podar .repo (rompe repo manifest para build-manifest.xml).
-      # Podar SOLO prebuilts no esenciales y source trees innecesarios.
-      # Preserva estructura git completa para repo manifest -r.
-      - name: "Poda selectiva post-sync (~21.5G) - FIX-054"
-        if: ${{ github.event.inputs.prune_repo != 'false' }}
-        run: |
-          set -e
-          cd "$HOME/los20"
-          echo "=== ANTES ==="
+          repo sync -c --no-tags --fail-fast -j4
           df -h /
-          rm -rf prebuilts/remoteexecution-client \
-                 prebuilts/abi-dumps \
-                 prebuilts/android-emulator \
-                 developers platform_testing
-          echo "=== DESPUES ==="
-          df -h /
-      # FIX-055: paso "Git stubs post-poda" (FIX-053) eliminado — vestigial
-      # tras FIX-054: con .repo preservado los proyectos conservan su .git
-      # real y 'repo manifest -r' funciona nativamente. El paso destruía
-      # esa estructura (rm -f .git + git init por proyecto) y era el motivo
-      # del run cancelado 32897446158.
 
-      # FIX-052/059: eliminar tests que referencian módulos de test
-      # ausentes en este checkout reducido. No son necesarios para
-      # construir la ROM del dispositivo.
-            # FIX-052/059: eliminar tests que referencian módulos de test
-      # ausentes en este checkout reducido. No son necesarios para
-      # construir la ROM del dispositivo.
-      - name: "Remover módulos test rotos de Mainline/Framework - FIX-059"
+      # ============================================================
+      # PODAS OPCIONALES
+      # ============================================================
+
+      - name: Poda repo opcional
+        if: ${{ github.event.inputs.prune_repo == 'true' }}
         working-directory: /home/runner/los20
         run: |
           set -e
 
-          # Connectivity: cts_defaults
+          rm -rf \
+            prebuilts/remoteexecution-client \
+            prebuilts/abi-dumps \
+            prebuilts/android-emulator \
+            developers \
+            platform_testing
+
+          df -h /
+
+      - name: Poda de tests opcional
+        if: ${{ github.event.inputs.prune_tests == 'true' }}
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+
           rm -rf packages/modules/Connectivity/tests
-
-          # WiFi Mainline: mts-target-sdk-version-current
           rm -rf packages/modules/Wifi/service/tests/mts
-
-          # Permission/SafetyCenter: mts-target-sdk-version-current
           rm -rf packages/modules/Permission/SafetyCenter/Config/tests
-
-          # Frameworks/base PackageManager: cts_support_defaults
           rm -rf frameworks/base/services/tests/PackageManagerServiceTests/host/test-apps/OverlayTarget
-
-          # IPsec/IKE tests: framework-connectivity-test-defaults
           rm -rf packages/modules/IPsec/tests
 
-          echo "=== módulos/test problemáticos eliminados ==="
-          
-      # FIX-058: diagnóstico SOLO LECTURA — medición real del árbol para
-      # decisiones basadas en datos (podas dirigidas / ubicación out/).
-      - name: "Diagnóstico disco (solo lectura) - FIX-058"
+      # ============================================================
+      # DIAGNOSTICO
+      # ============================================================
+
+      - name: Diagnóstico de disco
         working-directory: /home/runner/los20
         run: |
           df -h /
-          df -h /mnt || echo "(sin /mnt)"
-          echo "=== top-30 dirs del árbol ==="
-          du -sm ./* 2>/dev/null | sort -rn | head -30
-          echo "=== .repo detalle ==="
-          du -sm .repo/project-objects .repo/projects .repo/manifests 2>/dev/null || true
-          echo "=== out/ ==="
-          du -sm out 2>/dev/null || echo "(out no existe)"
-          echo "=== ccache ==="
-          du -sm "$CCACHE_DIR" 2>/dev/null || echo "(ccache vacío)"
+          df -h /mnt || true
+          du -sm ./* 2>/dev/null | sort -rn | head -20
+          du -sm out 2>/dev/null || true
 
-      - name: source envsetup.sh + lunch lineage_j2lte-userdebug
+      # ============================================================
+      # BUILD CONFIG
+      # ============================================================
+
+      - name: Configurar lunch
         working-directory: /home/runner/los20
         run: |
           set -e
+
           source build/envsetup.sh
           lunch lineage_j2lte-userdebug
 
-      - name: "GUARD de disco para systemimage-guard"
-        if: ${{ github.event.inputs.stage == 'systemimage-guard' }}
-        run: |
-          set -e
-          AVAIL_GB=$(df --output=avail -BG / | tail -1 | tr -dc '0-9')
-          MIN=${{ github.event.inputs.min_free_gb || 70 }}
-          echo "Libres: ${AVAIL_GB}G / requeridos ${MIN}G"
-          if [ "${AVAIL_GB}" -lt "${MIN}" ]; then
-            echo "::error::INFRASTRUCTURE-BLOCKED (FIX-014): ${AVAIL_GB}G < ${MIN}G. systemimage no debe ejecutarse aquí."
-            exit 90
-          fi
-
-      - name: "MEDICIÓN out/ ANTES"
-        working-directory: /home/runner/los20
-        run: du -sm out 2>/dev/null | awk '{printf "%8.2f GB out/ antes\n", $1/1024}' || echo "out/ no existe aún"
-
-      - name: "Resolver y validar REQUESTED_STAGE -> RESOLVED_TARGET"
+      - name: Resolver target
         working-directory: /home/runner/los20
         run: |
           set -e
-          REQ="${STAGE}"
-          case "$REQ" in
-            systemimage-guard) TARGET="systemimage" ;;
-            bootimage|recoveryimage) TARGET="$REQ" ;;
-            *) echo "::error::DISCREPANCIA stage/target: '$REQ' desconocido"; exit 64 ;;
+
+          case "$STAGE" in
+            systemimage-guard)
+              TARGET=systemimage
+              ;;
+            bootimage)
+              TARGET=bootimage
+              ;;
+            recoveryimage)
+              TARGET=recoveryimage
+              ;;
+            *)
+              echo "::error::Stage inválido: $STAGE"
+              exit 64
+              ;;
           esac
-          echo "REQUESTED_STAGE=$REQ"
+
+          echo "REQUESTED_STAGE=$STAGE"
           echo "RESOLVED_TARGET=$TARGET"
           echo "TARGET=$TARGET" >> "$GITHUB_ENV"
 
-      - name: ccache stats ANTES
-        if: always()
-        working-directory: /home/runner/los20
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE"
-          ccache -s 2>/dev/null | tee "$GITHUB_WORKSPACE/ccache_before.txt" || true
+      # ============================================================
+      # SYSTEM IMAGE GUARD
+      # ============================================================
 
-      - name: "mka targets (secuencial, reutiliza out/)"
+      - name: Guard de espacio para systemimage
+        if: ${{ github.event.inputs.stage == 'systemimage-guard' }}
+        run: |
+          set -e
+
+          AVAIL_GB=$(
+            df --output=avail -BG / |
+            tail -1 |
+            tr -dc '0-9'
+          )
+
+          MIN="${MIN_FREE_GB:-70}"
+
+          echo "Espacio libre: ${AVAIL_GB}G"
+          echo "Mínimo requerido: ${MIN}G"
+
+          if [ "$AVAIL_GB" -lt "$MIN" ]; then
+            echo "::error::No hay espacio suficiente para systemimage."
+            exit 90
+          fi
+
+      # ============================================================
+      # BUILD
+      # ============================================================
+
+      - name: ccache stats antes
+        if: always()
+        run: |
+          ccache -s || true
+
+      - name: Build targets
         working-directory: /home/runner/los20
         run: |
           set -o pipefail
+
           source build/envsetup.sh
           lunch lineage_j2lte-userdebug >/dev/null
-          # FIX-045: inicializar la secuencia con el TARGET principal
-          ALL_T="${TARGET}"
-          # FIX-044: validar EXTRA separadamente — systemimage solo es legítimo
-          # como TARGET principal cuando viene de stage=systemimage-guard.
+
+          ALL_TARGETS="$TARGET"
+
           if [ -n "$EXTRA" ]; then
-            OLD_IFS="$IFS"; IFS=','
-            for e in $EXTRA; do
-              case "$e" in
-                systemimage|systemimage-guard)
-                  echo "::error::FIX-014: 'systemimage' no está permitido en extra_targets. Único camino: stage=systemimage-guard." ; exit 67 ;;
-                bootimage|recoveryimage) ;;
-                *) echo "::error::target extra no permitido: $e"; exit 66 ;;
+            IFS=',' read -ra EXTRAS <<< "$EXTRA"
+
+            for extra in "${EXTRAS[@]}"; do
+              case "$extra" in
+                bootimage|recoveryimage)
+                  ;;
+                *)
+                  echo "::error::Target extra inválido: $extra"
+                  exit 66
+                  ;;
               esac
             done
-            IFS="$OLD_IFS"
-            ALL_T="$ALL_T,$EXTRA"
+
+            ALL_TARGETS="$ALL_TARGETS,$EXTRA"
           fi
-          echo "SECUENCIA=$ALL_T"
-          IFS=','
-          for t in $ALL_T; do
-            case "$t" in
-              bootimage|recoveryimage|systemimage) ;;
-              *) echo "::error::target no permitido en secuencia: $t"; exit 66 ;;
-            esac
-            echo "== mka $t =="
-            time mka "$t" -j"$(nproc)" 2>&1 | tee /tmp/stage.log || { RC=${PIPESTATUS[0]}; echo "STAGE_EXIT=$RC ($t)"; exit "$RC"; }
-            echo "OK: $t"
+
+          echo "SECUENCIA: $ALL_TARGETS"
+
+          IFS=',' read -ra TARGETS <<< "$ALL_TARGETS"
+
+          for target in "${TARGETS[@]}"; do
+            echo "========================================"
+            echo "BUILD: $target"
+            echo "========================================"
+
+            time mka "$target" -j"$(nproc)" \
+              2>&1 | tee /tmp/stage.log
+
+            RC=${PIPESTATUS[0]}
+
+            if [ "$RC" -ne 0 ]; then
+              echo "STAGE_EXIT=$RC ($target)"
+              exit "$RC"
+            fi
+
+            echo "OK: $target"
             df -h /
           done
 
-      - name: ccache stats DESPUÉS
-        if: always()
-        working-directory: /home/runner/los20
-        run: |
-          ccache -s 2>/dev/null | tee "$GITHUB_WORKSPACE/ccache_after.txt" || true
-          grep -E "Hit rate|Cache size|Misses" "$GITHUB_WORKSPACE/ccache_after.txt" | head -6 || true
+      # ============================================================
+      # RESULTADOS
+      # ============================================================
 
-      - name: "MEDICIÓN después + artefactos"
+      - name: ccache stats después
+        if: always()
+        run: |
+          ccache -s || true
+
+      - name: Recopilar artefactos
         if: always()
         working-directory: /home/runner/los20
         run: |
           set +e
-          df -h /
-          du -sm out 2>/dev/null | awk '{printf "%8.2f GB out/\n", $1/1024}'
-          echo "=== productos ==="
-          ls -la out/target/product/j2lte/ 2>/dev/null | head -25
-          mkdir -p "$GITHUB_WORKSPACE/artifacts"
-          cp out/target/product/j2lte/boot.img "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null || true
-          cp out/target/product/j2lte/recovery.img "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null || true
-          cp out/target/product/j2lte/system.img "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null || true
-          cp /tmp/stage.log "$GITHUB_WORKSPACE/artifacts/stage.log" 2>/dev/null || true
 
-      - name: Upload artefactos del stage
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+
+          PRODUCT=out/target/product/j2lte
+
+          cp "$PRODUCT/boot.img" \
+             "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null
+
+          cp "$PRODUCT/recovery.img" \
+             "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null
+
+          cp "$PRODUCT/system.img" \
+             "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null
+
+          cp /tmp/stage.log \
+             "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null
+
+          df -h /
+          du -sm out 2>/dev/null || true
+
+      - name: Upload artefactos
         if: always()
         uses: actions/upload-artifact@v4
         with:

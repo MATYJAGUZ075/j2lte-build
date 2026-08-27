@@ -193,7 +193,7 @@ jobs:
           rm -rf prebuilts/remoteexecution-client \
                  prebuilts/abi-dumps \
                  prebuilts/android-emulator \
-                 cts developers platform_testing
+                 developers platform_testing
           echo "=== DESPUES ==="
           df -h /
       # FIX-055: paso "Git stubs post-poda" (FIX-053) eliminado — vestigial

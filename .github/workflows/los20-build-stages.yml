@@ -202,16 +202,27 @@ jobs:
       # esa estructura (rm -f .git + git init por proyecto) y era el motivo
       # del run cancelado 32897446158.
 
-      # FIX-052: eliminar módulos test de Mainline que referencian dependencias
-      # indefinidas durante Soong bootstrap (mts-target-sdk-version-current,
-      # cts_defaults). No afectan la funcionalidad del sistema.
-      - name: Remover módulos test rotos de Mainline
+      # FIX-052/059: eliminar tests que referencian módulos de test
+      # ausentes en este checkout reducido. No son necesarios para
+      # construir la ROM del dispositivo.
+      - name: "Remover módulos test rotos de Mainline/Framework - FIX-059"
         working-directory: /home/runner/los20
         run: |
           set -e
-          rm -rf packages/modules/Connectivity/nearby/tests \
-                 packages/modules/Wifi/service/tests/mts
-          echo "=== test modules rotos eliminados ==="
+
+          # Connectivity: cts_defaults
+          rm -rf packages/modules/Connectivity/tests
+
+          # WiFi Mainline: mts-target-sdk-version-current
+          rm -rf packages/modules/Wifi/service/tests/mts
+
+          # Permission/SafetyCenter: mts-target-sdk-version-current
+          rm -rf packages/modules/Permission/SafetyCenter/Config/tests
+
+          # Frameworks/base PackageManager: cts_support_defaults
+          rm -rf frameworks/base/services/tests/PackageManagerServiceTests/host/test-apps/OverlayTarget
+
+          echo "=== módulos/test problemáticos eliminados ==="
 
       # FIX-058: diagnóstico SOLO LECTURA — medición real del árbol para
       # decisiones basadas en datos (podas dirigidas / ubicación out/).

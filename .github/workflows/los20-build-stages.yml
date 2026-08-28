@@ -41,15 +41,6 @@ on:
           - 'true'
           - 'false'
 
-      prune_prebuilts:
-        description: 'Eliminar prebuilts grandes (NO recomendado: puede romper build-manifest)'
-        required: true
-        default: 'false'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
-
 concurrency:
   group: los20-stages
   cancel-in-progress: false
@@ -205,26 +196,6 @@ jobs:
             .repo/projects
 
           echo "=== DISCO POST-PODA .repo ==="
-          df -h /
-
-      - name: Poda de prebuilts
-        if: ${{ github.event.inputs.prune_prebuilts == 'true' }}
-        working-directory: /home/runner/los20
-        run: |
-          set -e
-
-          echo "=== PREBUILTS ANTES ==="
-
-          du -sm \
-            prebuilts/remoteexecution-client \
-            prebuilts/android-emulator \
-            2>/dev/null || true
-
-          rm -rf \
-            prebuilts/remoteexecution-client \
-            prebuilts/android-emulator
-
-          echo "=== DISCO POST-PODA PREBUILTS ==="
           df -h /
 
       # ============================================================

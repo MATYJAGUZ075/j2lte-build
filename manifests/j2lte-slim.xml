@@ -43,8 +43,7 @@
   <!-- ===================== CAPA 2: VERIFICADOS (dev/tooling) ========== -->
 
   <!-- Gradle plugin: solo para desarrollo de proyectos gradle Android.
-       Sin refs en build/make ni build/soong. ~3.8G -->
-  <remove-project name="platform/prebuilts/gradle-plugin" />
+       Sin refs en build/make ni build/soong. ~3.8G (roto, no quitar) -->
 
   <!-- Maven repos: repositorios de artefactos Maven (3rd-party jars).
        Sin refs reales en core build (se descargan de host maven si hiciera

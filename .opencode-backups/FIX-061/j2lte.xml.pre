@@ -31,10 +31,6 @@
 
   <!-- FIX-060: fork de vendor/lineage pineado a lineage-20.0 para que CI
        reciba el fix de generated_kernel_includes (mkdir previo de O=). -->
-  <!-- FIX-061: quitar vendor/lineage del manifest base LOS
-       (LineageOS/android_vendor_lineage en snippets/lineage.xml) para
-       reintroducirlo desde el fork sin "duplicate path vendor/lineage". -->
-  <remove-project name="LineageOS/android_vendor_lineage" />
   <project name="android_vendor_lineage"
            path="vendor/lineage"
            remote="maty" revision="lineage-20.0" />

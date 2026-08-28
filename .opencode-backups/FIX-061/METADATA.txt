@@ -1,0 +1,4 @@
+repo=j2lte-build branch=main HEAD=b35df8d506910900583a745b7b92dc1462aa8600 fecha=2026-08-28T19:46:34-0300
+motivo=FIX-061 remove-project LineageOS/android_vendor_lineage (fix duplicate path)
+
+3c33f9f0807d47060ee7b5609af459ed0987c7e63c57c9f862e292f49c986bab  j2lte.xml.pre

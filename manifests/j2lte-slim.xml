@@ -58,8 +58,7 @@
   <!-- devtools: solo envsetup.sh. ~49M -->
   <remove-project name="platform/prebuilts/devtools" />
 
-  <!-- cmdline-tools: sin refs en core build. ~111M -->
-  <remove-project name="platform/prebuilts/cmdline-tools" />
+  <!-- cmdline-tools: sin refs en core build. (descartado, da error) ~111M -->
 
   <!-- ktlint: linter Kotlin, sin refs en core build. ~60M -->
   <remove-project name="platform/prebuilts/ktlint" />

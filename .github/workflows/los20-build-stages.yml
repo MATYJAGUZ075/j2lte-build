@@ -73,6 +73,28 @@ jobs:
         run: df -h /
 
       # ============================================================
+      # Storage diag
+      # ============================================================
+
+      - name: Diagnosticar almacenamiento
+        run: |
+          echo "=== DF ==="
+          df -h
+
+          echo
+          echo "=== LSBLK ==="
+          lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS
+
+          echo
+          echo "=== FINDMNT ==="
+          findmnt
+
+          echo
+          echo "=== /mnt ==="
+          ls -lah /mnt 2>/dev/null || true
+          df -h /mnt 2>/dev/null || true
+
+      # ============================================================
       # CCACHE + DEPENDENCIAS
       # ============================================================
 

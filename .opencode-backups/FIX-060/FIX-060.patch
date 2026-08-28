@@ -1,0 +1,29 @@
+From 8b1cc381b98d718d15768cc4df9e49a72b4401f5 Mon Sep 17 00:00:00 2001
+From: matyjaguz07 <matyjaguz07@users.noreply.github.com>
+Date: Fri, 28 Aug 2026 19:22:23 -0300
+Subject: [PATCH] FIX-060: mkdir previo del directorio O= genDir para
+ generated_kernel_includes
+
+El kernel 3.10 falla con "output directory does not exist" cuando el sbox
+de soong no pre-crea O=$(KERNEL_BUILD_OUT_PREFIX)$(genDir) antes de make.
+Prepend mkdir -p como hace kernel.mk.
+---
+ build/soong/Android.bp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/build/soong/Android.bp b/build/soong/Android.bp
+index 2029d7e..9d8519d 100644
+--- a/build/soong/Android.bp
++++ b/build/soong/Android.bp
+@@ -21,7 +21,7 @@ lineage_generator {
+     name: "generated_kernel_includes",
+ 
+     // The headers make command
+-    cmd: "$(PATH_OVERRIDE_SOONG) $(KERNEL_MAKE_CMD) $(KERNEL_MAKE_FLAGS) -C $(TARGET_KERNEL_SOURCE) O=$(KERNEL_BUILD_OUT_PREFIX)$(genDir) ARCH=$(KERNEL_ARCH) $(KERNEL_CROSS_COMPILE) headers_install",
++    cmd: "mkdir -p $(KERNEL_BUILD_OUT_PREFIX)$(genDir) && $(PATH_OVERRIDE_SOONG) $(KERNEL_MAKE_CMD) $(KERNEL_MAKE_FLAGS) -C $(TARGET_KERNEL_SOURCE) O=$(KERNEL_BUILD_OUT_PREFIX)$(genDir) ARCH=$(KERNEL_ARCH) $(KERNEL_CROSS_COMPILE) headers_install",
+ 
+     // Directories that can be imported by a cc_* module generated_headers property
+     export_include_dirs: [
+-- 
+2.17.1
+

@@ -28,10 +28,4 @@
   <project name="android_vendor_samsung"
            path="vendor/samsung"
            remote="maty" revision="lineage-17.1" />
-
-  <!-- FIX-060: fork de vendor/lineage pineado a lineage-20.0 para que CI
-       reciba el fix de generated_kernel_includes (mkdir previo de O=). -->
-  <project name="android_vendor_lineage"
-           path="vendor/lineage"
-           remote="maty" revision="lineage-20.0" />
 </manifest>

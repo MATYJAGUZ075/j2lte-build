@@ -1,0 +1,15 @@
+repo=j2lte-build branch=main HEAD=f6117ff fecha=2026-08-28T22:24:00-03:00
+motivo=FIX-060 mkdir previo de O=$(KERNEL_BUILD_OUT_PREFIX)$(genDir) para generated_kernel_includes
+
+Fix: kernel 3.10 + sbox de soong fallaba con "output directory does not exist"
+al compilar generated_kernel_includes porque el sandbox no pre-crea el
+directorio O= real antes de make. Prepend mkdir -p (mismo patron que kernel.mk).
+
+Archivos respaldados (estado pre-FIX-060):
+493002c39c0d1ac1b665040a7f1c3918472b39ce51887e727483f6d6b2dd687a  Android.bp.pre
+743744f17a01d1c6a3b079e135ee91681ea31735192aed541fb1b5683df4438b  j2lte.xml.pre
+f92eb74d770c9cfea5b96869666ff6bf56858c5f14528ea62e26bf6d880cc879  FIX-060.patch
+
+Nota: el diff de Android.bp se aplico en el fork MATYJAGUZ075/android_vendor_lineage
+(branch lineage-20.0, commit 8b1cc38) y se pineo en manifests/j2lte.xml
+(opcion A aprobada). No se ejecutaron builds ni workflows.

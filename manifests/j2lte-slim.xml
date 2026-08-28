@@ -47,9 +47,8 @@
 
   <!-- Maven repos: repositorios de artefactos Maven (3rd-party jars).
        Sin refs reales en core build (se descargan de host maven si hiciera
-       falta). ~656M -->
+       falta). (bumptech roto, no borrar) ~656M -->
   <remove-project name="platform/prebuilts/maven_repo/android" />
-  <remove-project name="platform/prebuilts/maven_repo/bumptech" />
 
   <!-- asuite: Android Studio tooling, solo envsetup.sh. ~65M -->
   <remove-project name="platform/prebuilts/asuite" />

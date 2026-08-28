@@ -1,46 +1,72 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
-  <!-- FIX-056 — VARIANTE B: manifest "slim" opcional.
-       NO reemplaza j2lte.xml ni j2lte-slsi.xml: se copia ADICIONALMENTE a
-       .repo/local_manifests/ para que estos 24 proyectos NUNCA se
-       descarguen. Equivale a la poda post-sync de FIX-054 pero movida al
-       nivel de manifest: ahorra también el espacio de .repo/project-objects
-       que FIX-054 preserva (~20-25G adicionales estimados; medir en CI).
+  <!-- j2lte-slim — reduce el árbol fuente jugando ÚNICAMENTE sobre prebuilts
+       que el build LINUX x86_64 de lineage_j2lte-userdebug NO necesita.
 
-       Reversibilidad: basta NO copiar este archivo → sync idéntico al actual.
+       REGLAS RESPETADAS:
+       - Nada de poda post-sync (todo se evita ya en repo sync).
+       - NO toca .repo/project-objects ni .repo/projects.
+       - NO incluye abi-dumps (siguiente escalón si aún no alcanza).
+       - NO incluye test/* ni cts ni platform_testing (riesgo documentado:
+         revert ea0c373 — art necesita csuite_test en Kati).
+       - NO incluye gcc/linux-x86/host/* (== LinuxGccRoot, toolchain host de
+         clang via x86_linux_host.go:135 — rompería el build).
+       - NO incluye prebuilts/misc (== YASM, config.mk:574 — rompería).
+       - NO incluye tools/sdk/runtime/r8 (referencias en core build, riesgo).
 
-       RIESGO DOCUMENTADO: el conjunto replica EXACTAMENTE la lista FIX-054,
-       incluyendo test/. Evidencia previa (revert ea0c373) indicaba que art
-       necesita csuite_test de test/ en Kati; ningún run ha validado aún mka
-       con esta lista completa. Si el build falla por eso, quitar las
-       entradas platform/test/* de este archivo (y del paso FIX-054) es la
-       corrección mínima.
+       Cada entrada clasificada y verificada contra referencias reales en
+       build/soong y build/make del árbol LOS20 (ver comentarios). -->
 
-       Nombres verificados contra:
-       https://raw.githubusercontent.com/LineageOS/android/lineage-20.0/default.xml -->
+  <!-- ===================== CAPA 1: 100% SEGUROS ===================== -->
 
-  <remove-project name="LineageOS/android_cts" />
-  <remove-project name="platform/developers/build" />
-  <remove-project name="platform/platform_testing" />
-  <remove-project name="platform/prebuilts/abi-dumps/ndk" />
-  <remove-project name="platform/prebuilts/abi-dumps/platform" />
-  <remove-project name="platform/prebuilts/abi-dumps/vndk" />
+  <!-- Emulador: solo se usa en desarrollo/arranque de emulador.
+       Ref build: únicamente build/make/envsetup.sh (uso dev). NUNCA para
+       el build de un device. ~1.6G -->
   <remove-project name="platform/prebuilts/android-emulator" />
+
+  <!-- Clang host darwin: seleccionado SOLO cuando HOST_OS=darwin
+       (combo/select.mk:24, Makefile:6916). Host Linux = no se toca. ~2G -->
+  <remove-project name="platform/prebuilts/clang/host/darwin-x86" />
+
+  <!-- Bazel darwin: solo host mac. ~33M -->
+  <remove-project name="platform/prebuilts/bazel/darwin-x86_64" />
+
+  <!-- Go darwin: solo host mac. ~612M -->
+  <remove-project name="platform/prebuilts/go/darwin-x86" />
+
+  <!-- Cliente RBE (remoteexecution): usa 'remoteexec' gated por UseRBE()/
+       UseRemoteBuild() en config.go:985-1001; NO se setea productVariables
+       en nuestro build (sin refs en build/make/core). Solo se instancia si
+       se invoca con remote-build. ~9.1G -->
   <remove-project name="platform/prebuilts/remoteexecution-client" />
 
-  <remove-project name="platform/test/cts-root" />
-  <remove-project name="platform/test/framework" />
-  <remove-project name="platform/test/mlts/benchmark" />
-  <remove-project name="platform/test/mlts/models" />
-  <remove-project name="platform/test/mts" />
-  <remove-project name="platform/test/vts" />
-  <remove-project name="platform/test/vts-testcase/fuzz" />
-  <remove-project name="platform/test/vts-testcase/hal" />
-  <remove-project name="platform/test/vts-testcase/hal-trace" />
-  <remove-project name="platform/test/vts-testcase/kernel" />
-  <remove-project name="platform/test/vts-testcase/nbu" />
-  <remove-project name="platform/test/vts-testcase/performance" />
-  <remove-project name="platform/test/vts-testcase/security" />
-  <remove-project name="platform/test/vts-testcase/vndk" />
-  <remove-project name="platform/test/catbox" />
+  <!-- ===================== CAPA 2: VERIFICADOS (dev/tooling) ========== -->
+
+  <!-- Gradle plugin: solo para desarrollo de proyectos gradle Android.
+       Sin refs en build/make ni build/soong. ~3.8G -->
+  <remove-project name="platform/prebuilts/gradle-plugin" />
+
+  <!-- Maven repos: repositorios de artefactos Maven (3rd-party jars).
+       Sin refs reales en core build (se descargan de host maven si hiciera
+       falta). ~656M -->
+  <remove-project name="platform/prebuilts/maven_repo/android" />
+  <remove-project name="platform/prebuilts/maven_repo/bumptech" />
+
+  <!-- asuite: Android Studio tooling, solo envsetup.sh. ~65M -->
+  <remove-project name="platform/prebuilts/asuite" />
+
+  <!-- devtools: solo envsetup.sh. ~49M -->
+  <remove-project name="platform/prebuilts/devtools" />
+
+  <!-- cmdline-tools: sin refs en core build. ~111M -->
+  <remove-project name="platform/prebuilts/cmdline-tools" />
+
+  <!-- ktlint: linter Kotlin, sin refs en core build. ~60M -->
+  <remove-project name="platform/prebuilts/ktlint" />
+
+  <!-- checkstyle: linter Java, sin refs en core build. ~6M -->
+  <remove-project name="platform/prebuilts/checkstyle" />
+
+  <!-- checkcolor: sin refs en core build. ~16K -->
+  <remove-project name="platform/prebuilts/checkcolor" />
 </manifest>

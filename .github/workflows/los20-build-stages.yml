@@ -32,15 +32,6 @@ on:
         required: false
         default: ''
 
-      prune_repo:
-        description: 'Liberar espacio post-sync eliminando objetos .repo (~25G)'
-        required: true
-        default: 'false'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
-
 concurrency:
   group: los20-stages
   cancel-in-progress: false
@@ -179,26 +170,6 @@ jobs:
           df -h /
 
       # ============================================================
-      # LIBERAR ESPACIO
-      # ============================================================
-
-      - name: Poda .repo
-        if: ${{ github.event.inputs.prune_repo == 'true' }}
-        working-directory: /home/runner/los20
-        run: |
-          set -e
-
-          echo "=== .repo ANTES ==="
-          du -sm .repo/project-objects .repo/projects 2>/dev/null || true
-
-          rm -rf \
-            .repo/project-objects \
-            .repo/projects
-
-          echo "=== DISCO POST-PODA .repo ==="
-          df -h /
-
-      # ============================================================
       # BUILD CONFIG
       # ============================================================
 
@@ -271,10 +242,24 @@ jobs:
         run: |
           ccache -s 2>/dev/null || true
 
+      - name: Medición de disco ANTES del build
+        working-directory: /home/runner/los20
+        run: |
+          set +e
+          echo "=== DISCO ANTES DE mka $STAGE ==="
+          df -h /
+          du -sh out 2>/dev/null || true
+          echo "=== Directorios más grandes en out/ ==="
+          du -sh out/* 2>/dev/null | sort -h | tail -20 || true
+
       - name: Build targets
         working-directory: /home/runner/los20
         run: |
           set -o pipefail
+
+          export WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY=true
+
+          echo "=== WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY=$WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY ==="
 
           source build/envsetup.sh
           lunch lineage_j2lte-userdebug >/dev/null
@@ -341,6 +326,17 @@ jobs:
         if: always()
         run: |
           ccache -s 2>/dev/null || true
+
+      - name: Medición de disco DESPUÉS del build
+        if: always()
+        working-directory: /home/runner/los20
+        run: |
+          set +e
+          echo "=== DISCO DESPUÉS DEL BUILD ==="
+          df -h /
+          du -sh out 2>/dev/null || true
+          echo "=== Directorios más grandes en out/ ==="
+          du -sh out/* 2>/dev/null | sort -h | tail -20 || true
 
       - name: Recopilar artefactos
         if: always()

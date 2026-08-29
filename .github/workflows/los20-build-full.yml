@@ -1,6 +1,14 @@
-# los20-build-full.yml — PRIMER BUILD COMPLETO de LineageOS 20 para j2lte
+# los20-build-full.yml — BUILD COMPLETO de LineageOS 20 para j2lte
 #
 # FIX-018 (2026-08-23): separado del lunch-check (que permanece intacto).
+# FIX-028: kernel genera zImage-dtb con DTB incorporado.
+# FIX-029: adaptación Clang del kernel 3.10.
+# FIX-030 (2026-08-29): sincronizado con las optimizaciones probadas en
+#   los20-build-stages.yml — symlinks de compat (libncurses/libtinfo/libc++),
+#   WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY=true, diagnóstico de
+#   almacenamiento, stats de ccache y medición de out/ antes y después del
+#   build. No se agrega selector de stage (systemimage/boot/recovery): este
+#   workflow sigue siendo específicamente para mka bacon.
 #
 # IMPORTANTE / FIX-014 (INFRASTRUCTURE-BLOCKED):
 #   El runner hospedado ubuntu-24.04 (~145G disco, 4 vCPU, 16G RAM) NO alcanza
@@ -11,7 +19,7 @@
 #   Para ejecutar un build real hace falta un runner con recursos suficientes
 #   (recomendado: self-hosted con >=16 vCPU, >=64G RAM, >=400G SSD libres).
 #   Uso futuro con self-hosted:
-#     gh workflow run los20-build-full.yml -f runner_label=<label> -f mode=bacon
+#     gh workflow run los20-build-full.yml -f runner_label=<label> -f mode=full-bacon
 #
 # ccache: reutiliza EXACTAMENTE la configuración de ff585b8
 #   (/home/runner/.ccache-j2lte, prefijo de clave ccache-j2lte-los20-*).
@@ -53,6 +61,11 @@ jobs:
       CCACHE_DIR: "/home/runner/.ccache-j2lte"
 
     steps:
+
+      # ============================================================
+      # RUNNER
+      # ============================================================
+
       - name: Checkout infra repo (manifests)
         uses: actions/checkout@v4
 
@@ -66,6 +79,35 @@ jobs:
           large-packages: true
           docker-images: true
           swap-storage: false
+
+      - name: Disco antes
+        run: df -h /
+
+      # ============================================================
+      # Storage diag (traído de build-stages)
+      # ============================================================
+
+      - name: Diagnosticar almacenamiento
+        run: |
+          echo "=== DF ==="
+          df -h
+
+          echo
+          echo "=== LSBLK ==="
+          lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS
+
+          echo
+          echo "=== FINDMNT ==="
+          findmnt
+
+          echo
+          echo "=== /mnt ==="
+          ls -lah /mnt 2>/dev/null || true
+          df -h /mnt 2>/dev/null || true
+
+      # ============================================================
+      # CCACHE + DEPENDENCIAS
+      # ============================================================
 
       - name: Restore cache ccache (compartido con lunch-check)
         uses: actions/cache@v4
@@ -87,11 +129,30 @@ jobs:
           git config --global user.name  "j2lte-ci"
           git config --global user.email "j2lte-ci@users.noreply.github.com"
           git lfs install
+
+          # symlinks de compat (traídos de build-stages)
+          sudo ln -sf \
+            /usr/lib/x86_64-linux-gnu/libncurses.so.6 \
+            /usr/lib/x86_64-linux-gnu/libncurses.so.5 || true
+
+          sudo ln -sf \
+            /usr/lib/x86_64-linux-gnu/libtinfo.so.6 \
+            /usr/lib/x86_64-linux-gnu/libtinfo.so.5 || true
+
+          sudo apt-get install -y libc++1 >/dev/null 2>&1 || \
+            sudo ln -sf \
+              /usr/lib/x86_64-linux-gnu/libc++.so.1 \
+              /usr/lib/x86_64-linux-gnu/libc++.so || true
+
           echo "=== ccache ==="
           ccache --version | head -1
           ccache -M 8G >/dev/null
           ccache -o compiler_check=content
           ccache -o namespace=j2lte-los20
+
+      # ============================================================
+      # SOURCE
+      # ============================================================
 
       - name: repo init LineageOS 20.0
         working-directory: ${{ github.workspace }}
@@ -113,6 +174,9 @@ jobs:
           mkdir -p "$HOME/los20/.repo/local_manifests"
           cp "$GITHUB_WORKSPACE/manifests/j2lte.xml"      "$HOME/los20/.repo/local_manifests/j2lte.xml"
           cp "$GITHUB_WORKSPACE/manifests/j2lte-slsi.xml" "$HOME/los20/.repo/local_manifests/j2lte-slsi.xml"
+          if [ -f "$GITHUB_WORKSPACE/manifests/j2lte-slim.xml" ]; then
+            cp "$GITHUB_WORKSPACE/manifests/j2lte-slim.xml" "$HOME/los20/.repo/local_manifests/j2lte-slim.xml"
+          fi
           cat "$HOME/los20/.repo/local_manifests/"*.xml
 
       - name: repo sync (-c --no-tags)
@@ -120,7 +184,10 @@ jobs:
         run: |
           set -e
           cd "$HOME/los20"
+          echo "=== DISCO PRE-SYNC ==="
+          df -h /
           time repo sync -c --no-tags --fail-fast -j4
+          echo "=== DISCO POST-SYNC ==="
           df -h /
 
       - name: GUARD espacio post-sync (FIX-014)
@@ -138,6 +205,10 @@ jobs:
             echo "mode=lunch-only -> guard superado, se continúa solo hasta lunch."
           fi
 
+      # ============================================================
+      # BUILD CONFIG
+      # ============================================================
+
       - name: source envsetup.sh + lunch lineage_j2lte-userdebug
         working-directory: /home/runner/los20
         run: |
@@ -146,15 +217,62 @@ jobs:
           lunch lineage_j2lte-userdebug
           echo "LUNCH_EXIT=$?"
 
+      # ============================================================
+      # BUILD
+      # ============================================================
+
+      - name: ccache stats antes
+        if: ${{ github.event.inputs.mode == 'full-bacon' }}
+        run: |
+          ccache -s 2>/dev/null || true
+
+      - name: Medición de disco ANTES del build
+        if: ${{ github.event.inputs.mode == 'full-bacon' }}
+        working-directory: /home/runner/los20
+        run: |
+          set +e
+          echo "=== DISCO ANTES DE mka bacon ==="
+          df -h /
+          du -sh out 2>/dev/null || true
+
       - name: mka bacon (build completo)
         if: ${{ github.event.inputs.mode == 'full-bacon' }}
         working-directory: /home/runner/los20
         run: |
-          set -e
+          set -o pipefail
           export USE_CCACHE=true
           export CCACHE_EXEC=/usr/bin/ccache
-          mka bacon -j"$(nproc)" 2>&1 | tee /tmp/bacon.log
-          echo "BACON_RC=$?"
+          export WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY=true
+
+          echo "=== WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY=$WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY ==="
+
+          source build/envsetup.sh
+          lunch lineage_j2lte-userdebug >/dev/null
+
+          time mka bacon -j"$(nproc)" 2>&1 | tee /tmp/bacon.log
+          RC=${PIPESTATUS[0]}
+          echo "BACON_RC=$RC"
+          exit "$RC"
+
+      - name: ccache stats después
+        if: always()
+        run: |
+          ccache -s 2>/dev/null || true
+
+      - name: Medición de disco DESPUÉS del build
+        if: always()
+        working-directory: /home/runner/los20
+        run: |
+          set +e
+          echo "=== DISCO DESPUÉS DEL BUILD ==="
+          df -h /
+          du -sh out 2>/dev/null || true
+          echo "=== Directorios más grandes en out/ ==="
+          du -sh out/* 2>/dev/null | sort -h | tail -20 || true
+
+      # ============================================================
+      # RESULTADOS
+      # ============================================================
 
       - name: Resumen y artefactos
         if: always()
@@ -163,10 +281,11 @@ jobs:
           df -h /
           echo "=== out/target (si existe) ==="
           ls -la out/target/product/* 2>/dev/null || echo "(sin productos)"
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
           if compgen -G "out/target/product/*/*.zip" > /dev/null; then
-            mkdir -p "$GITHUB_WORKSPACE/artifacts"
             cp out/target/product/*/*.zip "$GITHUB_WORKSPACE/artifacts/" || true
           fi
+          cp /tmp/bacon.log "$GITHUB_WORKSPACE/artifacts/bacon.log" 2>/dev/null || true
 
       - name: Upload target files
         if: always()

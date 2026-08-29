@@ -17,7 +17,7 @@
 
   <project name="android_hardware_samsung_slsi_exynos"
            path="hardware/samsung_slsi/exynos"
-           remote="exynos" revision="lineage-17.1" />
+           remote="maty" revision="lineage-17.1" />
 
   <project name="android_hardware_samsung_slsi_exynos5"
            path="hardware/samsung_slsi/exynos5"

@@ -1,0 +1,282 @@
+# los20-build-module.yml — DIAGNÓSTICO de compilación por módulo
+#
+# Objetivo: compilar UNO (o varios) módulos problemáticos con `mka` antes de
+# gastar ~1h en el build completo (mka bacon / systemimage).
+#
+# Reproduce el MISMO entorno que el build real:
+#   repo init (lineage-20.0) + local_manifests (j2lte + slsi + slim)
+#   -> repo sync -c --no-tags -j4
+#   -> lunch lineage_j2lte-userdebug
+#   -> mka <modulo>
+#
+# Reglas:
+#   - NO ejecuta bacon ni imágenes completas.
+#   - NO toca los workflows existentes (stages/full/diag/sync/lunch-check).
+#   - NO borra .repo, out/, fuentes, prebuilts ni proyectos Git.
+#   - NO cambia manifest, -j, memoria, device tree, kernel, FIX-028/029/063/064.
+#
+# Estructura pensada para escalar: cada módulo de diagnóstico es un valor del
+# input `module` (lista separada por comas). Para añadir otro módulo basta
+# agregarlo a las `options` y al case interno, sin rehacer el workflow.
+#
+# Uso típico para comprobar la resolución de los headers ION de OSAL:
+#   mka libExynosOMX_OSAL
+
+name: LOS20 build module (diag rapido)
+
+on:
+  workflow_dispatch:
+    inputs:
+      module:
+        description: 'Módulo(s) a compilar con mka, separados por coma'
+        required: true
+        default: 'libExynosOMX_OSAL'
+        type: string
+
+      min_free_gb:
+        description: 'GB libres mínimos antes de mka (guarda básica)'
+        required: false
+        default: '20'
+
+concurrency:
+  group: los20-module
+  cancel-in-progress: false
+
+jobs:
+  module-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+
+    env:
+      USE_CCACHE: true
+      CCACHE_EXEC: "/usr/bin/ccache"
+      CCACHE_DIR: "/home/runner/.ccache-j2lte"
+      MIN_FREE_GB: ${{ github.event.inputs.min_free_gb }}
+
+    steps:
+
+      # ============================================================
+      # RUNNER / ENTORNO (idéntico al build principal)
+      # ============================================================
+
+      - name: Checkout infra repo (manifests)
+        uses: actions/checkout@v4
+
+      - name: Liberar espacio del runner
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.ccache-j2lte
+          key: ccache-j2lte-los20-${{ github.run_id }}
+          restore-keys: |
+            ccache-j2lte-los20-
+
+      - name: Dependencias e install de repo
+        run: |
+          set -e
+
+          sudo apt-get update
+          sudo apt-get install -y git-lfs python3 curl ccache
+
+          mkdir -p "$HOME/bin"
+          curl -s \
+            https://storage.googleapis.com/git-repo-downloads/repo \
+            > "$HOME/bin/repo"
+          chmod a+x "$HOME/bin/repo"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+          git config --global user.name "j2lte-ci"
+          git config --global user.email "j2lte-ci@users.noreply.github.com"
+
+          git lfs install
+
+          sudo ln -sf \
+            /usr/lib/x86_64-linux-gnu/libncurses.so.6 \
+            /usr/lib/x86_64-linux-gnu/libncurses.so.5 || true
+
+          sudo ln -sf \
+            /usr/lib/x86_64-linux-gnu/libtinfo.so.6 \
+            /usr/lib/x86_64-linux-gnu/libtinfo.so.5 || true
+
+          sudo apt-get install -y libc++1 >/dev/null 2>&1 || \
+            sudo ln -sf \
+              /usr/lib/x86_64-linux-gnu/libc++.so.1 \
+              /usr/lib/x86_64-linux-gnu/libc++.so || true
+
+          ccache --version | head -1
+          ccache -M 8G >/dev/null
+          ccache -o compiler_check=content
+          ccache -o namespace=j2lte-los20
+
+      # ============================================================
+      # SOURCE (mismo repo sync que el build real, SIN podas)
+      # ============================================================
+
+      - name: repo init
+        run: |
+          set -e
+
+          mkdir -p "$HOME/los20"
+          cd "$HOME/los20"
+
+          repo init \
+            --depth=1 \
+            -u https://github.com/LineageOS/android.git \
+            -b lineage-20.0 \
+            --git-lfs
+
+      - name: Configurar local manifests
+        run: |
+          set -e
+
+          mkdir -p "$HOME/los20/.repo/local_manifests"
+
+          cp "$GITHUB_WORKSPACE/manifests/j2lte.xml" \
+             "$HOME/los20/.repo/local_manifests/j2lte.xml"
+
+          cp "$GITHUB_WORKSPACE/manifests/j2lte-slsi.xml" \
+             "$HOME/los20/.repo/local_manifests/j2lte-slsi.xml"
+
+          cp "$GITHUB_WORKSPACE/manifests/j2lte-slim.xml" \
+             "$HOME/los20/.repo/local_manifests/j2lte-slim.xml"
+
+      - name: repo sync
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+
+          echo "=== DISCO PRE-SYNC ==="
+          df -h /
+
+          time repo sync \
+            -c \
+            --no-tags \
+            --fail-fast \
+            -j4
+
+          echo "=== DISCO POST-SYNC ==="
+          df -h /
+
+      # ============================================================
+      # LUNCH
+      # ============================================================
+
+      - name: lunch lineage_j2lte-userdebug
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+
+          source build/envsetup.sh
+          lunch lineage_j2lte-userdebug
+
+      # ============================================================
+      # GUARD básico de espacio
+      # ============================================================
+
+      - name: Guard de espacio
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+
+          AVAIL_GB=$(
+            df --output=avail -BG / |
+            tail -1 |
+            tr -dc '0-9'
+          )
+
+          MIN="${MIN_FREE_GB:-20}"
+
+          echo "Espacio libre: ${AVAIL_GB}G"
+          echo "Mínimo requerido: ${MIN}G"
+
+          if [ "$AVAIL_GB" -lt "$MIN" ]; then
+            echo "::error::No hay espacio suficiente para mka del módulo."
+            echo "::error::Libres: ${AVAIL_GB}G / requeridos: ${MIN}G"
+            exit 90
+          fi
+
+      # ============================================================
+      # mka del/los módulo(s) — se detiene ante el PRIMER error
+      # ============================================================
+
+      - name: mka modulo(s)
+        working-directory: /home/runner/los20
+        run: |
+          set -o pipefail
+
+          source build/envsetup.sh
+          lunch lineage_j2lte-userdebug >/dev/null
+
+          MODULES_INPUT="${{ github.event.inputs.module }}"
+
+          echo "MODULES_INPUT=$MODULES_INPUT"
+
+          OLD_IFS="$IFS"
+          IFS=','
+
+          for mod in $MODULES_INPUT; do
+            [ -z "$mod" ] && continue
+
+            echo ""
+            echo "=================================================="
+            echo "== mka $mod"
+            echo "=================================================="
+
+            time mka "$mod" -j"$(nproc)" \
+              2>&1 | tee "/tmp/${mod}-$(date +%s).log"
+
+            RC=${PIPESTATUS[0]}
+
+            if [ "$RC" -ne 0 ]; then
+              echo "::error::mka $mod falló con código $RC"
+              echo "MODULE_FAILED=$mod" >> "$GITHUB_ENV"
+              echo "MODULE_EXIT=$RC" >> "$GITHUB_ENV"
+              exit "$RC"
+            fi
+
+            echo "OK: mka $mod"
+          done
+
+          IFS="$OLD_IFS"
+
+      # ============================================================
+      # RESULTADOS
+      # ============================================================
+
+      - name: ccache stats
+        if: always()
+        run: ccache -s 2>/dev/null || true
+
+      - name: Recopilar logs
+        if: always()
+        working-directory: /home/runner/los20
+        run: |
+          set +e
+
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+
+          for f in /tmp/*.log; do
+            [ -f "$f" ] && cp "$f" "$GITHUB_WORKSPACE/artifacts/"
+          done
+
+          echo "=== DF final ==="
+          df -h /
+          du -sm out 2>/dev/null || true
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: module-${{ github.event.inputs.module }}-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: ignore

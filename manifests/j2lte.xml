@@ -41,6 +41,7 @@
 
   <!-- FIX-067: fork de frameworks/native pineado a lineage-20.0 para que CI
        reciba el fix de casts binder32bit en IPCThreadState.cpp. -->
+  <remove-project name="LineageOS/android_frameworks_native" />
   <project name="android_frameworks_native"
            path="frameworks/native"
            remote="maty" revision="lineage-20.0" />

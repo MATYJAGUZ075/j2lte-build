@@ -38,4 +38,10 @@
   <project name="android_vendor_lineage"
            path="vendor/lineage"
            remote="maty" revision="lineage-20.0" />
+
+  <!-- FIX-067: fork de frameworks/native pineado a lineage-20.0 para que CI
+       reciba el fix de casts binder32bit en IPCThreadState.cpp. -->
+  <project name="android_frameworks_native"
+           path="frameworks/native"
+           remote="maty" revision="lineage-20.0" />
 </manifest>

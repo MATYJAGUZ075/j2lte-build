@@ -194,36 +194,6 @@ jobs:
           echo "=== DISCO POST-SYNC ==="
           df -h /
 
-      - name: Poda post-sync (development)
-        working-directory: /home/runner/los20
-        run: |
-          set -e
-          echo "=== PODA ANTES ==="
-          df -h /
-          du -sh development 2>/dev/null || true
-
-          # Verificaciones de seguridad: debe existir como directorio raíz
-          if [ ! -d development ]; then
-            echo "::error::Directorio esperado no existe: development -> se aborta la poda"
-            exit 1
-          fi
-
-          # Verificar que resuelva exactamente dentro del árbol (no un enlace ambiguo)
-          PARENT="$(cd development && pwd)"
-          EXPECTED="$(pwd)/development"
-          if [ "$PARENT" != "$EXPECTED" ]; then
-            echo "::error::Resolución inesperada para development ($PARENT != $EXPECTED) -> abort"
-            exit 1
-          fi
-
-          rm -rf development
-
-          echo "=== PODA DESPUÉS ==="
-          df -h /
-          ls -d development 2>/dev/null \
-            && echo "::error::la poda no eliminó por completo" \
-            || echo "OK: development eliminado (cts y test conservados)"
-
       - name: Poda post-sync (prebuilts/rust/darwin-x86)
         working-directory: /home/runner/los20
         run: |

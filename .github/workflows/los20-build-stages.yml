@@ -194,6 +194,40 @@ jobs:
           echo "=== DISCO POST-SYNC ==="
           df -h /
 
+      - name: Poda post-sync (cts + test + development)
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA ANTES ==="
+          df -h /
+          du -sh cts test development 2>/dev/null || true
+
+          # Verificaciones de seguridad: deben existir como directorios raíz
+          for d in cts test development; do
+            if [ ! -d "$d" ]; then
+              echo "::error::Directorio esperado no existe: $d -> se aborta la poda"
+              exit 1
+            fi
+          done
+
+          # Verificar que NINGUNO sea el árbol devuelto (precaución extra)
+          for d in cts test development; do
+            PARENT="$(cd "$d" && pwd)"
+            EXPECTED="$(pwd)/$d"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $d ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+          done
+
+          rm -rf cts test development
+
+          echo "=== PODA DESPUÉS ==="
+          df -h /
+          ls -d cts test development 2>/dev/null \
+            && echo "::error::la poda no eliminó por completo" \
+            || echo "OK: cts, test y development eliminados"
+
       # ============================================================
       # BUILD CONFIG
       # ============================================================

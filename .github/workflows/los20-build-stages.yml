@@ -194,16 +194,16 @@ jobs:
           echo "=== DISCO POST-SYNC ==="
           df -h /
 
-      - name: Poda post-sync (cts + test + development)
+      - name: Poda post-sync (cts + development)
         working-directory: /home/runner/los20
         run: |
           set -e
           echo "=== PODA ANTES ==="
           df -h /
-          du -sh cts test development 2>/dev/null || true
+          du -sh cts development 2>/dev/null || true
 
           # Verificaciones de seguridad: deben existir como directorios raíz
-          for d in cts test development; do
+          for d in cts development; do
             if [ ! -d "$d" ]; then
               echo "::error::Directorio esperado no existe: $d -> se aborta la poda"
               exit 1
@@ -211,7 +211,7 @@ jobs:
           done
 
           # Verificar que NINGUNO sea el árbol devuelto (precaución extra)
-          for d in cts test development; do
+          for d in cts development; do
             PARENT="$(cd "$d" && pwd)"
             EXPECTED="$(pwd)/$d"
             if [ "$PARENT" != "$EXPECTED" ]; then
@@ -220,13 +220,49 @@ jobs:
             fi
           done
 
-          rm -rf cts test development
+          rm -rf cts development
 
           echo "=== PODA DESPUÉS ==="
           df -h /
-          ls -d cts test development 2>/dev/null \
+          ls -d cts development 2>/dev/null \
             && echo "::error::la poda no eliminó por completo" \
-            || echo "OK: cts, test y development eliminados"
+            || echo "OK: cts y development eliminados (test conservado)"
+
+      - name: Poda post-sync (prebuilts/rust/darwin-x86)
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA RUST DARWIN ANTES ==="
+          df -h /
+          du -sh prebuilts/rust/darwin-x86 2>/dev/null || true
+
+          # Verificaciones de seguridad: debe existir como directorio
+          if [ ! -d "prebuilts/rust/darwin-x86" ]; then
+            echo "::error::Directorio esperado no existe: prebuilts/rust/darwin-x86 -> se aborta la poda"
+            exit 1
+          fi
+
+          # Verificar que resuelva exactamente dentro del árbol (no un enlace ambiguo)
+          PARENT="$(cd prebuilts/rust/darwin-x86 && pwd)"
+          EXPECTED="$(pwd)/prebuilts/rust/darwin-x86"
+          if [ "$PARENT" != "$EXPECTED" ]; then
+            echo "::error::Resolución inesperada para prebuilts/rust/darwin-x86 ($PARENT != $EXPECTED) -> abort"
+            exit 1
+          fi
+
+          # Verificar que la toolchain linux-x86 (única usada en runner Linux) SÍ existe
+          if [ ! -d "prebuilts/rust/linux-x86" ]; then
+            echo "::error::prebuilts/rust/linux-x86 no existe -> se aborta (se protege la toolchain activa)"
+            exit 1
+          fi
+
+          rm -rf prebuilts/rust/darwin-x86
+
+          echo "=== PODA RUST DARWIN DESPUÉS ==="
+          df -h /
+          ls -d prebuilts/rust/darwin-x86 2>/dev/null \
+            && echo "::error::la poda no eliminó por completo" \
+            || echo "OK: prebuilts/rust/darwin-x86 eliminado"
 
       # ============================================================
       # BUILD CONFIG

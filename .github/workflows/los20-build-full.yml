@@ -318,9 +318,9 @@ jobs:
           set -o pipefail
           export USE_CCACHE=true
           export CCACHE_EXEC=/usr/bin/ccache
-          export WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY=true
+          export WITH_DEXPREOPT=false
 
-          echo "=== WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY=$WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY ==="
+          echo "=== WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY=$WITH_DEXPREOPT ==="
 
           source build/envsetup.sh
           lunch lineage_j2lte-userdebug >/dev/null

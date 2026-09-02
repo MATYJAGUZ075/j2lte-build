@@ -266,6 +266,37 @@ jobs:
               || echo "OK: prebuilts/jdk/$d eliminado"
           done
 
+      - name: Poda post-sync (prebuilts/android-emulator + remoteexecution-client)
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA ANDROID-EMULATOR + REMOTEEXECUTION ANTES ==="
+          df -h /
+          du -sh prebuilts/android-emulator prebuilts/remoteexecution-client 2>/dev/null || true
+
+          for d in android-emulator remoteexecution-client; do
+            if [ ! -d "prebuilts/$d" ]; then
+              echo "::error::Directorio esperado no existe: prebuilts/$d -> se aborta la poda"
+              exit 1
+            fi
+            PARENT="$(cd prebuilts/$d && pwd)"
+            EXPECTED="$(pwd)/prebuilts/$d"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada prebuilts/$d ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+          done
+
+          rm -rf prebuilts/android-emulator prebuilts/remoteexecution-client
+
+          echo "=== PODA ANDROID-EMULATOR + REMOTEEXECUTION DESPUÉS ==="
+          df -h /
+          for d in android-emulator remoteexecution-client; do
+            ls -d prebuilts/$d 2>/dev/null \
+              && echo "::error::la poda no eliminó $d" \
+              || echo "OK: prebuilts/$d eliminado"
+          done
+
       - name: GUARD espacio post-sync (FIX-014)
         run: |
           set -e

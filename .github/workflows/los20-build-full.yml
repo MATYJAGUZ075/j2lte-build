@@ -226,46 +226,6 @@ jobs:
             && echo "::error::la poda no eliminó por completo" \
             || echo "OK: prebuilts/rust/darwin-x86 eliminado"
 
-      - name: Poda post-sync (prebuilts/jdk/jdk9 + jdk17)
-        working-directory: /home/runner/los20
-        run: |
-          set -e
-          echo "=== PODA JDK9/JDK17 ANTES ==="
-          df -h /
-          du -sh prebuilts/jdk/jdk9 prebuilts/jdk/jdk17 2>/dev/null || true
-
-          # Proteger jdk11 (toolchain default de Soong, config.go:394-397)
-          if [ ! -d "prebuilts/jdk/jdk11" ]; then
-            echo "::error::prebuilts/jdk/jdk11 no existe -> se aborta (se protege la toolchain default)"
-            exit 1
-          fi
-
-          # Proteger jdk8 (tools.jar/rt.jar/jce.jar consumidos por use_tools_jar host)
-          if [ ! -d "prebuilts/jdk/jdk8" ]; then
-            echo "::error::prebuilts/jdk/jdk8 no existe -> se aborta (se protege tools.jar host)"
-            exit 1
-          fi
-
-          # Verificar resolución exacta dentro del árbol (no enlaces ambiguos)
-          for d in jdk9 jdk17; do
-            PARENT="$(cd prebuilts/jdk/$d && pwd)"
-            EXPECTED="$(pwd)/prebuilts/jdk/$d"
-            if [ "$PARENT" != "$EXPECTED" ]; then
-              echo "::error::Resolución inesperada prebuilts/jdk/$d ($PARENT != $EXPECTED) -> abort"
-              exit 1
-            fi
-          done
-
-          rm -rf prebuilts/jdk/jdk9 prebuilts/jdk/jdk17
-
-          echo "=== PODA JDK9/JDK17 DESPUÉS ==="
-          df -h /
-          for d in jdk9 jdk17; do
-            ls -d prebuilts/jdk/$d 2>/dev/null \
-              && echo "::error::la poda no eliminó $d" \
-              || echo "OK: prebuilts/jdk/$d eliminado"
-          done
-
       - name: Poda post-sync (prebuilts/android-emulator + remoteexecution-client)
         working-directory: /home/runner/los20
         run: |

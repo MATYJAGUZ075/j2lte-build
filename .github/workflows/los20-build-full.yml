@@ -266,44 +266,6 @@ jobs:
               || echo "OK: prebuilts/$d eliminado"
           done
 
-      - name: Poda post-sync (prebuilts/sdk 1..27)
-        working-directory: /home/runner/los20
-        run: |
-          set -e
-          echo "=== PODA SDK 1..27 ANTES ==="
-          df -h /
-          du -sh prebuilts/sdk/{1..27} 2>/dev/null || true
-
-          # Seguridad: prebuilts/sdk debe existir como proyecto (con su .git)
-          if [ ! -d "prebuilts/sdk/.git" ]; then
-            echo "::error::prebuilts/sdk/.git no existe -> se aborta (se protege el proyecto repo)"
-            exit 1
-          fi
-
-          # Conservar fuera de 1..27: 28..33, current, tools, extensions y cualquier
-          # otro contenido. Solo se eliminan los subdirectorios 1..27.
-          for d in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27; do
-            if [ -d "prebuilts/sdk/$d" ]; then
-              rm -rf "prebuilts/sdk/$d"
-              echo "eliminado: prebuilts/sdk/$d"
-            else
-              echo "skip: prebuilts/sdk/$d ya no existe"
-            fi
-          done
-
-          echo "=== PODA SDK 1..27 DESPUÉS ==="
-          df -h /
-
-          if [ ! -d "prebuilts/sdk/.git" ]; then
-            echo "::error::prebuilts/sdk/.git se perdio -> abort"
-            exit 1
-          fi
-          if [ ! -d "prebuilts/sdk/current" ] || [ ! -d "prebuilts/sdk/tools" ]; then
-            echo "::error::se perdio contenido fuera de 1..27 (current/tools) -> abort"
-            exit 1
-          fi
-          echo "OK: prebuilts/sdk/1..27 podados; .git, current y tools conservados"
-
       - name: GUARD espacio post-sync (FIX-014)
         run: |
           set -e

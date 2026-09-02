@@ -234,10 +234,15 @@ jobs:
           df -h /
           du -sh prebuilts/android-emulator prebuilts/remoteexecution-client 2>/dev/null || true
 
+          # Tolerante: el manifest j2lte-slim.xml ya puede haberlos excluido del
+          # repo sync via <remove-project>. Si no existen, se informa y se
+          # continúa (no abortar). Si existen, se podan.
+          MISSING=0
           for d in android-emulator remoteexecution-client; do
             if [ ! -d "prebuilts/$d" ]; then
-              echo "::error::Directorio esperado no existe: prebuilts/$d -> se aborta la poda"
-              exit 1
+              echo "skip: prebuilts/$d no existe (ya excluido por j2lte-slim.xml en repo sync) -> nada que podar"
+              MISSING=1
+              continue
             fi
             PARENT="$(cd prebuilts/$d && pwd)"
             EXPECTED="$(pwd)/prebuilts/$d"
@@ -247,7 +252,11 @@ jobs:
             fi
           done
 
-          rm -rf prebuilts/android-emulator prebuilts/remoteexecution-client
+          if [ "$MISSING" = "1" ]; then
+            echo "OK: sin poda post-sync necesaria (usa j2lte-slim.xml) -> continue"
+          else
+            rm -rf prebuilts/android-emulator prebuilts/remoteexecution-client
+          fi
 
           echo "=== PODA ANDROID-EMULATOR + REMOTEEXECUTION DESPUÉS ==="
           df -h /

@@ -358,6 +358,48 @@ jobs:
         run: |
           set -o pipefail
 
+          # --- MONITOR DE DISCO (diagnóstico de crecimiento de out/) ---
+          : > /tmp/disk-monitor.log
+          (
+            set +e
+            LF=/tmp/disk-monitor.log
+            show() {
+              {
+                echo "=== $(date -u +%FT%T) ==="
+                df -h /
+                echo "out_bytes=$(du -sb out 2>/dev/null | awk '{print $1}')"
+                echo "intermediates_bytes=$(du -sb out/soong/.intermediates 2>/dev/null | awk '{print $1}')"
+                echo "common_obj_bytes=$(du -sb out/target/common/obj 2>/dev/null | awk '{print $1}')"
+                echo "j2lte_obj_bytes=$(du -sb out/target/product/j2lte/obj 2>/dev/null | awk '{print $1}')"
+                echo "j2lte_symbols_bytes=$(du -sb out/target/product/j2lte/symbols 2>/dev/null | awk '{print $1}')"
+                echo "clang_procs=$(pgrep -c -f 'clang' 2>/dev/null || echo 0)"
+                echo "cc1plus_procs=$(pgrep -c cc1plus 2>/dev/null || echo 0)"
+                echo "nproc=$(nproc)"
+                echo "--- top dirs out/ ---"
+                du -sh out/* 2>/dev/null | sort -h | tail -20
+                echo "--- archivos que crecieron en los últimos 5 min ---"
+                find out -newermt '5 minutes ago' -type f -printf '%s %p\n' 2>/dev/null | sort -rn | head -15
+              } >> "$LF" 2>&1
+            }
+            while :; do
+              show
+              free_mb=$(df -B1 / | awk 'NR==2{print $4/1048576}')
+              if [ "${free_mb%.*}" -lt 2048 ]; then
+                echo "### UMBRAL 2GB free=${free_mb}MB -> muestreo crítico 10s" >> "$LF"
+                while :; do
+                  df -h / >> "$LF" 2>&1
+                  f2=$(df -B1 / | awk 'NR==2{print $4/1048576}')
+                  [ "${f2%.*}" -lt 100 ] && { echo "### ULTIMA_DF free=${f2}MB" >> "$LF"; break; }
+                  sleep 10
+                done
+              fi
+              sleep 300
+            done
+          ) &
+          MON_PID=$!
+          trap 'kill "$MON_PID" 2>/dev/null; wait "$MON_PID" 2>/dev/null || true; cat /tmp/disk-monitor.log >&2' EXIT
+          # --- FIN MONITOR ---
+
           export WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY=true
 
           echo "=== WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY=$WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY ==="
@@ -463,6 +505,9 @@ jobs:
 
           cp /tmp/stage.log \
             "$GITHUB_WORKSPACE/artifacts/stage.log" 2>/dev/null || true
+
+          cp /tmp/disk-monitor.log \
+            "$GITHUB_WORKSPACE/artifacts/disk-monitor.log" 2>/dev/null || true
 
       - name: Upload artefactos
         if: always()

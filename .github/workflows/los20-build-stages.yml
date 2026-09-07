@@ -359,19 +359,32 @@ jobs:
           set -o pipefail
 
           # --- MONITOR DE DISCO (diagnóstico de crecimiento de out/) ---
-          : > /tmp/disk-monitor.log
-          (
-            set +e
-            LF=/tmp/disk-monitor.log
-            show() {
+          LOG=/tmp/disk-monitor.log
+          : > "$LOG"
+
+          monitor_sample() {
+            local CRIT="$1"
+            local ts
+            ts=$(date -u +%FT%T)
+            if [ "$CRIT" = "1" ]; then
+              # --- MODO CRÍTICO: sin du -sb out completo (I/O) ---
               {
-                echo "=== $(date -u +%FT%T) ==="
+                echo "=== $ts [CRITICO] ==="
                 df -h /
-                echo "out_bytes=$(du -sb out 2>/dev/null | awk '{print $1}')"
-                echo "intermediates_bytes=$(du -sb out/soong/.intermediates 2>/dev/null | awk '{print $1}')"
-                echo "common_obj_bytes=$(du -sb out/target/common/obj 2>/dev/null | awk '{print $1}')"
-                echo "j2lte_obj_bytes=$(du -sb out/target/product/j2lte/obj 2>/dev/null | awk '{print $1}')"
-                echo "j2lte_symbols_bytes=$(du -sb out/target/product/j2lte/symbols 2>/dev/null | awk '{print $1}')"
+                du -sb -- out/soong/.intermediates out/target/common/obj \
+                  out/target/product/j2lte/obj out/target/product/j2lte/symbols \
+                  2>/dev/null
+                echo "--- top dirs out/ ---"
+                du -sh out/* 2>/dev/null | sort -h | tail -20
+              } | tee -a "$LOG"
+            else
+              # --- MODO NORMAL (cada 5 min) ---
+              {
+                echo "=== $ts ==="
+                df -h /
+                du -sb -- out out/soong/.intermediates out/target/common/obj \
+                  out/target/product/j2lte/obj out/target/product/j2lte/symbols \
+                  2>/dev/null
                 echo "clang_procs=$(pgrep -c -f 'clang' 2>/dev/null || echo 0)"
                 echo "cc1plus_procs=$(pgrep -c cc1plus 2>/dev/null || echo 0)"
                 echo "nproc=$(nproc)"
@@ -379,25 +392,40 @@ jobs:
                 du -sh out/* 2>/dev/null | sort -h | tail -20
                 echo "--- archivos que crecieron en los últimos 5 min ---"
                 find out -newermt '5 minutes ago' -type f -printf '%s %p\n' 2>/dev/null | sort -rn | head -15
-              } >> "$LF" 2>&1
-            }
+              } | tee -a "$LOG"
+            fi
+          }
+
+          (
+            set +e
             while :; do
-              show
               free_mb=$(df -B1 / | awk 'NR==2{print $4/1048576}')
-              if [ "${free_mb%.*}" -lt 2048 ]; then
-                echo "### UMBRAL 2GB free=${free_mb}MB -> muestreo crítico 10s" >> "$LF"
+              if [ "${free_mb%.*}" -lt 3072 ]; then
+                echo "### UMBRAL 3GB free=${free_mb}MB -> muestreo crítico iniciado" | tee -a "$LOG"
+                monitor_sample 1
+                i=0
                 while :; do
-                  df -h / >> "$LF" 2>&1
+                  df -h / | tee -a "$LOG"
+                  i=$(( (i + 1) % 8 ))
+                  if [ "$i" -eq 0 ]; then
+                    monitor_sample 1
+                  fi
                   f2=$(df -B1 / | awk 'NR==2{print $4/1048576}')
-                  [ "${f2%.*}" -lt 100 ] && { echo "### ULTIMA_DF free=${f2}MB" >> "$LF"; break; }
-                  sleep 10
+                  if [ "${f2%.*}" -lt 100 ]; then
+                    echo "### ULTIMA_DF free=${f2}MB" | tee -a "$LOG"
+                    df -h / | tee -a "$LOG"
+                    break
+                  fi
+                  sleep 15
                 done
+              else
+                monitor_sample 0
+                sleep 300
               fi
-              sleep 300
             done
           ) &
           MON_PID=$!
-          trap 'kill "$MON_PID" 2>/dev/null; wait "$MON_PID" 2>/dev/null || true; cat /tmp/disk-monitor.log >&2' EXIT
+          trap 'kill "$MON_PID" 2>/dev/null; wait "$MON_PID" 2>/dev/null || true; cat "$LOG" >&2' EXIT
           # --- FIN MONITOR ---
 
           export WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY=true

@@ -270,39 +270,34 @@ jobs:
               || echo "OK: prebuilts/$d eliminado"
           done
 
-      - name: Poda post-sync (prebuilts/runtime/mainline + prebuilts/misc/common/robolectric)
+      - name: Poda post-sync (prebuilts/runtime/mainline)
         working-directory: /home/runner/los20
         run: |
           set -e
-          echo "=== PODA RUNTIME/MAINLINE + MISC/COMMON/ROBOLECTRIC ANTES ==="
+          echo "=== PODA RUNTIME/MAINLINE ANTES ==="
           df -h /
 
-          # Tolerante: si algún directorio no existe (posible exclusión vía
-          # manifest), se informa y se continúa con los que sí existan.
-          for d in runtime/mainline misc/common/robolectric; do
-            if [ ! -d "prebuilts/$d" ]; then
-              echo "skip: prebuilts/$d no existe -> nada que podar"
-              continue
-            fi
-            # Verificar que resuelva exactamente dentro del árbol (no un enlace ambiguo)
-            PARENT="$(cd prebuilts/$d && pwd)"
-            EXPECTED="$(pwd)/prebuilts/$d"
-            if [ "$PARENT" != "$EXPECTED" ]; then
-              echo "::error::Resolución inesperada para prebuilts/$d ($PARENT != $EXPECTED) -> abort"
-              exit 1
-            fi
-          done
+          # Tolerante: si no existe (posible exclusión vía manifest), se informa y continúa.
+          if [ ! -d "prebuilts/runtime/mainline" ]; then
+            echo "skip: prebuilts/runtime/mainline no existe -> nada que podar"
+            exit 0
+          fi
+
+          # Verificar que resuelva exactamente dentro del árbol (no un enlace ambiguo)
+          PARENT="$(cd prebuilts/runtime/mainline && pwd)"
+          EXPECTED="$(pwd)/prebuilts/runtime/mainline"
+          if [ "$PARENT" != "$EXPECTED" ]; then
+            echo "::error::Resolución inesperada para prebuilts/runtime/mainline ($PARENT != $EXPECTED) -> abort"
+            exit 1
+          fi
 
           rm -rf prebuilts/runtime/mainline
-          rm -rf prebuilts/misc/common/robolectric
 
-          echo "=== PODA RUNTIME/MAINLINE + MISC/COMMON/ROBOLECTRIC DESPUÉS ==="
+          echo "=== PODA RUNTIME/MAINLINE DESPUÉS ==="
           df -h /
-          for d in runtime/mainline misc/common/robolectric; do
-            ls -d prebuilts/$d 2>/dev/null \
-              && echo "::error::la poda no eliminó $d" \
-              || echo "OK: prebuilts/$d eliminado"
-          done
+          ls -d prebuilts/runtime/mainline 2>/dev/null \
+            && echo "::error::la poda no eliminó por completo" \
+            || echo "OK: prebuilts/runtime/mainline eliminado"
 
       # ============================================================
       # BUILD CONFIG

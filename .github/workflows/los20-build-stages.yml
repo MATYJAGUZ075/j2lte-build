@@ -270,6 +270,35 @@ jobs:
               || echo "OK: prebuilts/$d eliminado"
           done
 
+      - name: Poda post-sync (prebuilts/qemu-kernel)
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA QEMU-KERNEL ANTES ==="
+          df -h /
+
+          # Tolerante: si no existe (posible exclusión vía manifest), se informa y continúa.
+          if [ ! -d "prebuilts/qemu-kernel" ]; then
+            echo "skip: prebuilts/qemu-kernel no existe -> nada que podar"
+            exit 0
+          fi
+
+          # Verificar que resuelva exactamente dentro del árbol (no un enlace ambiguo)
+          PARENT="$(cd prebuilts/qemu-kernel && pwd)"
+          EXPECTED="$(pwd)/prebuilts/qemu-kernel"
+          if [ "$PARENT" != "$EXPECTED" ]; then
+            echo "::error::Resolución inesperada para prebuilts/qemu-kernel ($PARENT != $EXPECTED) -> abort"
+            exit 1
+          fi
+
+          rm -rf prebuilts/qemu-kernel
+
+          echo "=== PODA QEMU-KERNEL DESPUÉS ==="
+          df -h /
+          ls -d prebuilts/qemu-kernel 2>/dev/null \
+            && echo "::error::la poda no eliminó por completo" \
+            || echo "OK: prebuilts/qemu-kernel eliminado"
+
       # ============================================================
       # BUILD CONFIG
       # ============================================================

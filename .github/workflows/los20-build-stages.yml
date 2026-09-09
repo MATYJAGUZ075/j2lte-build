@@ -230,6 +230,83 @@ jobs:
             && echo "::error::la poda no eliminó por completo" \
             || echo "OK: prebuilts/rust/darwin-x86 eliminado"
 
+      - name: Poda post-sync (prebuilts/rust/linux-x86 1.57.0/1.58.0/1.58.1)
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA RUST VERSIONES NO ACTIVAS ANTES ==="
+          df -h /
+          VERSIONS="prebuilts/rust/linux-x86/1.57.0 prebuilts/rust/linux-x86/1.58.0 prebuilts/rust/linux-x86/1.58.1"
+          du -sh $VERSIONS 2>/dev/null || true
+
+          # Verificar que la toolchain activa (RustDefaultVersion = 1.59.0) SÍ existe
+          if [ ! -d "prebuilts/rust/linux-x86/1.59.0" ]; then
+            echo "::error::prebuilts/rust/linux-x86/1.59.0 no existe -> se aborta (se protege la toolchain activa)"
+            exit 1
+          fi
+
+          for V in $VERSIONS; do
+            # Verificaciones de seguridad: debe existir como directorio
+            if [ ! -d "$V" ]; then
+              echo "::error::Directorio esperado no existe: $V -> se aborta la poda"
+              exit 1
+            fi
+
+            # Verificar que resuelva exactamente dentro del árbol (no un enlace ambiguo)
+            PARENT="$(cd "$V" && pwd)"
+            EXPECTED="$(pwd)/$V"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $V ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$V"
+
+            ls -d "$V" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $V" \
+              || echo "OK: $V eliminado"
+          done
+
+          echo "=== PODA RUST VERSIONES NO ACTIVAS DESPUÉS ==="
+          df -h /
+
+      - name: Poda post-sync (prebuilts/module_sdk/art snapshot inactivo @3)
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA MODULE_SDK ART/3 ANTES ==="
+          df -h /
+          TARGET=prebuilts/module_sdk/art/3
+          du -sh "$TARGET" 2>/dev/null || true
+
+          # Verificar que el snapshot activo (@1) del proyecto module_sdk/art SÍ existe
+          if [ ! -d "prebuilts/module_sdk/art/1" ]; then
+            echo "::error::prebuilts/module_sdk/art/1 no existe -> se aborta (se protege el snapshot activo @1)"
+            exit 1
+          fi
+
+          # Verificaciones de seguridad: debe existir como directorio
+          if [ ! -d "$TARGET" ]; then
+            echo "::error::Directorio esperado no existe: $TARGET -> se aborta la poda"
+            exit 1
+          fi
+
+          # Verificar que resuelva exactamente dentro del árbol (no un enlace ambiguo)
+          PARENT="$(cd "$TARGET" && pwd)"
+          EXPECTED="$(pwd)/$TARGET"
+          if [ "$PARENT" != "$EXPECTED" ]; then
+            echo "::error::Resolución inesperada para $TARGET ($PARENT != $EXPECTED) -> abort"
+            exit 1
+          fi
+
+          rm -rf "$TARGET"
+
+          echo "=== PODA MODULE_SDK ART/3 DESPUÉS ==="
+          df -h /
+          ls -d "$TARGET" 2>/dev/null \
+            && echo "::error::la poda no eliminó por completo" \
+            || echo "OK: $TARGET eliminado"
+
       - name: Poda post-sync (prebuilts/android-emulator + remoteexecution-client)
         working-directory: /home/runner/los20
         run: |

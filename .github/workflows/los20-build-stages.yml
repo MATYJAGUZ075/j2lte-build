@@ -385,7 +385,6 @@ jobs:
           TARGETS="
             tools/dexter/testdata
             external/libabigail/tests
-            frameworks/base/docs
             prebuilts/clang/host/linux-x86/clang-stable
             prebuilts/clang/host/linux-x86/profiles
           "

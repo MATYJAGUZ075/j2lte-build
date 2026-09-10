@@ -376,6 +376,53 @@ jobs:
             && echo "::error::la poda no eliminó por completo" \
             || echo "OK: prebuilts/runtime/mainline eliminado"
 
+      - name: Poda post-sync (Ronda 2 6 candidatas test/docs/clang)
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA RONDA 2 ANTES ==="
+          df -h /
+          TARGETS="
+            tools/dexter/testdata
+            external/libabigail/tests
+            external/vixl/test
+            frameworks/base/docs
+            prebuilts/clang/host/linux-x86/clang-stable
+            prebuilts/clang/host/linux-x86/profiles
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          # Tolerante: si la ruta no existe se informa y se continúa (no abortar).
+          # Protección: nunca eliminar un proyecto Git completo (contiene .git),
+          # porque rompería repo manifest (patrón jdk/qemu documentado).
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git completo, no subdir podable) -> se aborta"
+              exit 1
+            fi
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA RONDA 2 DESPUÉS ==="
+          df -h /
+
       # ============================================================
       # BUILD CONFIG
       # ============================================================

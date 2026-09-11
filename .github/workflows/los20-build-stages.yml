@@ -427,6 +427,61 @@ jobs:
           echo "=== PODA RONDA 2 DESPUÉS ==="
           df -h /
 
+      - name: "Poda post-sync (Tier 1: 14 candidatas SAFE)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA TIER 1 (14 SAFE) ANTES ==="
+          df -h /
+          TARGETS="
+            external/jackson-databind/docs
+            frameworks/base/media/tests
+            external/swiftshader/tests
+            packages/modules/Virtualization/libs
+            prebuilts/clang-tools/darwin-x86
+            prebuilts/build-tools/linux_musl-x86
+            prebuilts/misc/common/robolectric-native-prebuilt
+            external/tensorflow/tensorflow/compiler
+            external/tensorflow/tensorflow/python
+            external/tensorflow/tensorflow/lite/testing
+            external/deqp/external/openglcts
+            prebuilts/sdk/tools/darwin
+            prebuilts/sdk/tools/windows
+            prebuilts/build-tools/darwin-x86
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          # Tolerante: si la ruta no existe se informa y se continúa (no abortar).
+          # Protección: nunca eliminar un proyecto Git completo (contiene .git),
+          # porque rompería repo manifest (patrón jdk/qemu documentado).
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git completo, no subdir podable) -> se aborta"
+              exit 1
+            fi
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA TIER 1 DESPUÉS ==="
+          df -h /
+
       # ============================================================
       # BUILD CONFIG
       # ============================================================

@@ -27,6 +27,11 @@ on:
         required: false
         default: '40'
 
+      telemetry_free_gb:
+        description: 'GB libres que activan telemetría densa de diagnóstico (solo lectura)'
+        required: false
+        default: '25'
+
       extra_targets:
         description: 'Targets extra secuenciales: bootimage,recoveryimage'
         required: false
@@ -48,6 +53,7 @@ jobs:
       STAGE: ${{ github.event.inputs.stage }}
       MIN_FREE_GB: ${{ github.event.inputs.min_free_gb }}
       EXTRA: ${{ github.event.inputs.extra_targets }}
+      TELEM_FREE_GB: ${{ github.event.inputs.telemetry_free_gb }}
 
     steps:
 
@@ -509,72 +515,90 @@ jobs:
         run: |
           set -o pipefail
 
-          # --- MONITOR DE DISCO (diagnóstico de crecimiento de out/) ---
+          # --- MONITOR DE DISCO (distinguir ENOSPC / kill externo / runner) ---
           LOG=/tmp/disk-monitor.log
           : > "$LOG"
+          TELEM_FREE_GB_MB=$(( (${TELEM_FREE_GB:-25}) * 1024 ))
 
           ninja_progress() {
             grep -aoE '\[ *[0-9]+% +[0-9]+/[0-9]+\]' /tmp/stage.log 2>/dev/null \
               | tail -1 || true
           }
 
-          monitor_sample() {
-            local CRIT="$1"
-            local ts
-            local PROG
-            ts=$(date -u +%FT%T)
-            PROG=$(ninja_progress)
-            if [ "$CRIT" = "1" ]; then
-              # --- MODO CRÍTICO: muestreo denso, sin du -sb out completo (I/O) ---
-              {
-                echo "=== $ts [CRITICO] ==="
-                echo "ninja: ${PROG:-sin-progreso}"
-                df -h /
-                du -sb -- out/soong/.intermediates out/target/common/obj \
-                  out/target/product/j2lte/obj out/target/product/j2lte/symbols \
-                  2>/dev/null
-                echo "--- top dirs out/ ---"
-                du -sh out/* 2>/dev/null | sort -h | tail -20
-              } | tee -a "$LOG"
-            else
-              # --- MODO NORMAL (cada 5 min) ---
-              {
-                echo "=== $ts ==="
-                echo "ninja: ${PROG:-sin-progreso}"
-                df -h /
-                du -sb -- out out/soong/.intermediates out/target/common/obj \
-                  out/target/product/j2lte/obj out/target/product/j2lte/symbols \
-                  2>/dev/null
-                echo "clang_procs=$(pgrep -c -f 'clang' 2>/dev/null || echo 0)"
-                echo "cc1plus_procs=$(pgrep -c cc1plus 2>/dev/null || echo 0)"
-                echo "nproc=$(nproc)"
-                echo "--- top dirs out/ ---"
-                du -sh out/* 2>/dev/null | sort -h | tail -20
-                echo "--- archivos que crecieron en los últimos 5 min ---"
-                find out -newermt '5 minutes ago' -type f -printf '%s %p\n' 2>/dev/null | sort -rn | head -15
-              } | tee -a "$LOG"
-            fi
+          dmesg_probe() {
+            local out
+            out=$(dmesg --ctime 2>/dev/null) || out="$(sudo -n dmesg --ctime 2>/dev/null)" || { echo "dmesg: no disponible"; return 0; }
+            echo "$out" | grep -aiE 'out of memory|oom-kill|Killed process|hardware error|Call Trace|blk_update_request|I/O error' | tail -6
+          }
+
+          dmesg_tail() {
+            local out
+            out=$(dmesg --ctime 2>/dev/null) || out="$(sudo -n dmesg --ctime 2>/dev/null)" || { echo "dmesg: no disponible"; return 0; }
+            echo "$out" | tail -40
+          }
+
+          state_cheap() {
+            echo "ninja: $(ninja_progress)"
+            df -h /
+            df -i /
+            echo "procs: clang=$(pgrep -c -f clang 2>/dev/null||echo 0) cc1plus=$(pgrep -c cc1plus 2>/dev/null||echo 0) ninja=$(pgrep -c ninja 2>/dev/null||echo 0)"
+            grep -E 'Mem:|Swap:' /proc/meminfo
+          }
+
+          monitor_normal() {
+            echo "=== $(date -u +%FT%T) [NORMAL 5min] ==="
+            state_cheap
+            du -sb -- out out/soong/.intermediates out/target/common/obj \
+              out/target/product/j2lte/obj out/target/product/j2lte/symbols \
+              2>/dev/null
+            echo "--- top dirs out/ ---"
+            du -sh out/* 2>/dev/null | sort -h | tail -20
+            echo "--- archivos que crecieron en los últimos 5 min ---"
+            find out -newermt '5 minutes ago' -type f -printf '%s %p\n' 2>/dev/null | sort -rn | head -15
+          }
+
+          monitor_dense() {
+            echo "=== $(date -u +%FT%T) [DENSOS 5s] ==="
+            state_cheap
+            timeout 30 du -sh out 2>/dev/null
+            timeout 30 du -sh out/soong 2>/dev/null
+            timeout 30 du -sh out/host 2>/dev/null
+            timeout 30 du -sh out/target 2>/dev/null
+            timeout 30 du -sh /home/runner/.ccache-j2lte 2>/dev/null || true
+            timeout 30 du -sh out/soong/.intermediates/external/webrtc 2>/dev/null || true
+            echo "--- dmesg ---"
+            dmesg_probe
+          }
+
+          last_gasp() {
+            echo "### BAJISMO free -> volcado final ###"
+            df -h /
+            df -i /
+            free -m
+            echo "ninja: $(ninja_progress)"
+            ps -eo pid,ppid,stat,etime,args --sort=-%cpu | head -30
+            pgrep -af 'clang|cc1plus|ninja|mka' || true
+            echo "uptime: $(uptime)"
+            dmesg_tail
           }
 
           (
             set +e
             while :; do
               free_mb=$(df -B1 / | awk 'NR==2{print $4/1048576}')
-              if [ "${free_mb%.*}" -lt 10240 ]; then
-                echo "### UMBRAL 10GB free=${free_mb}MB -> muestreo denso iniciado" | tee -a "$LOG"
+              if [ "${free_mb%.*}" -lt "$TELEM_FREE_GB_MB" ]; then
+                echo "### UMBRAL ${TELEM_FREE_GB:-25}GB free=${free_mb}MB -> muestreo denso cada 5s ###" | tee -a "$LOG"
                 while :; do
-                  monitor_sample 1
+                  monitor_dense | tee -a "$LOG"
                   f2=$(df -B1 / | awk 'NR==2{print $4/1048576}')
                   if [ "${f2%.*}" -lt 100 ]; then
-                    echo "### ULTIMA_DF free=${f2}MB" | tee -a "$LOG"
-                    df -h / | tee -a "$LOG"
-                    echo "ninja: $(ninja_progress)" | tee -a "$LOG"
+                    last_gasp | tee -a "$LOG" 2>&1
                     break
                   fi
-                  sleep 15
+                  sleep 5
                 done
               else
-                monitor_sample 0
+                monitor_normal | tee -a "$LOG"
                 sleep 300
               fi
             done
@@ -643,6 +667,39 @@ jobs:
           done
 
           IFS="$OLD_IFS"
+
+      - name: Rescate de telemetría ante fallo/ENOSPC/kill
+        if: always()
+        run: |
+          set +e
+          echo "=== RESCATE TELEMETRÍA ==="
+          df -h / 2>&1
+          df -i / 2>&1
+          free -m 2>&1
+
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+
+          for f in /tmp/stage.log /tmp/disk-monitor.log; do
+            if [ -f "$f" ]; then
+              gzip -c "$f" > "$GITHUB_WORKSPACE/artifacts/$(basename "$f").gz" 2>/dev/null \
+                || cp "$f" "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null
+            fi
+          done
+
+          ps -eo pid,ppid,stat,etime,comm,args --sort=-%mem | head -30 \
+            > "$GITHUB_WORKSPACE/artifacts/ps-final.txt" 2>&1
+
+          pgrep -af 'clang|cc1plus|ninja|mka' > "$GITHUB_WORKSPACE/artifacts/procs-final.txt" 2>&1 || true
+          echo "uptime: $(uptime)" >> "$GITHUB_WORKSPACE/artifacts/procs-final.txt"
+
+          if ! dmesg --ctime 2>/dev/null | tail -40 > "$GITHUB_WORKSPACE/artifacts/dmesg-final.txt"; then
+            if ! sudo -n dmesg --ctime 2>/dev/null | tail -40 > "$GITHUB_WORKSPACE/artifacts/dmesg-final.txt"; then
+              echo "dmesg: no disponible" > "$GITHUB_WORKSPACE/artifacts/dmesg-final.txt"
+            fi
+          fi
+
+          echo "--- contenido de artifacts/ ---"
+          ls -la "$GITHUB_WORKSPACE/artifacts/" 2>&1
 
       # ============================================================
       # RESULTADOS

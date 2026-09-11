@@ -141,7 +141,7 @@ jobs:
               /usr/lib/x86_64-linux-gnu/libc++.so || true
 
           ccache --version | head -1
-          ccache -M 8G >/dev/null
+          ccache -M 4G >/dev/null
           ccache -o compiler_check=content
           ccache -o namespace=j2lte-los20
 
@@ -513,14 +513,22 @@ jobs:
           LOG=/tmp/disk-monitor.log
           : > "$LOG"
 
+          ninja_progress() {
+            grep -aoE '\[ *[0-9]+% +[0-9]+/[0-9]+\]' /tmp/stage.log 2>/dev/null \
+              | tail -1 || true
+          }
+
           monitor_sample() {
             local CRIT="$1"
             local ts
+            local PROG
             ts=$(date -u +%FT%T)
+            PROG=$(ninja_progress)
             if [ "$CRIT" = "1" ]; then
-              # --- MODO CRÍTICO: sin du -sb out completo (I/O) ---
+              # --- MODO CRÍTICO: muestreo denso, sin du -sb out completo (I/O) ---
               {
                 echo "=== $ts [CRITICO] ==="
+                echo "ninja: ${PROG:-sin-progreso}"
                 df -h /
                 du -sb -- out/soong/.intermediates out/target/common/obj \
                   out/target/product/j2lte/obj out/target/product/j2lte/symbols \
@@ -532,6 +540,7 @@ jobs:
               # --- MODO NORMAL (cada 5 min) ---
               {
                 echo "=== $ts ==="
+                echo "ninja: ${PROG:-sin-progreso}"
                 df -h /
                 du -sb -- out out/soong/.intermediates out/target/common/obj \
                   out/target/product/j2lte/obj out/target/product/j2lte/symbols \
@@ -551,20 +560,15 @@ jobs:
             set +e
             while :; do
               free_mb=$(df -B1 / | awk 'NR==2{print $4/1048576}')
-              if [ "${free_mb%.*}" -lt 3072 ]; then
-                echo "### UMBRAL 3GB free=${free_mb}MB -> muestreo crítico iniciado" | tee -a "$LOG"
-                monitor_sample 1
-                i=0
+              if [ "${free_mb%.*}" -lt 10240 ]; then
+                echo "### UMBRAL 10GB free=${free_mb}MB -> muestreo denso iniciado" | tee -a "$LOG"
                 while :; do
-                  df -h / | tee -a "$LOG"
-                  i=$(( (i + 1) % 8 ))
-                  if [ "$i" -eq 0 ]; then
-                    monitor_sample 1
-                  fi
+                  monitor_sample 1
                   f2=$(df -B1 / | awk 'NR==2{print $4/1048576}')
                   if [ "${f2%.*}" -lt 100 ]; then
                     echo "### ULTIMA_DF free=${f2}MB" | tee -a "$LOG"
                     df -h / | tee -a "$LOG"
+                    echo "ninja: $(ninja_progress)" | tee -a "$LOG"
                     break
                   fi
                   sleep 15
@@ -579,9 +583,9 @@ jobs:
           trap 'kill "$MON_PID" 2>/dev/null; wait "$MON_PID" 2>/dev/null || true; cat "$LOG" >&2' EXIT
           # --- FIN MONITOR ---
 
-          export WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY=true
+          export WITH_DEXPREOPT=false
 
-          echo "=== WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY=$WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY ==="
+          echo "=== WITH_DEXPREOPT=$WITH_DEXPREOPT ==="
 
           source build/envsetup.sh
           lunch lineage_j2lte-userdebug >/dev/null

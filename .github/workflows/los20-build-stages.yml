@@ -427,11 +427,11 @@ jobs:
           echo "=== PODA RONDA 2 DESPUÉS ==="
           df -h /
 
-      - name: "Poda post-sync (Tier 1: 14 candidatas SAFE)"
+      - name: "Poda post-sync (Tier 1: 13 candidatas SAFE)"
         working-directory: /home/runner/los20
         run: |
           set -e
-          echo "=== PODA TIER 1 (14 SAFE) ANTES ==="
+          echo "=== PODA TIER 1 (13 SAFE) ANTES ==="
           df -h /
           TARGETS="
             external/jackson-databind/docs
@@ -440,7 +440,6 @@ jobs:
             packages/modules/Virtualization/libs
             prebuilts/clang-tools/darwin-x86
             prebuilts/build-tools/linux_musl-x86
-            prebuilts/misc/common/robolectric-native-prebuilt
             external/tensorflow/tensorflow/compiler
             external/tensorflow/tensorflow/python
             external/tensorflow/tensorflow/lite/testing

@@ -1,3 +1,4 @@
+```yaml
 # los20-build-stages.yml
 # LineageOS 20 - Samsung J2 / j2lte
 #
@@ -427,15 +428,14 @@ jobs:
           echo "=== PODA RONDA 2 DESPUÉS ==="
           df -h /
 
-      - name: "Poda post-sync (Tier 1: 10 candidatas SAFE)"
+      - name: "Poda post-sync (Tier 1: 9 candidatas SAFE)"
         working-directory: /home/runner/los20
         run: |
           set -e
-          echo "=== PODA TIER 1 (10 SAFE) ANTES ==="
+          echo "=== PODA TIER 1 (9 SAFE) ANTES ==="
           df -h /
           TARGETS="
             external/jackson-databind/docs
-            frameworks/base/media/tests
             external/swiftshader/tests
             prebuilts/clang-tools/darwin-x86
             prebuilts/build-tools/linux_musl-x86
@@ -807,3 +807,4 @@ jobs:
           name: stage-${{ github.event.inputs.stage }}-${{ github.run_id }}
           path: artifacts/
           if-no-files-found: ignore
+```

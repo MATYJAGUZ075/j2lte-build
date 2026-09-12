@@ -66,4 +66,40 @@
 
   <!-- checkcolor: sin refs en core build. ~16K -->
   <remove-project name="platform/prebuilts/checkcolor" />
+
+  <!-- ===================== CAPA 3: KERNEL PREBUILTS GKI (j2lte usa 3.10 de fuente) ========== -->
+
+  <!-- Kernels GKI prebuilt: j2lte compila kernel 3.10 desde
+       kernel/samsung/exynos3475 (TARGET_KERNEL_SOURCE). Los prebuilts
+       5.4/5.10/5.15 + common-modules/virtual-device solo los consumen
+       productos emulator/goldfish/cuttlefish/gki (device/generic/*,
+       device/google/cuttlefish/*, emulator_arm64). Cero refs en
+       device/samsung, vendor/*, kernel/samsung, hardware/*, system/,
+       frameworks/, packages/ y build/soong; sus Android.bp definen solo
+       filegroups sin consumidores externos. Se excluyen vía manifest
+       (los arch/* contienen .git, no aptos para rm -rf post-sync).
+       ~240M -->
+  <remove-project name="kernel/prebuilts/5.4/arm64" />
+  <remove-project name="kernel/prebuilts/5.4/x86-64" />
+
+  <!-- Idem 5.10. ~280M -->
+  <remove-project name="kernel/prebuilts/5.10/arm64" />
+  <remove-project name="kernel/prebuilts/5.10/x86-64" />
+
+  <!-- Idem 5.15. ~273M -->
+  <remove-project name="kernel/prebuilts/5.15/arm64" />
+  <remove-project name="kernel/prebuilts/5.15/x86-64" />
+
+  <!-- Módulos GKI common-modules/virtual-device (solo dispositivo virtual).
+       ~370M -->
+  <remove-project name="kernel/prebuilts/common-modules/virtual-device/4.19/arm64" />
+  <remove-project name="kernel/prebuilts/common-modules/virtual-device/4.19/x86-64" />
+  <remove-project name="kernel/prebuilts/common-modules/virtual-device/5.4/arm64" />
+  <remove-project name="kernel/prebuilts/common-modules/virtual-device/5.4/x86-64" />
+  <remove-project name="kernel/prebuilts/common-modules/virtual-device/5.10/arm64" />
+  <remove-project name="kernel/prebuilts/common-modules/virtual-device/5.10/x86-64" />
+  <remove-project name="kernel/prebuilts/common-modules/virtual-device/5.15/arm64" />
+  <remove-project name="kernel/prebuilts/common-modules/virtual-device/5.15/x86-64" />
+  <remove-project name="kernel/prebuilts/common-modules/virtual-device/mainline/arm64" />
+  <remove-project name="kernel/prebuilts/common-modules/virtual-device/mainline/x86-64" />
 </manifest>

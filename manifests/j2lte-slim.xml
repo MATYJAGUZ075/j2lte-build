@@ -102,4 +102,11 @@
   <remove-project name="kernel/prebuilts/common-modules/virtual-device/5.15/x86-64" />
   <remove-project name="kernel/prebuilts/common-modules/virtual-device/mainline/arm64" />
   <remove-project name="kernel/prebuilts/common-modules/virtual-device/mainline/x86-64" />
+
+  <!-- Prebuilts restantes 4.19/mainline top-level (mismo caso GKI que CAPA 3:
+       solo emulator/goldfish/cuttlefish; j2lte usa kernel 3.10 de fuente).
+       4.19 top-level solo tiene arm64 en el manifest. ~65M + ~170M -->
+  <remove-project name="kernel/prebuilts/4.19/arm64" />
+  <remove-project name="kernel/prebuilts/mainline/arm64" />
+  <remove-project name="kernel/prebuilts/mainline/x86-64" />
 </manifest>

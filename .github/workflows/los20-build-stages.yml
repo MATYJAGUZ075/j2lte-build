@@ -147,7 +147,7 @@ jobs:
               /usr/lib/x86_64-linux-gnu/libc++.so || true
 
           ccache --version | head -1
-          ccache -M 4G >/dev/null
+          ccache -M 1G >/dev/null
           ccache -o compiler_check=content
           ccache -o namespace=j2lte-los20
 
@@ -475,6 +475,49 @@ jobs:
           done
 
           echo "=== PODA TIER 1 DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (autotest client+server)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA AUTOTEST ANTES ==="
+          df -h /
+          TARGETS="
+            external/autotest/client
+            external/autotest/server
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          # Tolerante: si la ruta no existe se informa y se continúa (no abortar).
+          # Protección: nunca eliminar un proyecto Git completo (contiene .git),
+          # porque rompería repo manifest (patrón jdk/qemu documentado).
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git completo, no subdir podable) -> se aborta"
+              exit 1
+            fi
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA AUTOTEST DESPUÉS ==="
           df -h /
 
       # ============================================================

@@ -9,6 +9,16 @@
 #   almacenamiento, stats de ccache y medición de out/ antes y después del
 #   build. No se agrega selector de stage (systemimage/boot/recovery): este
 #   workflow sigue siendo específicamente para mka bacon.
+# FIX-031 (2026-09-12): sincronizado el resto de las podas post-sync que
+#   ya estaban probadas en los20-build-stages.yml (rust linux-x86 versiones
+#   inactivas, module_sdk/art snapshot @3, runtime/mainline, Ronda 2, Tier 1
+#   SAFE, autotest) — antes solo tenía darwin-x86 y android-emulator/
+#   remoteexecution-client. El GUARD de espacio (FIX-014) se movió a DESPUÉS
+#   de todas las podas (igual que en stages), no a la mitad. Se agregó
+#   también el monitor de disco en vivo (muestreo normal/denso, dmesg probe,
+#   last_gasp) y el rescate de telemetría ante fallo/ENOSPC, adaptados de
+#   stages al target único "bacon" (sin loop de $STAGE/$EXTRA, ya que este
+#   workflow no separa por etapas).
 #
 # IMPORTANTE / FIX-014 (INFRASTRUCTURE-BLOCKED):
 #   El runner hospedado ubuntu-24.04 (~145G disco, 4 vCPU, 16G RAM) NO alcanza
@@ -45,6 +55,10 @@ on:
         description: 'GB libres mínimos post-sync para permitir bacon'
         required: false
         default: '70'
+      telemetry_free_gb:
+        description: 'GB libres que activan telemetría densa de diagnóstico (solo lectura)'
+        required: false
+        default: '25'
 
 concurrency:
   group: los20-full-build
@@ -59,6 +73,7 @@ jobs:
       USE_CCACHE: true
       CCACHE_EXEC: "/usr/bin/ccache"
       CCACHE_DIR: "/home/runner/.ccache-j2lte"
+      TELEM_FREE_GB: ${{ github.event.inputs.telemetry_free_gb }}
 
     steps:
 
@@ -190,6 +205,10 @@ jobs:
           echo "=== DISCO POST-SYNC ==="
           df -h /
 
+      # ============================================================
+      # PODAS POST-SYNC (sincronizadas desde los20-build-stages.yml)
+      # ============================================================
+
       - name: Poda post-sync (prebuilts/rust/darwin-x86)
         working-directory: /home/runner/los20
         run: |
@@ -225,6 +244,83 @@ jobs:
           ls -d prebuilts/rust/darwin-x86 2>/dev/null \
             && echo "::error::la poda no eliminó por completo" \
             || echo "OK: prebuilts/rust/darwin-x86 eliminado"
+
+      - name: Poda post-sync (prebuilts/rust/linux-x86 1.57.0/1.58.0/1.58.1)
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA RUST VERSIONES NO ACTIVAS ANTES ==="
+          df -h /
+          VERSIONS="prebuilts/rust/linux-x86/1.57.0 prebuilts/rust/linux-x86/1.58.0 prebuilts/rust/linux-x86/1.58.1"
+          du -sh $VERSIONS 2>/dev/null || true
+
+          # Verificar que la toolchain activa (RustDefaultVersion = 1.59.0) SÍ existe
+          if [ ! -d "prebuilts/rust/linux-x86/1.59.0" ]; then
+            echo "::error::prebuilts/rust/linux-x86/1.59.0 no existe -> se aborta (se protege la toolchain activa)"
+            exit 1
+          fi
+
+          for V in $VERSIONS; do
+            # Verificaciones de seguridad: debe existir como directorio
+            if [ ! -d "$V" ]; then
+              echo "::error::Directorio esperado no existe: $V -> se aborta la poda"
+              exit 1
+            fi
+
+            # Verificar que resuelva exactamente dentro del árbol (no un enlace ambiguo)
+            PARENT="$(cd "$V" && pwd)"
+            EXPECTED="$(pwd)/$V"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $V ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$V"
+
+            ls -d "$V" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $V" \
+              || echo "OK: $V eliminado"
+          done
+
+          echo "=== PODA RUST VERSIONES NO ACTIVAS DESPUÉS ==="
+          df -h /
+
+      - name: Poda post-sync (prebuilts/module_sdk/art snapshot inactivo @3)
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA MODULE_SDK ART/3 ANTES ==="
+          df -h /
+          TARGET=prebuilts/module_sdk/art/3
+          du -sh "$TARGET" 2>/dev/null || true
+
+          # Verificar que el snapshot activo (@1) del proyecto module_sdk/art SÍ existe
+          if [ ! -d "prebuilts/module_sdk/art/1" ]; then
+            echo "::error::prebuilts/module_sdk/art/1 no existe -> se aborta (se protege el snapshot activo @1)"
+            exit 1
+          fi
+
+          # Verificaciones de seguridad: debe existir como directorio
+          if [ ! -d "$TARGET" ]; then
+            echo "::error::Directorio esperado no existe: $TARGET -> se aborta la poda"
+            exit 1
+          fi
+
+          # Verificar que resuelva exactamente dentro del árbol (no un enlace ambiguo)
+          PARENT="$(cd "$TARGET" && pwd)"
+          EXPECTED="$(pwd)/$TARGET"
+          if [ "$PARENT" != "$EXPECTED" ]; then
+            echo "::error::Resolución inesperada para $TARGET ($PARENT != $EXPECTED) -> abort"
+            exit 1
+          fi
+
+          rm -rf "$TARGET"
+
+          echo "=== PODA MODULE_SDK ART/3 DESPUÉS ==="
+          df -h /
+          ls -d "$TARGET" 2>/dev/null \
+            && echo "::error::la poda no eliminó por completo" \
+            || echo "OK: $TARGET eliminado"
 
       - name: Poda post-sync (prebuilts/android-emulator + remoteexecution-client)
         working-directory: /home/runner/los20
@@ -265,6 +361,177 @@ jobs:
               && echo "::error::la poda no eliminó $d" \
               || echo "OK: prebuilts/$d eliminado"
           done
+
+      - name: Poda post-sync (prebuilts/runtime/mainline)
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA RUNTIME/MAINLINE ANTES ==="
+          df -h /
+
+          # Tolerante: si no existe (posible exclusión vía manifest), se informa y continúa.
+          if [ ! -d "prebuilts/runtime/mainline" ]; then
+            echo "skip: prebuilts/runtime/mainline no existe -> nada que podar"
+            exit 0
+          fi
+
+          # Verificar que resuelva exactamente dentro del árbol (no un enlace ambiguo)
+          PARENT="$(cd prebuilts/runtime/mainline && pwd)"
+          EXPECTED="$(pwd)/prebuilts/runtime/mainline"
+          if [ "$PARENT" != "$EXPECTED" ]; then
+            echo "::error::Resolución inesperada para prebuilts/runtime/mainline ($PARENT != $EXPECTED) -> abort"
+            exit 1
+          fi
+
+          rm -rf prebuilts/runtime/mainline
+
+          echo "=== PODA RUNTIME/MAINLINE DESPUÉS ==="
+          df -h /
+          ls -d prebuilts/runtime/mainline 2>/dev/null \
+            && echo "::error::la poda no eliminó por completo" \
+            || echo "OK: prebuilts/runtime/mainline eliminado"
+
+      - name: Poda post-sync (Ronda 2 6 candidatas test/docs/clang)
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA RONDA 2 ANTES ==="
+          df -h /
+          TARGETS="
+            tools/dexter/testdata
+            external/libabigail/tests
+            prebuilts/clang/host/linux-x86/clang-stable
+            prebuilts/clang/host/linux-x86/profiles
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          # Tolerante: si la ruta no existe se informa y se continúa (no abortar).
+          # Protección: nunca eliminar un proyecto Git completo (contiene .git),
+          # porque rompería repo manifest (patrón jdk/qemu documentado).
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git completo, no subdir podable) -> se aborta"
+              exit 1
+            fi
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA RONDA 2 DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (Tier 1: 9 candidatas SAFE)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA TIER 1 (9 SAFE) ANTES ==="
+          df -h /
+          TARGETS="
+            external/jackson-databind/docs
+            external/swiftshader/tests
+            prebuilts/clang-tools/darwin-x86
+            prebuilts/build-tools/linux_musl-x86
+            external/tensorflow/tensorflow/compiler
+            external/tensorflow/tensorflow/python
+            external/tensorflow/tensorflow/lite/testing
+            external/deqp/external/openglcts
+            prebuilts/build-tools/darwin-x86
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          # Tolerante: si la ruta no existe se informa y se continúa (no abortar).
+          # Protección: nunca eliminar un proyecto Git completo (contiene .git),
+          # porque rompería repo manifest (patrón jdk/qemu documentado).
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git completo, no subdir podable) -> se aborta"
+              exit 1
+            fi
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA TIER 1 DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (autotest client+server)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA AUTOTEST ANTES ==="
+          df -h /
+          TARGETS="
+            external/autotest/client
+            external/autotest/server
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          # Tolerante: si la ruta no existe se informa y se continúa (no abortar).
+          # Protección: nunca eliminar un proyecto Git completo (contiene .git),
+          # porque rompería repo manifest (patrón jdk/qemu documentado).
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git completo, no subdir podable) -> se aborta"
+              exit 1
+            fi
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA AUTOTEST DESPUÉS ==="
+          df -h /
+
+      # ============================================================
+      # GUARD (después de TODAS las podas, igual que en stages)
+      # ============================================================
 
       - name: GUARD espacio post-sync (FIX-014)
         run: |
@@ -316,6 +583,101 @@ jobs:
         working-directory: /home/runner/los20
         run: |
           set -o pipefail
+
+          # --- MONITOR DE DISCO (distinguir ENOSPC / kill externo / runner)
+          #     traído de los20-build-stages.yml, adaptado a target único
+          #     "bacon" (sin loop de $STAGE/$EXTRA). ---
+          LOG=/tmp/disk-monitor.log
+          : > "$LOG"
+          TELEM_FREE_GB_MB=$(( (${TELEM_FREE_GB:-25}) * 1024 ))
+
+          ninja_progress() {
+            grep -aoE '\[ *[0-9]+% +[0-9]+/[0-9]+\]' /tmp/bacon.log 2>/dev/null \
+              | tail -1 || true
+          }
+
+          dmesg_probe() {
+            local out
+            out=$(dmesg --ctime 2>/dev/null) || out="$(sudo -n dmesg --ctime 2>/dev/null)" || { echo "dmesg: no disponible"; return 0; }
+            echo "$out" | grep -aiE 'out of memory|oom-kill|Killed process|hardware error|Call Trace|blk_update_request|I/O error' | tail -6
+          }
+
+          dmesg_tail() {
+            local out
+            out=$(dmesg --ctime 2>/dev/null) || out="$(sudo -n dmesg --ctime 2>/dev/null)" || { echo "dmesg: no disponible"; return 0; }
+            echo "$out" | tail -40
+          }
+
+          state_cheap() {
+            echo "ninja: $(ninja_progress)"
+            df -h /
+            df -i /
+            echo "procs: clang=$(pgrep -c -f clang 2>/dev/null||echo 0) cc1plus=$(pgrep -c cc1plus 2>/dev/null||echo 0) ninja=$(pgrep -c ninja 2>/dev/null||echo 0)"
+            grep -E 'Mem:|Swap:' /proc/meminfo
+          }
+
+          monitor_normal() {
+            echo "=== $(date -u +%FT%T) [NORMAL 5min] ==="
+            state_cheap
+            du -sb -- out out/soong/.intermediates out/target/common/obj \
+              out/target/product/j2lte/obj out/target/product/j2lte/symbols \
+              2>/dev/null
+            echo "--- top dirs out/ ---"
+            du -sh out/* 2>/dev/null | sort -h | tail -20
+            echo "--- archivos que crecieron en los últimos 5 min ---"
+            find out -newermt '5 minutes ago' -type f -printf '%s %p\n' 2>/dev/null | sort -rn | head -15
+          }
+
+          monitor_dense() {
+            echo "=== $(date -u +%FT%T) [DENSOS 5s] ==="
+            state_cheap
+            timeout 30 du -sh out 2>/dev/null
+            timeout 30 du -sh out/soong 2>/dev/null
+            timeout 30 du -sh out/host 2>/dev/null
+            timeout 30 du -sh out/target 2>/dev/null
+            timeout 30 du -sh /home/runner/.ccache-j2lte 2>/dev/null || true
+            timeout 30 du -sh out/soong/.intermediates/external/webrtc 2>/dev/null || true
+            echo "--- dmesg ---"
+            dmesg_probe
+          }
+
+          last_gasp() {
+            echo "### BAJISMO free -> volcado final ###"
+            df -h /
+            df -i /
+            free -m
+            echo "ninja: $(ninja_progress)"
+            ps -eo pid,ppid,stat,etime,args --sort=-%cpu | head -30
+            pgrep -af 'clang|cc1plus|ninja|mka' || true
+            echo "uptime: $(uptime)"
+            dmesg_tail
+          }
+
+          (
+            set +e
+            while :; do
+              free_mb=$(df -B1 / | awk 'NR==2{print $4/1048576}')
+              if [ "${free_mb%.*}" -lt "$TELEM_FREE_GB_MB" ]; then
+                echo "### UMBRAL ${TELEM_FREE_GB:-25}GB free=${free_mb}MB -> muestreo denso cada 5s ###" | tee -a "$LOG"
+                while :; do
+                  monitor_dense | tee -a "$LOG"
+                  f2=$(df -B1 / | awk 'NR==2{print $4/1048576}')
+                  if [ "${f2%.*}" -lt 100 ]; then
+                    last_gasp | tee -a "$LOG" 2>&1
+                    break
+                  fi
+                  sleep 5
+                done
+              else
+                monitor_normal | tee -a "$LOG"
+                sleep 300
+              fi
+            done
+          ) &
+          MON_PID=$!
+          trap 'kill "$MON_PID" 2>/dev/null; wait "$MON_PID" 2>/dev/null || true; cat "$LOG" >&2' EXIT
+          # --- FIN MONITOR ---
+
           export USE_CCACHE=true
           export CCACHE_EXEC=/usr/bin/ccache
           export WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY=true
@@ -325,10 +687,45 @@ jobs:
           source build/envsetup.sh
           lunch lineage_j2lte-userdebug >/dev/null
 
+          echo "== mka bacon =="
+
           time mka bacon -j"$(nproc)" 2>&1 | tee /tmp/bacon.log
           RC=${PIPESTATUS[0]}
           echo "BACON_RC=$RC"
           exit "$RC"
+
+      - name: Rescate de telemetría ante fallo/ENOSPC/kill
+        if: always()
+        run: |
+          set +e
+          echo "=== RESCATE TELEMETRÍA ==="
+          df -h / 2>&1
+          df -i / 2>&1
+          free -m 2>&1
+
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+
+          for f in /tmp/bacon.log /tmp/disk-monitor.log; do
+            if [ -f "$f" ]; then
+              gzip -c "$f" > "$GITHUB_WORKSPACE/artifacts/$(basename "$f").gz" 2>/dev/null \
+                || cp "$f" "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null
+            fi
+          done
+
+          ps -eo pid,ppid,stat,etime,comm,args --sort=-%mem | head -30 \
+            > "$GITHUB_WORKSPACE/artifacts/ps-final.txt" 2>&1
+
+          pgrep -af 'clang|cc1plus|ninja|mka' > "$GITHUB_WORKSPACE/artifacts/procs-final.txt" 2>&1 || true
+          echo "uptime: $(uptime)" >> "$GITHUB_WORKSPACE/artifacts/procs-final.txt"
+
+          if ! dmesg --ctime 2>/dev/null | tail -40 > "$GITHUB_WORKSPACE/artifacts/dmesg-final.txt"; then
+            if ! sudo -n dmesg --ctime 2>/dev/null | tail -40 > "$GITHUB_WORKSPACE/artifacts/dmesg-final.txt"; then
+              echo "dmesg: no disponible" > "$GITHUB_WORKSPACE/artifacts/dmesg-final.txt"
+            fi
+          fi
+
+          echo "--- contenido de artifacts/ ---"
+          ls -la "$GITHUB_WORKSPACE/artifacts/" 2>&1
 
       - name: ccache stats después
         if: always()

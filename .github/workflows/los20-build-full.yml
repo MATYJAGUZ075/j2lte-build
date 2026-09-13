@@ -19,6 +19,14 @@
 #   last_gasp) y el rescate de telemetría ante fallo/ENOSPC, adaptados de
 #   stages al target único "bacon" (sin loop de $STAGE/$EXTRA, ya que este
 #   workflow no separa por etapas).
+# FIX-032 (2026-09-13): sincronizados 3 agregados nuevos de
+#   los20-build-stages.yml: env SKIP_ABI_CHECKS=true (salta ABI dumps
+#   .sdump/.lsdump, leído por Soong vía IsEnvTrue en cc/sabi.go); step de
+#   limpieza controlada de Swift preinstalado + toolchains extra (miniconda,
+#   pipx, az, microsoft) justo después de liberar espacio del runner; y
+#   step de diagnóstico de almacenamiento fuera de out/ (tmp, caches, opt,
+#   usr/share, var/log) antes del build, condicionado a mode=='full-bacon'
+#   igual que el resto de la sección de build de este workflow.
 #
 # IMPORTANTE / FIX-014 (INFRASTRUCTURE-BLOCKED):
 #   El runner hospedado ubuntu-24.04 (~145G disco, 4 vCPU, 16G RAM) NO alcanza
@@ -73,6 +81,10 @@ jobs:
       USE_CCACHE: true
       CCACHE_EXEC: "/usr/bin/ccache"
       CCACHE_DIR: "/home/runner/.ccache-j2lte"
+      # Salta la generación de ABI dumps (.sdump/.lsdump) que systemimage no
+      # necesita (solo los usa el goal debug findlsdumps). Reduce el pico de
+      # out/soong. Leído por Soong vía IsEnvTrue en cc/sabi.go.
+      SKIP_ABI_CHECKS: "true"
       TELEM_FREE_GB: ${{ github.event.inputs.telemetry_free_gb }}
 
     steps:
@@ -94,6 +106,39 @@ jobs:
           large-packages: true
           docker-images: true
           swap-storage: false
+
+      - name: Limpieza controlada de Swift preinstalado
+        run: |
+          set -e
+          echo "=== SWIFT PRE-INSTALL ANTES ==="
+          df -h /
+          if [ ! -d /usr/share/swift ]; then
+            echo "skip: /usr/share/swift no existe -> nada que limpiar"
+            exit 0
+          fi
+          du -sh /usr/share/swift
+          sudo rm -rf -- /usr/share/swift
+          if [ -e /usr/share/swift ]; then
+            echo "::error::no se pudo eliminar /usr/share/swift"
+            exit 1
+          fi
+          echo "OK: /usr/share/swift eliminado"
+          echo "=== TOOLCHAINS ADICIONALES (miniconda/pipx/az/microsoft) ==="
+          for T in /usr/share/miniconda /opt/pipx /usr/share/az_15.6.1 /opt/microsoft; do
+            if [ ! -e "$T" ]; then
+              echo "skip: $T no existe -> nada que limpiar"
+              continue
+            fi
+            du -sh "$T"
+            sudo rm -rf -- "$T"
+            if [ -e "$T" ]; then
+              echo "::error::no se pudo eliminar $T"
+              exit 1
+            fi
+            echo "OK: $T eliminado"
+          done
+          echo "=== SWIFT PRE-INSTALL DESPUÉS ==="
+          df -h /
 
       - name: Disco antes
         run: df -h /
@@ -161,7 +206,7 @@ jobs:
 
           echo "=== ccache ==="
           ccache --version | head -1
-          ccache -M 1G >/dev/null
+          ccache -M 8G >/dev/null
           ccache -o compiler_check=content
           ccache -o namespace=j2lte-los20
 
@@ -577,6 +622,19 @@ jobs:
           echo "=== DISCO ANTES DE mka bacon ==="
           df -h /
           du -sh out 2>/dev/null || true
+
+      - name: Diagnóstico de almacenamiento fuera de out
+        if: ${{ github.event.inputs.mode == 'full-bacon' }}
+        working-directory: /home/runner/los20
+        run: |
+          set +e
+          echo "===== STORAGE DIAGNOSTIC: BEFORE BACON ====="
+          df -h /
+          echo "===== TOP-LEVEL DIRECTORIES ====="
+          du -sh /tmp /var/tmp /home/runner/.cache /home/runner/* 2>/dev/null | sort -h
+          echo "===== SYSTEM DIRECTORIES ====="
+          du -sh /opt/* /usr/share/* /var/log/* 2>/dev/null | sort -h | tail -30
+          echo "===== END STORAGE DIAGNOSTIC ====="
 
       - name: mka bacon (build completo)
         if: ${{ github.event.inputs.mode == 'full-bacon' }}

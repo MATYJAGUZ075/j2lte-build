@@ -161,7 +161,7 @@ jobs:
 
           echo "=== ccache ==="
           ccache --version | head -1
-          ccache -M 8G >/dev/null
+          ccache -M 1G >/dev/null
           ccache -o compiler_check=content
           ccache -o namespace=j2lte-los20
 

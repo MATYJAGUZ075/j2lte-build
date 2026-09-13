@@ -95,6 +95,20 @@ jobs:
             exit 1
           fi
           echo "OK: /usr/share/swift eliminado"
+          echo "=== TOOLCHAINS ADICIONALES (miniconda/pipx/az/microsoft) ==="
+          for T in /usr/share/miniconda /opt/pipx /usr/share/az_15.6.1 /opt/microsoft; do
+            if [ ! -e "$T" ]; then
+              echo "skip: $T no existe -> nada que limpiar"
+              continue
+            fi
+            du -sh "$T"
+            sudo rm -rf -- "$T"
+            if [ -e "$T" ]; then
+              echo "::error::no se pudo eliminar $T"
+              exit 1
+            fi
+            echo "OK: $T eliminado"
+          done
           echo "=== SWIFT PRE-INSTALL DESPUÉS ==="
           df -h /
 

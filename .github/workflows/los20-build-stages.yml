@@ -603,6 +603,18 @@ jobs:
           echo "=== Directorios más grandes en out/ ==="
           du -sh out/* 2>/dev/null | sort -h | tail -20 || true
 
+      - name: Diagnóstico de almacenamiento fuera de out
+        working-directory: /home/runner/los20
+        run: |
+          set +e
+          echo "===== STORAGE DIAGNOSTIC: BEFORE SYSTEMIMAGE ====="
+          df -h /
+          echo "===== TOP-LEVEL DIRECTORIES ====="
+          du -sh /tmp /var/tmp /home/runner/.cache /home/runner/* 2>/dev/null | sort -h
+          echo "===== SYSTEM DIRECTORIES ====="
+          du -sh /opt/* /usr/share/* /var/log/* 2>/dev/null | sort -h | tail -30
+          echo "===== END STORAGE DIAGNOSTIC ====="
+
       - name: Build targets
         working-directory: /home/runner/los20
         run: |

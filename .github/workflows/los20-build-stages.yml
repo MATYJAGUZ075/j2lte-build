@@ -79,6 +79,25 @@ jobs:
           docker-images: true
           swap-storage: false
 
+      - name: Limpieza controlada de Swift preinstalado
+        run: |
+          set -e
+          echo "=== SWIFT PRE-INSTALL ANTES ==="
+          df -h /
+          if [ ! -d /usr/share/swift ]; then
+            echo "skip: /usr/share/swift no existe -> nada que limpiar"
+            exit 0
+          fi
+          du -sh /usr/share/swift
+          sudo rm -rf -- /usr/share/swift
+          if [ -e /usr/share/swift ]; then
+            echo "::error::no se pudo eliminar /usr/share/swift"
+            exit 1
+          fi
+          echo "OK: /usr/share/swift eliminado"
+          echo "=== SWIFT PRE-INSTALL DESPUÉS ==="
+          df -h /
+
       - name: Disco antes
         run: df -h /
 

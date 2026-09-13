@@ -50,6 +50,10 @@ jobs:
       USE_CCACHE: true
       CCACHE_EXEC: "/usr/bin/ccache"
       CCACHE_DIR: "/home/runner/.ccache-j2lte"
+      # Salta la generación de ABI dumps (.sdump/.lsdump) que systemimage no
+      # necesita (solo los usa el goal debug findlsdumps). Reduce el pico de
+      # out/soong. Leído por Soong vía IsEnvTrue en cc/sabi.go.
+      SKIP_ABI_CHECKS: "true"
       STAGE: ${{ github.event.inputs.stage }}
       MIN_FREE_GB: ${{ github.event.inputs.min_free_gb }}
       EXTRA: ${{ github.event.inputs.extra_targets }}

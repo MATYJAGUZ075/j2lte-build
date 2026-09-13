@@ -652,6 +652,26 @@ jobs:
           du -sh /opt/* /usr/share/* /var/log/* 2>/dev/null | sort -h | tail -30
           echo "===== END STORAGE DIAGNOSTIC ====="
 
+      - name: Inspección read-only de runner-cache y Gradle
+        working-directory: /home/runner/los20
+        run: |
+          set +e
+          echo "=== /opt/runner-cache ==="
+          sudo du -sh /opt/runner-cache 2>/dev/null || true
+          sudo ls -lah /opt/runner-cache 2>/dev/null || true
+          sudo du -sh /opt/runner-cache/* 2>/dev/null | sort -h || true
+          echo "=== /opt/actionarchivecache ==="
+          sudo du -sh /opt/actionarchivecache 2>/dev/null || true
+          sudo ls -lah /opt/actionarchivecache 2>/dev/null || true
+          sudo du -sh /opt/actionarchivecache/* 2>/dev/null | sort -h || true
+          echo "=== OUR CCACHE — DO NOT MODIFY ==="
+          du -sh /home/runner/.ccache-j2lte 2>/dev/null || true
+          echo "=== GRADLE EN PATH/WORKFLOW ==="
+          command -v gradle || echo "gradle no está en PATH"
+          ls -d /usr/share/gradle-9.7.1 2>/dev/null || echo "/usr/share/gradle-9.7.1 no existe"
+          echo "=== KOTLINC (candidata registrada 94M, NO borrar) ==="
+          du -sh /usr/share/kotlinc 2>/dev/null || true
+
       - name: Build targets
         working-directory: /home/runner/los20
         run: |

@@ -214,8 +214,10 @@
        Se excluyen vía manifest. Si bootstrap falla con undefined module,
        revertir el correspondiente. -->
 
+  <!-- platform/external/jackson-core RESTAURADO (run #125:
+       external/jackson-databind necesita jackson-core -> undefined module
+       sin external/jackson-core). NO volver a excluir. -->
   <remove-project name="device/generic/vulkan-cereal" />
   <remove-project name="platform/external/mesa3d" />
   <remove-project name="LineageOS/android_packages_apps_TV" />
-  <remove-project name="platform/external/jackson-core" />
 </manifest>

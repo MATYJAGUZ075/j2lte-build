@@ -111,12 +111,15 @@
   <remove-project name="kernel/prebuilts/mainline/x86-64" />
 
   <!-- ===================== CAPA 4: QCOM/PIXEL AJENOS (bloque completo) ========== -->
-  <!-- hardware/qcom-caf/* + hardware/qcom/* + device/google/cuttlefish* +
-       kernel/google/gs201/*: j2lte/Exynos3475 no los consume (cero refs en
-       su cierre). qcom-caf/common declara los linkfiles os_pickup_*, por eso
-       el bloque va COMPLETO: sin common no hay guards, sin hojas no hay
-       dest huérfanos. device/google/atv+contexthub+gs-common+vrservices y
-       device/qcom/* NO se tocan (fuera del alcance auditado). -->
+  <!-- hardware/qcom-caf/* + hardware/qcom/* + kernel/google/gs201/*:
+       j2lte/Exynos3475 no los consume (cero refs en su cierre).
+       qcom-caf/common declara los linkfiles os_pickup_*, por eso el bloque
+       va COMPLETO: sin common no hay guards, sin hojas no hay dest huérfanos.
+       device/google/cuttlefish* RESTAURADO (run #118: microdroid/payload
+       necesita libcdisk_spec/libcuttlefish_fs/libcuttlefish_utils/
+       libimage_aggregator -> undefined module sin Cuttlefish).
+       device/google/atv+contexthub+gs-common+vrservices y device/qcom/*
+       NO se tocan (fuera del alcance auditado). -->
 
   <remove-project name="LineageOS/android_hardware_qcom-caf_common" />
   <remove-project name="LineageOS/android_hardware_qcom_audio" />
@@ -143,8 +146,6 @@
   <remove-project name="LineageOS/android_hardware_qcom_wlan" />
   <remove-project name="LineageOS/android_vendor_qcom_opensource_agm" />
   <remove-project name="LineageOS/android_vendor_qcom_opensource_arpal-lx" />
-  <remove-project name="device/google/cuttlefish" />
-  <remove-project name="device/google/cuttlefish_prebuilts" />
   <remove-project name="kernel/devices/google/bluejay" />
   <remove-project name="kernel/devices/google/felix" />
   <remove-project name="kernel/devices/google/lynx" />

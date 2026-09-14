@@ -654,24 +654,18 @@ jobs:
           echo "=== PODA EXTRAS ANTES ==="
           df -h /
           TARGETS="
-            system/extras/simpleperf
             system/extras/memory_replay
             system/extras/ioshark
-            system/extras/perf2cfg
-            system/extras/profcollectd
           "
           du -sh $TARGETS 2>/dev/null || true
 
           # Tolerante: si la ruta no existe se informa y se continúa (no abortar).
           # Protección: nunca eliminar un proyecto Git completo (contiene .git),
           # porque rompería repo manifest (patrón jdk/qemu documentado).
-          # Herramientas de profiling host sin consumidores en el grafo j2lte.
-          # FIX-030: perf2cfg/Android.bp define "perf2cfg_library", que
-          # depende del módulo "simpleperf_report_lib" (definido dentro de
-          # system/extras/simpleperf). Al podar simpleperf sin podar también
-          # perf2cfg, Soong falla el bootstrap con "depends on undefined
-          # module simpleperf_report_lib" (run 34794326156). Se poda junto
-          # con simpleperf para no dejar un consumidor huérfano.
+          # Herramientas de profiling host sin consumidores en el grafo j2lte
+          # (verificado: sin refs en system/frameworks/packages/cts/vendor).
+          # NOTA: system/extras/simpleperf NO se poda (runs #117/#119/#120:
+          # perf2cfg, profcollectd y cts-simpleperf dependen de sus módulos).
           for T in $TARGETS; do
             if [ ! -d "$T" ]; then
               echo "skip: $T no existe -> nada que podar"

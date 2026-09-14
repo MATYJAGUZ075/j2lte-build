@@ -146,6 +146,11 @@
   <remove-project name="LineageOS/android_hardware_qcom_wlan" />
   <remove-project name="LineageOS/android_vendor_qcom_opensource_agm" />
   <remove-project name="LineageOS/android_vendor_qcom_opensource_arpal-lx" />
+  <!-- cuttlefish_prebuilts SÍ excluido (solo bootloaders/kernels/tools del
+       emulador; sus consumidores viven en device/google/cuttlefish, fuera
+       del cierre j2lte). device/google/cuttlefish (a secas) permanece
+       RESTAURADO por microdroid/payload (run #118). -->
+  <remove-project name="device/google/cuttlefish_prebuilts" />
   <remove-project name="kernel/devices/google/bluejay" />
   <remove-project name="kernel/devices/google/felix" />
   <remove-project name="kernel/devices/google/lynx" />

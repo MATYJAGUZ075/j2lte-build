@@ -112,6 +112,54 @@ jobs:
           echo "=== SWIFT PRE-INSTALL DESPUÉS ==="
           df -h /
 
+      - name: Limpieza controlada off-out (kotlinc/gradle/runner-2.336.0/actions no usadas)
+        run: |
+          set -e
+          echo "=== OFF-OUT EXTRA ANTES ==="
+          df -h /
+          # Candidatos verificados como seguros (auditoría read-only):
+          # kotlinc 94M (build usa external/kotlinc), gradle 165M (sin uso),
+          # archivos 2.336.0 (agente en uso es 2.337.0, updates esperan fin
+          # del job), paquetes de actions no usadas por este workflow.
+          for T in \
+            /usr/share/kotlinc \
+            /usr/share/gradle-9.7.1 \
+            /opt/runner-cache/actions-runner-linux-x64-2.336.0.tar.gz \
+            /opt/runner-cache/actions-runner-linux-x64-2.336.0.tar.zst \
+            /opt/actionarchivecache/actions_setup-node \
+            /opt/actionarchivecache/actions_setup-python \
+            /opt/actionarchivecache/github_codeql-action \
+            /opt/actionarchivecache/github_gh-aw-actions; do
+            if [ ! -e "$T" ]; then
+              echo "skip: $T no existe -> nada que limpiar"
+              continue
+            fi
+            du -sh "$T"
+            sudo rm -rf -- "$T"
+            if [ -e "$T" ]; then
+              echo "::error::no se pudo eliminar $T"
+              exit 1
+            fi
+            echo "OK: $T eliminado"
+          done
+          echo "=== VERIFICAR PROTEGIDOS INTACTOS ==="
+          for P in \
+            /home/runner/.ccache-j2lte \
+            /opt/runner-cache/externals \
+            /opt/runner-cache/actions-runner-linux-x64-2.337.0.tar.gz \
+            /opt/runner-cache/actions-runner-linux-x64-2.337.0.tar.zst \
+            /opt/actionarchivecache/actions_cache \
+            /opt/actionarchivecache/actions_checkout \
+            /opt/actionarchivecache/actions_upload-artifact; do
+            if [ ! -e "$P" ]; then
+              echo "::error::ruta protegida desapareció: $P"
+              exit 1
+            fi
+            echo "OK protegido intacto: $P"
+          done
+          echo "=== OFF-OUT EXTRA DESPUÉS ==="
+          df -h /
+
       - name: Disco antes
         run: df -h /
 

@@ -206,4 +206,16 @@
 
   <remove-project name="platform/external/swiftshader" />
   <remove-project name="platform/external/angle" />
+
+  <!-- ===================== CAPA 6: EMULADOR/MEDIA AJENOS ========== -->
+  <!-- Proyectos Git completos con cero consumidores en frameworks/packages/
+       system/hardware/vendor/build/device/kernel/art/cts/test/tools/external
+       ni en el producto j2lte (verificado incl. alcance external/ y cts/).
+       Se excluyen vía manifest. Si bootstrap falla con undefined module,
+       revertir el correspondiente. -->
+
+  <remove-project name="device/generic/vulkan-cereal" />
+  <remove-project name="platform/external/mesa3d" />
+  <remove-project name="platform/packages/apps/TV" />
+  <remove-project name="platform/external/jackson-core" />
 </manifest>

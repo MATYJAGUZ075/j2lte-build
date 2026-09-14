@@ -658,6 +658,7 @@ jobs:
             system/extras/memory_replay
             system/extras/ioshark
             system/extras/perf2cfg
+            system/extras/profcollectd
           "
           du -sh $TARGETS 2>/dev/null || true
 

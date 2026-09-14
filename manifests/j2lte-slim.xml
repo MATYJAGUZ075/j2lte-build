@@ -216,6 +216,6 @@
 
   <remove-project name="device/generic/vulkan-cereal" />
   <remove-project name="platform/external/mesa3d" />
-  <remove-project name="platform/packages/apps/TV" />
+  <remove-project name="LineageOS/android_packages_apps_TV" />
   <remove-project name="platform/external/jackson-core" />
 </manifest>

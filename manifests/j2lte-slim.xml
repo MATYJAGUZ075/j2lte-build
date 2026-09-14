@@ -194,4 +194,15 @@
   <remove-project name="platform/hardware/qcom/sdm845/vr" />
   <remove-project name="platform/hardware/qcom/sm8150/thermal" />
   <remove-project name="platform/hardware/qcom/sm8150/vr" />
+
+  <!-- ===================== CAPA 5: GPU/TEST AJENOS (deqp/swiftshader/angle) ========== -->
+  <!-- Los tres son proyectos Git completos (post-sync rm imposible: el guard
+       .git abortaría). Sin consumidores en frameworks/packages/system/
+       hardware/vendor/build/device/kernel/art/cts/test/tools ni en el
+       producto j2lte; sin dependencias cruzadas entre sí. Se excluyen vía
+       manifest (~1.57G). Si bootstrap falla con undefined module, revertir. -->
+
+  <remove-project name="platform/external/deqp" />
+  <remove-project name="platform/external/swiftshader" />
+  <remove-project name="platform/external/angle" />
 </manifest>

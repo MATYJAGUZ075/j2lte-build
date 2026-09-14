@@ -603,6 +603,95 @@ jobs:
           echo "=== PODA AUTOTEST DESPUÉS ==="
           df -h /
 
+      - name: "Poda post-sync (sdk/32)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA SDK/32 ANTES ==="
+          df -h /
+          TARGETS="
+            prebuilts/sdk/32
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          # Tolerante: si la ruta no existe se informa y se continúa (no abortar).
+          # Protección: nunca eliminar un proyecto Git completo (contiene .git),
+          # porque rompería repo manifest (patrón jdk/qemu documentado).
+          # prebuilts/sdk/32 es subdir sin .git (el proyecto es prebuilts/sdk);
+          # cero sdk_version:"32" productivos en el árbol.
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git completo, no subdir podable) -> se aborta"
+              exit 1
+            fi
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA SDK/32 DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (extras profiling)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA EXTRAS ANTES ==="
+          df -h /
+          TARGETS="
+            system/extras/simpleperf
+            system/extras/memory_replay
+            system/extras/ioshark
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          # Tolerante: si la ruta no existe se informa y se continúa (no abortar).
+          # Protección: nunca eliminar un proyecto Git completo (contiene .git),
+          # porque rompería repo manifest (patrón jdk/qemu documentado).
+          # Herramientas de profiling host sin consumidores en el grafo j2lte.
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git completo, no subdir podable) -> se aborta"
+              exit 1
+            fi
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA EXTRAS DESPUÉS ==="
+          df -h /
+
       # ============================================================
       # BUILD CONFIG
       # ============================================================
@@ -860,7 +949,7 @@ jobs:
 
             echo "== mka $target =="
 
-            time mka "$target" -j"$(nproc)" \
+            time mka --skip-soong-tests "$target" -j"$(nproc)" \
               2>&1 | tee /tmp/stage.log
 
             RC=${PIPESTATUS[0]}

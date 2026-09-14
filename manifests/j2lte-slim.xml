@@ -109,4 +109,84 @@
   <remove-project name="kernel/prebuilts/4.19/arm64" />
   <remove-project name="kernel/prebuilts/mainline/arm64" />
   <remove-project name="kernel/prebuilts/mainline/x86-64" />
+
+  <!-- ===================== CAPA 4: QCOM/PIXEL AJENOS (bloque completo) ========== -->
+  <!-- hardware/qcom-caf/* + hardware/qcom/* + device/google/cuttlefish* +
+       kernel/google/gs201/*: j2lte/Exynos3475 no los consume (cero refs en
+       su cierre). qcom-caf/common declara los linkfiles os_pickup_*, por eso
+       el bloque va COMPLETO: sin common no hay guards, sin hojas no hay
+       dest huérfanos. device/google/atv+contexthub+gs-common+vrservices y
+       device/qcom/* NO se tocan (fuera del alcance auditado). -->
+
+  <remove-project name="LineageOS/android_hardware_qcom-caf_common" />
+  <remove-project name="LineageOS/android_hardware_qcom_audio" />
+  <remove-project name="LineageOS/android_hardware_qcom_audio-ar" />
+  <remove-project name="LineageOS/android_hardware_qcom_bootctrl" />
+  <remove-project name="LineageOS/android_hardware_qcom_bt" />
+  <remove-project name="LineageOS/android_hardware_qcom_camera" />
+  <remove-project name="LineageOS/android_hardware_qcom_data_ipacfg-mgr" />
+  <remove-project name="LineageOS/android_hardware_qcom_display" />
+  <remove-project name="LineageOS/android_hardware_qcom_gps" />
+  <remove-project name="LineageOS/android_hardware_qcom_media" />
+  <remove-project name="LineageOS/android_hardware_qcom_sdm845_display" />
+  <remove-project name="LineageOS/android_hardware_qcom_sdm845_gps" />
+  <remove-project name="LineageOS/android_hardware_qcom_sdm845_media" />
+  <remove-project name="LineageOS/android_hardware_qcom_sm7250_display" />
+  <remove-project name="LineageOS/android_hardware_qcom_sm7250_gps" />
+  <remove-project name="LineageOS/android_hardware_qcom_sm7250_media" />
+  <remove-project name="LineageOS/android_hardware_qcom_sm8150_data_ipacfg-mgr" />
+  <remove-project name="LineageOS/android_hardware_qcom_sm8150_display" />
+  <remove-project name="LineageOS/android_hardware_qcom_sm8150_gps" />
+  <remove-project name="LineageOS/android_hardware_qcom_sm8150_media" />
+  <remove-project name="LineageOS/android_hardware_qcom_thermal" />
+  <remove-project name="LineageOS/android_hardware_qcom_vr" />
+  <remove-project name="LineageOS/android_hardware_qcom_wlan" />
+  <remove-project name="LineageOS/android_vendor_qcom_opensource_agm" />
+  <remove-project name="LineageOS/android_vendor_qcom_opensource_arpal-lx" />
+  <remove-project name="device/google/cuttlefish" />
+  <remove-project name="device/google/cuttlefish_prebuilts" />
+  <remove-project name="kernel/devices/google/bluejay" />
+  <remove-project name="kernel/devices/google/felix" />
+  <remove-project name="kernel/devices/google/lynx" />
+  <remove-project name="kernel/devices/google/tangorpro" />
+  <remove-project name="kernel/google-modules/amplifiers" />
+  <remove-project name="kernel/google-modules/aoc" />
+  <remove-project name="kernel/google-modules/aoc-ipc" />
+  <remove-project name="kernel/google-modules/bluetooth/broadcom" />
+  <remove-project name="kernel/google-modules/bluetooth/qcom" />
+  <remove-project name="kernel/google-modules/bluetooth/synaptics" />
+  <remove-project name="kernel/google-modules/bms" />
+  <remove-project name="kernel/google-modules/display" />
+  <remove-project name="kernel/google-modules/edgetpu/abrolhos" />
+  <remove-project name="kernel/google-modules/edgetpu/janeiro" />
+  <remove-project name="kernel/google-modules/fingerprint/fpc" />
+  <remove-project name="kernel/google-modules/gpu" />
+  <remove-project name="kernel/google-modules/gxp/gs201" />
+  <remove-project name="kernel/google-modules/lwis" />
+  <remove-project name="kernel/google-modules/nfc" />
+  <remove-project name="kernel/google-modules/power/reset" />
+  <remove-project name="kernel/google-modules/sensors/hall_sensor" />
+  <remove-project name="kernel/google-modules/touch/common" />
+  <remove-project name="kernel/google-modules/touch/focaltech_touch" />
+  <remove-project name="kernel/google-modules/touch/fts_touch" />
+  <remove-project name="kernel/google-modules/touch/goodix_touch" />
+  <remove-project name="kernel/google-modules/touch/novatek_touch" />
+  <remove-project name="kernel/google-modules/touch/sec_touch" />
+  <remove-project name="kernel/google-modules/touch/synaptics_touch" />
+  <remove-project name="kernel/google-modules/uwb" />
+  <remove-project name="kernel/google-modules/video/gchips" />
+  <remove-project name="kernel/google-modules/wlan/bcmdhd/bcm4389" />
+  <remove-project name="kernel/google-modules/wlan/qcom/wcn6740/cnss2" />
+  <remove-project name="kernel/google-modules/wlan/qcom/wcn6740/wlan" />
+  <remove-project name="kernel/google-modules/wlan/syna/dhd43752p" />
+  <remove-project name="kernel/google-modules/wlan/wlan_ptracker" />
+  <remove-project name="platform/hardware/qcom/bootctrl" />
+  <remove-project name="platform/hardware/qcom/bt" />
+  <remove-project name="platform/hardware/qcom/keymaster" />
+  <remove-project name="platform/hardware/qcom/sdm845/bt" />
+  <remove-project name="platform/hardware/qcom/sdm845/data/ipacfg-mgr" />
+  <remove-project name="platform/hardware/qcom/sdm845/thermal" />
+  <remove-project name="platform/hardware/qcom/sdm845/vr" />
+  <remove-project name="platform/hardware/qcom/sm8150/thermal" />
+  <remove-project name="platform/hardware/qcom/sm8150/vr" />
 </manifest>

@@ -217,7 +217,10 @@
   <!-- platform/external/jackson-core RESTAURADO (run #125:
        external/jackson-databind necesita jackson-core -> undefined module
        sin external/jackson-core). NO volver a excluir. -->
-  <remove-project name="device/generic/vulkan-cereal" />
+  <!-- device/generic/vulkan-cereal RESTAURADO (run #128:
+       external/crosvm/rutabaga_gfx necesita libgfxstream_backend,
+       definido en vulkan-cereal/stream-servers/Android.bp ->
+       undefined module sin vulkan-cereal). NO volver a excluir. -->
   <remove-project name="platform/external/mesa3d" />
   <remove-project name="LineageOS/android_packages_apps_TV" />
 </manifest>

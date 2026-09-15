@@ -809,6 +809,8 @@ jobs:
           du -sh /usr/share/kotlinc 2>/dev/null || true
 
       - name: Build targets
+        id: build
+        background: true
         working-directory: /home/runner/los20
         run: |
           set -o pipefail
@@ -891,6 +893,11 @@ jobs:
                   f2=$(df -B1 / | awk 'NR==2{print $4/1048576}')
                   if [ "${f2%.*}" -lt 100 ]; then
                     last_gasp | tee -a "$LOG" 2>&1
+                    # Emergency checkpoint: marcar UNA sola vez para que el
+                    # guardia dispare el upload sin detener mka (umbral 100MB).
+                    if [ ! -e /tmp/EMERGENCY ]; then
+                      touch /tmp/EMERGENCY 2>/dev/null || true
+                    fi
                     break
                   fi
                   sleep 5
@@ -902,7 +909,7 @@ jobs:
             done
           ) &
           MON_PID=$!
-          trap 'kill "$MON_PID" 2>/dev/null; wait "$MON_PID" 2>/dev/null || true; cat "$LOG" >&2' EXIT
+          trap 'touch /tmp/BUILD_DONE 2>/dev/null || true; kill "$MON_PID" 2>/dev/null; wait "$MON_PID" 2>/dev/null || true; cat "$LOG" >&2' EXIT
           # --- FIN MONITOR ---
 
           export WITH_DEXPREOPT=false
@@ -965,6 +972,43 @@ jobs:
           done
 
           IFS="$OLD_IFS"
+
+      - name: Guardia emergency checkpoint
+        id: guardia
+        run: |
+          set +e
+          # Espera flag de emergencia o fin del build (con deadline propio para
+          # no colgar el job). Solo prepara snapshots si hubo emergencia.
+          EMERG=/tmp/EMERGENCY
+          DONE=/tmp/BUILD_DONE
+          OUT="$GITHUB_WORKSPACE/artifacts-emergency"
+          END=$(( $(date +%s) + 19800 ))
+          while [ ! -e "$EMERG" ] && [ ! -e "$DONE" ] && [ $(date +%s) -lt $END ]; do
+            sleep 30
+          done
+          if [ -e "$EMERG" ]; then
+            mkdir -p "$OUT" 2>/dev/null || true
+            df -h / > "$OUT/df-final.txt" 2>&1 || true
+            du -sh /home/runner/los20/out 2>/dev/null > "$OUT/du-final.txt" || true
+            gzip -c /tmp/disk-monitor.log > "$OUT/disk-monitor.log.gz" 2>/dev/null || true
+            gzip -c /tmp/stage.log > "$OUT/stage.log.gz" 2>/dev/null || true
+            echo "emergency=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "emergency=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload emergency checkpoint
+        if: steps.guardia.outputs.emergency == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: emergency-telemetry-${{ github.run_id }}
+          path: ${{ github.workspace }}/artifacts-emergency/
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: Wait build
+        wait: [build]
 
       - name: Rescate de telemetría ante fallo/ENOSPC/kill
         if: always()

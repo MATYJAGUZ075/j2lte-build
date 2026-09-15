@@ -224,12 +224,13 @@
   <remove-project name="platform/external/mesa3d" />
   <remove-project name="LineageOS/android_packages_apps_TV" />
 
-  <!-- ===================== CAPA 7: RESERVA (gapi/Car/kbt) ========== -->
-  <!-- Proyectos Git completos, cero consumidores verificados incl. alcance
-       external/ y cts/. Se excluyen vía manifest (~554M). Si bootstrap
-       falla con undefined module, revertir el correspondiente. -->
+  <!-- ===================== CAPA 7: RESERVA (gapi/kbt) ========== -->
+  <!-- Proyectos Git completos. Se excluyen vía manifest. Si bootstrap falla
+       con undefined module, revertir el correspondiente.
+       Car service RESTAURADO (run #130: tools/security/fuzzing necesita
+       carwatchdogd_defaults, definidos en packages/services/Car/ ->
+       undefined module sin Car). NO volver a excluir. -->
 
   <remove-project name="platform/external/python/google-api-python-client" />
-  <remove-project name="LineageOS/android_packages_services_Car" />
   <remove-project name="kernel/prebuilts/build-tools" />
 </manifest>

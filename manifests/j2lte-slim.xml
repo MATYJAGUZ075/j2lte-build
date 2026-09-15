@@ -224,13 +224,12 @@
   <remove-project name="platform/external/mesa3d" />
   <remove-project name="LineageOS/android_packages_apps_TV" />
 
-  <!-- ===================== CAPA 7: RESERVA (gapi/kbt) ========== -->
+  <!-- ===================== CAPA 7: RESERVA (kbt) ========== -->
   <!-- Proyectos Git completos. Se excluyen vía manifest. Si bootstrap falla
        con undefined module, revertir el correspondiente.
-       Car service RESTAURADO (run #130: tools/security/fuzzing necesita
-       carwatchdogd_defaults, definidos en packages/services/Car/ ->
-       undefined module sin Car). NO volver a excluir. -->
+       Car service RESTAURADO (run #130). gapi-client RESTAURADO (run #131:
+       acloud/acloud_test/atest/fetcher-lib necesitan py-google-api-python-
+       client -> undefined module sin gapi-client). NO volver a excluir. -->
 
-  <remove-project name="platform/external/python/google-api-python-client" />
   <remove-project name="kernel/prebuilts/build-tools" />
 </manifest>

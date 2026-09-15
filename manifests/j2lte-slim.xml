@@ -223,4 +223,13 @@
        undefined module sin vulkan-cereal). NO volver a excluir. -->
   <remove-project name="platform/external/mesa3d" />
   <remove-project name="LineageOS/android_packages_apps_TV" />
+
+  <!-- ===================== CAPA 7: RESERVA (gapi/Car/kbt) ========== -->
+  <!-- Proyectos Git completos, cero consumidores verificados incl. alcance
+       external/ y cts/. Se excluyen vía manifest (~554M). Si bootstrap
+       falla con undefined module, revertir el correspondiente. -->
+
+  <remove-project name="platform/external/python/google-api-python-client" />
+  <remove-project name="LineageOS/android_packages_services_Car" />
+  <remove-project name="kernel/prebuilts/build-tools" />
 </manifest>

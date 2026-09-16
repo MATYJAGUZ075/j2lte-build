@@ -242,7 +242,11 @@
   <remove-project name="platform/developers/build" />
   <remove-project name="platform/packages/modules/BootPrebuilt/5.4/arm64" />
   <remove-project name="platform/packages/modules/BootPrebuilt/5.10/arm64" />
-  <remove-project name="platform/external/python/cpython3" />
+  <!-- platform/external/python/cpython3 RESTAURADO (run #135:
+       múltiples herramientas (hiddenapi, releasetools, mkbootimg, Gki,
+       libufdt, vts, apex) necesitan py3-stdlib, provisto por
+       external/python/cpython3/Lib/Android.bp ->
+       undefined module sin cpython3). NO volver a excluir. -->
   <!-- platform/external/python/cryptography RESTAURADO (run #133:
        external/python/pyopenssl necesita py-cryptography ->
        undefined module sin external/python/cryptography).

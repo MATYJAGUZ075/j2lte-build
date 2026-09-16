@@ -255,5 +255,4 @@
   <remove-project name="LineageOS/android_external_vim" />
   <remove-project name="platform/external/lottie" />
   <remove-project name="platform/external/ktfmt" />
-  <remove-project name="platform/external/openscreen" />
 </manifest>

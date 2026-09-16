@@ -285,7 +285,12 @@
   <remove-project name="device/generic/art" />
   <remove-project name="device/generic/car" />
   <remove-project name="LineageOS/android_device_generic_common" />
-  <remove-project name="device/generic/goldfish" />
+<!-- device/generic/goldfish RESTAURADO (run #<n>: device/google/cuttlefish
+     declara soong_namespace con imports: ["device/generic/goldfish"]
+     en apex/com.google.cf.wifi_hwsim/Android.bp:15 -> Soong bootstrap
+     falla "namespace ... does not exist" sin device/generic/goldfish,
+     independientemente de si algún módulo de goldfish se usa).
+     NO volver a excluir mientras device/google/cuttlefish esté presente. -->
   <remove-project name="device/generic/goldfish-opengl" />
   <remove-project name="device/generic/mini-emulator-arm64" />
   <remove-project name="device/generic/mini-emulator-armv7-a-neon" />

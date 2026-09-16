@@ -252,7 +252,11 @@
        undefined module sin external/python/cryptography).
        NO volver a excluir. -->
   <remove-project name="platform/external/vboot_reference" />
-  <remove-project name="LineageOS/android_external_vim" />
+  <!-- LineageOS/android_external_vim RESTAURADO (run #138:
+       vendor/lineage/config/common.mk:140 (Extra tools in Lineage)
+       necesita vim en PRODUCT_PACKAGES -> main.mk:1312 non-existent
+       modules / Offending entries: vim / ckati exit 1 sin external/vim).
+       NO volver a excluir. -->
   <!-- platform/external/lottie RESTAURADO (run #137:
        frameworks/base/packages/SettingsLib/IllustrationPreference necesita
        lottie -> undefined module sin external/lottie).

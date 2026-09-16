@@ -693,6 +693,51 @@ jobs:
           echo "=== PODA EXTRAS DESPUÉS ==="
           df -h /
 
+      - name: "Poda post-sync (apps/Car)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA APPS/CAR ANTES ==="
+          df -h /
+          TARGETS="
+            packages/apps/Car
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          # Tolerante: si la ruta no existe se informa y se continúa (no abortar).
+          # Protección: nunca eliminar un proyecto Git completo (contiene .git).
+          # App auto sin consumidores en el cierre j2lte (verificado: 30+ módulos
+          # Car* solo referenciados en device/*/car emulador; cero en .bp/.mk
+          # externos y cero en PRODUCT del producto lineage_j2lte).
+          # virglrenderer NO se toca (crosvm lo consume).
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git completo, no subdir podable) -> se aborta"
+              exit 1
+            fi
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA APPS/CAR DESPUÉS ==="
+          df -h /
+
       # ============================================================
       # BUILD CONFIG
       # ============================================================

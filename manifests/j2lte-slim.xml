@@ -232,4 +232,21 @@
        client -> undefined module sin gapi-client). NO volver a excluir. -->
 
   <remove-project name="kernel/prebuilts/build-tools" />
+
+  <!-- ===================== CAPA 8: HERRAMIENTAS/DOC AJENOS ========== -->
+  <!-- Proyectos Git completos, cero consumidores verificados (módulos,
+       producto, Kati, cts/test/tools/external). Se excluyen vía manifest
+       (~794M). Si bootstrap falla con undefined module, revertir el
+       correspondiente. -->
+
+  <remove-project name="platform/developers/build" />
+  <remove-project name="platform/packages/modules/BootPrebuilt/5.4/arm64" />
+  <remove-project name="platform/packages/modules/BootPrebuilt/5.10/arm64" />
+  <remove-project name="platform/external/python/cpython3" />
+  <remove-project name="platform/external/python/cryptography" />
+  <remove-project name="platform/external/vboot_reference" />
+  <remove-project name="LineageOS/android_external_vim" />
+  <remove-project name="platform/external/lottie" />
+  <remove-project name="platform/external/ktfmt" />
+  <remove-project name="platform/external/openscreen" />
 </manifest>

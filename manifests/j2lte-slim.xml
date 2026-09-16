@@ -253,6 +253,9 @@
        NO volver a excluir. -->
   <remove-project name="platform/external/vboot_reference" />
   <remove-project name="LineageOS/android_external_vim" />
-  <remove-project name="platform/external/lottie" />
+  <!-- platform/external/lottie RESTAURADO (run #137:
+       frameworks/base/packages/SettingsLib/IllustrationPreference necesita
+       lottie -> undefined module sin external/lottie).
+       NO volver a excluir. -->
   <remove-project name="platform/external/ktfmt" />
 </manifest>

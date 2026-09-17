@@ -278,7 +278,14 @@
        sin cpython2 aunque ningún .bp nombre esos módulos en texto
        (helloWorld, par_test, protoc-gen-nanopb). Deps sintetizadas:
        invisibles a grep. NO volver a excluir. -->
-  <remove-project name="platform/prebuilts/ndk" />
+  <!-- platform/prebuilts/ndk RESTAURADO (run #145:
+       external/googletest/googletest/Android.bp:47 "libgtest_ndk_c++" (y
+       gemmlowp/libbnnmlowpV8) requieren ndk_libc++_static, ndk_libc++abi,
+       ndk_libunwind, ndk_libandroid_support, definidos en
+       prebuilts/ndk/Android.bp:65 y cableados como STL en
+       build/soong/cc/stl.go -> Soong bootstrap "depends on undefined
+       module" sin prebuilts/ndk. Lección: no alcanza HISTORICAL_NDK...;
+       auditar módulos del .bp. NO volver a excluir. -->
   <remove-project name="LineageOS/charter" />
   <remove-project name="LineageOS/cm_crowdin" />
   <remove-project name="LineageOS/hudson" />

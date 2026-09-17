@@ -268,7 +268,13 @@
        multilínea + Kati). Si Soong falla con undefined module, revertir la
        correspondiente y marcar 🔴. virglrenderer EXCLUIDO a propósito
        (crosvm lo consume: rotura probada, no riesgo). -->
-  <remove-project name="platform/external/ComputeLibrary" />
+  <!-- platform/external/ComputeLibrary RESTAURADO (run #147:
+       external/android-nn-driver/Android.mk (libarmnn-driver@1.0/1.1/1.2,
+       LOCAL_STATIC_LIBRARIES, líneas 144/277/403/524/607) necesita
+       arm_compute_library -> Kati "missing arm_compute_library" en
+       finishing build rules 99% sin external/ComputeLibrary. La auditoría
+       barrió .bp y PRODUCT pero no los static_libs de este Android.mk.
+       NO volver a excluir. -->
   <remove-project name="platform/external/ImageMagick" />
   <!-- platform/external/python/cpython2 RESTAURADO (run #144:
        build/soong/python/python.go:432-436 inyecta automáticamente las deps

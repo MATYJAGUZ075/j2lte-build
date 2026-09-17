@@ -270,7 +270,14 @@
        (crosvm lo consume: rotura probada, no riesgo). -->
   <remove-project name="platform/external/ComputeLibrary" />
   <remove-project name="platform/external/ImageMagick" />
-  <remove-project name="platform/external/python/cpython2" />
+  <!-- platform/external/python/cpython2 RESTAURADO (run #144:
+       build/soong/python/python.go:432-436 inyecta automáticamente las deps
+       `py2-stdlib` + `py2-launcher-autorun` (definidos SOLO en
+       external/python/cpython2) a TODO módulo python con versión py2
+       habilitada -> Soong bootstrap falla "depends on undefined module"
+       sin cpython2 aunque ningún .bp nombre esos módulos en texto
+       (helloWorld, par_test, protoc-gen-nanopb). Deps sintetizadas:
+       invisibles a grep. NO volver a excluir. -->
   <remove-project name="platform/prebuilts/ndk" />
   <remove-project name="LineageOS/charter" />
   <remove-project name="LineageOS/cm_crowdin" />

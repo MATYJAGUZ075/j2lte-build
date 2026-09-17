@@ -291,7 +291,13 @@
      falla "namespace ... does not exist" sin device/generic/goldfish,
      independientemente de si algún módulo de goldfish se usa).
      NO volver a excluir mientras device/google/cuttlefish esté presente. -->
-  <remove-project name="device/generic/goldfish-opengl" />
+<!-- device/generic/goldfish-opengl RESTAURADO (run #<n>: device/generic/goldfish
+     declara soong_namespace con imports: ["device/generic/goldfish-opengl"]
+     en Android.bp:17 -> Soong bootstrap falla "namespace ... does not exist"
+     sin device/generic/goldfish-opengl, en cadena desde la restauración de
+     device/generic/goldfish, que a su vez es requerido por
+     device/google/cuttlefish). NO volver a excluir mientras
+     device/generic/goldfish esté presente. -->
   <remove-project name="device/generic/mini-emulator-arm64" />
   <remove-project name="device/generic/mini-emulator-armv7-a-neon" />
   <remove-project name="device/generic/mini-emulator-x86" />

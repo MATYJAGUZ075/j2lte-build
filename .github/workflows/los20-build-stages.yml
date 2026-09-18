@@ -37,12 +37,34 @@ on:
         required: false
         default: ''
 
+      probe_mnt:
+        description: 'Solo inspeccionar /mnt, sin build'
+        required: false
+        default: false
+        type: boolean
+
 concurrency:
   group: los20-stages
   cancel-in-progress: false
 
 jobs:
+  probe-mnt:
+    if: inputs.probe_mnt == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Inspección /mnt (solo lectura)
+        run: |
+          set +e
+          echo "=== df -h / ==="; df -h /
+          echo "=== df -h /mnt ==="; df -h /mnt
+          echo "=== findmnt ==="; findmnt -D -o TARGET,SOURCE,FSTYPE,SIZE,AVAIL || true
+          echo "=== lsblk ==="; lsblk -d -o NAME,SIZE,TYPE || true
+          echo "=== ls -la /mnt ==="; ls -la /mnt || true
+          echo "=== swapon/free ==="; swapon -s || true; free -h || true
+
   stage-build:
+    if: inputs.probe_mnt != true
     runs-on: ubuntu-24.04
     timeout-minutes: 350
 

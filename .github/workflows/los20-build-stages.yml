@@ -47,9 +47,10 @@ jobs:
     timeout-minutes: 350
 
     env:
-      USE_CCACHE: true
-      CCACHE_EXEC: "/usr/bin/ccache"
-      CCACHE_DIR: "/home/runner/.ccache-j2lte"
+      # ccache ELIMINADO por completo (run prueba sin cache: recuperar ~1G de
+      # runner y medir impacto en tiempo total). NO re-agregar USE_CCACHE,
+      # CCACHE_EXEC, CCACHE_DIR, restore/save de actions/cache, instalación
+      # del binario, ni stats/mediciones de ccache sin autorización explícita.
       # Salta la generación de ABI dumps (.sdump/.lsdump) que systemimage no
       # necesita (solo los usa el goal debug findlsdumps). Reduce el pico de
       # out/soong. Leído por Soong vía IsEnvTrue en cc/sabi.go.
@@ -132,9 +133,8 @@ jobs:
             /opt/actionarchivecache/github_gh-aw-actions; do
             # Allowlist estática: SOLO estas 8 rutas exactas pueden borrarse.
             # (No se verifica existencia de rutas protegidas aquí porque en
-            # esta fase ccache/los20 aún no existen: se crean después con
-            # cache-restore y repo init. Run 34792065347 demostró que exigir
-            # su existencia aborta el job.)
+            # esta fase los20 aún no existe: lo crea repo init después.
+            # Run 34792065347 demostró que exigir su existencia aborta el job.)
             case "$T" in
               /usr/share/kotlinc|/usr/share/gradle-9.7.1|/opt/runner-cache/actions-runner-linux-x64-2.336.0.tar.gz|/opt/runner-cache/actions-runner-linux-x64-2.336.0.tar.zst|/opt/actionarchivecache/actions_setup-node|/opt/actionarchivecache/actions_setup-python|/opt/actionarchivecache/github_codeql-action|/opt/actionarchivecache/github_gh-aw-actions)
                 ;;
@@ -184,23 +184,15 @@ jobs:
           df -h /mnt 2>/dev/null || true
 
       # ============================================================
-      # CCACHE + DEPENDENCIAS
+      # DEPENDENCIAS (ccache eliminado: ver env)
       # ============================================================
-
-      - name: Restore ccache
-        uses: actions/cache@v4
-        with:
-          path: /home/runner/.ccache-j2lte
-          key: ccache-j2lte-los20-${{ github.run_id }}
-          restore-keys: |
-            ccache-j2lte-los20-
 
       - name: Instalar dependencias
         run: |
           set -e
 
           sudo apt-get update
-          sudo apt-get install -y git-lfs python3 curl ccache
+          sudo apt-get install -y git-lfs python3 curl
 
           mkdir -p "$HOME/bin"
 
@@ -228,11 +220,6 @@ jobs:
             sudo ln -sf \
               /usr/lib/x86_64-linux-gnu/libc++.so.1 \
               /usr/lib/x86_64-linux-gnu/libc++.so || true
-
-          ccache --version | head -1
-          ccache -M 1G >/dev/null
-          ccache -o compiler_check=content
-          ccache -o namespace=j2lte-los20
 
       # ============================================================
       # SOURCE
@@ -699,6 +686,64 @@ jobs:
       # CarSettings-core de packages/apps/Car -> Soong "depends on
       # undefined module". 🔴 PODA FALLIDA — NO REINTENTAR.
 
+      - name: "Poda post-sync (Darwin arch remnants)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA DARWIN ANTES ==="
+          df -h /
+          TARGETS="
+            prebuilts/jdk/jdk11/darwin-x86
+            prebuilts/jdk/jdk11/darwin-arm64
+            prebuilts/jdk/jdk8/darwin-x86
+            prebuilts/build-tools/darwin-x86
+            prebuilts/extract-tools/darwin-x86
+            prebuilts/misc/darwin-x86
+            prebuilts/misc/darwin-x86_64
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          # Binarios macOS inalcanzables en runner linux-x86_64: el build
+          # selecciona prebuilts por HOST_OS/HOST_TAG (Soong HostPrebuiltTag
+          # retorna "linux-x86" si runtime.GOOS=="linux"; make con ramas
+          # ifeq ($(HOST_OS),darwin)). Barrido global sin referencias.
+          # jdk11-linux, jdk8-linux, build-tools-linux, extract-linux y
+          # misc-linux quedan INTACTOS (solo se listan darwin-*).
+          # Protección: nunca eliminar un proyecto Git completo (contiene
+          # .git); estos 7 son subdirs sin .git (padres con .git).
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git completo, no subdir podable) -> se aborta"
+              exit 1
+            fi
+
+            case "$T" in
+              prebuilts/jdk/jdk11/darwin-*|prebuilts/jdk/jdk8/darwin-*|prebuilts/build-tools/darwin-*|prebuilts/extract-tools/darwin-*|prebuilts/misc/darwin-*) ;;
+              *) echo "::error::$T fuera de la allowlist Darwin -> se aborta"; exit 1 ;;
+            esac
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA DARWIN DESPUÉS ==="
+          df -h /
+
       # ============================================================
       # BUILD CONFIG
       # ============================================================
@@ -767,11 +812,6 @@ jobs:
       # BUILD
       # ============================================================
 
-      - name: ccache stats antes
-        if: always()
-        run: |
-          ccache -s 2>/dev/null || true
-
       - name: Medición de disco ANTES del build
         working-directory: /home/runner/los20
         run: |
@@ -806,8 +846,6 @@ jobs:
           sudo du -sh /opt/actionarchivecache 2>/dev/null || true
           sudo ls -lah /opt/actionarchivecache 2>/dev/null || true
           sudo du -sh /opt/actionarchivecache/* 2>/dev/null | sort -h || true
-          echo "=== OUR CCACHE — DO NOT MODIFY ==="
-          du -sh /home/runner/.ccache-j2lte 2>/dev/null || true
           echo "=== GRADLE EN PATH/WORKFLOW ==="
           command -v gradle || echo "gradle no está en PATH"
           ls -d /usr/share/gradle-9.7.1 2>/dev/null || echo "/usr/share/gradle-9.7.1 no existe"
@@ -870,7 +908,6 @@ jobs:
             timeout 30 du -sh out/soong 2>/dev/null
             timeout 30 du -sh out/host 2>/dev/null
             timeout 30 du -sh out/target 2>/dev/null
-            timeout 30 du -sh /home/runner/.ccache-j2lte 2>/dev/null || true
             timeout 30 du -sh out/soong/.intermediates/external/webrtc 2>/dev/null || true
             echo "--- dmesg ---"
             dmesg_probe
@@ -1052,11 +1089,6 @@ jobs:
       # ============================================================
       # RESULTADOS
       # ============================================================
-
-      - name: ccache stats después
-        if: always()
-        run: |
-          ccache -s 2>/dev/null || true
 
       - name: Medición de disco DESPUÉS del build
         if: always()

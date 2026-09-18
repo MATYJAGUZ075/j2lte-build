@@ -1,104 +1,75 @@
-# los20-build-full.yml — BUILD COMPLETO de LineageOS 20 para j2lte
+# los20-build-stages.yml
+# LineageOS 20 - Samsung J2 / j2lte
 #
-# FIX-018 (2026-08-23): separado del lunch-check (que permanece intacto).
 # FIX-028: kernel genera zImage-dtb con DTB incorporado.
 # FIX-029: adaptación Clang del kernel 3.10.
-# FIX-030 (2026-08-29): sincronizado con las optimizaciones probadas en
-#   los20-build-stages.yml — symlinks de compat (libncurses/libtinfo/libc++),
-#   WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY=true, diagnóstico de
-#   almacenamiento, stats de ccache y medición de out/ antes y después del
-#   build. No se agrega selector de stage (systemimage/boot/recovery): este
-#   workflow sigue siendo específicamente para mka bacon.
-# FIX-031 (2026-09-12): sincronizado el resto de las podas post-sync que
-#   ya estaban probadas en los20-build-stages.yml (rust linux-x86 versiones
-#   inactivas, module_sdk/art snapshot @3, runtime/mainline, Ronda 2, Tier 1
-#   SAFE, autotest) — antes solo tenía darwin-x86 y android-emulator/
-#   remoteexecution-client. El GUARD de espacio (FIX-014) se movió a DESPUÉS
-#   de todas las podas (igual que en stages), no a la mitad. Se agregó
-#   también el monitor de disco en vivo (muestreo normal/denso, dmesg probe,
-#   last_gasp) y el rescate de telemetría ante fallo/ENOSPC, adaptados de
-#   stages al target único "bacon" (sin loop de $STAGE/$EXTRA, ya que este
-#   workflow no separa por etapas).
-# FIX-032 (2026-09-13): sincronizados 3 agregados nuevos de
-#   los20-build-stages.yml: env SKIP_ABI_CHECKS=true (salta ABI dumps
-#   .sdump/.lsdump, leído por Soong vía IsEnvTrue en cc/sabi.go); step de
-#   limpieza controlada de Swift preinstalado + toolchains extra (miniconda,
-#   pipx, az, microsoft) justo después de liberar espacio del runner; y
-#   step de diagnóstico de almacenamiento fuera de out/ (tmp, caches, opt,
-#   usr/share, var/log) antes del build, condicionado a mode=='full-bacon'
-#   igual que el resto de la sección de build de este workflow.
-# FIX-033 (2026-09-17): sincronizados los cambios de los20-build-stages.yml
-#   posteriores a FIX-032: ccache ELIMINADO por completo (env, restore,
-#   instalación, configuración, stats antes/después, línea de
-#   monitor_dense, exports en el build) — mismo criterio que en stages,
-#   NO re-agregar sin autorización explícita; se agregó el step "Limpieza
-#   controlada off-out" (kotlinc/gradle/runner-2.336.0/actions no usadas);
-#   se agregaron las podas post-sync sdk/32, extras/ioshark y Darwin arch
-#   remnants (jdk11/jdk8/build-tools/extract-tools/misc darwin-x86[_64]),
-#   más la nota de la poda de apps/Car ELIMINADA (run #146, NO reintentar);
-#   se agregó el step de diagnóstico "Inspección read-only de runner-cache
-#   y Gradle"; se agregó --skip-soong-tests a mka bacon; y se convirtió el
-#   build a ejecución en background con el mecanismo de emergency
-#   checkpoint (Guardia + Upload emergency checkpoint), igual que en
-#   stages, para poder rescatar telemetría incluso si el runner se queda
-#   sin espacio a mitad de una escritura.
+# FIX-034 (2026-09-17): se quitaron `background: true` y el step "Wait
+#   build" del step de build — NO son claves/steps válidos de GitHub
+#   Actions (no existe ese mecanismo), y una clave desconocida en un step
+#   hace que el schema del workflow entero se rechace (por eso el workflow
+#   no mostraba su nombre y no corría). En GH Actions cada step ya espera
+#   a que termine el anterior por default, así que no hace falta un step
+#   explícito de "wait". El step "Guardia emergency checkpoint" ahora
+#   tiene if: always() para que corra igual si el build falla (por
+#   default los steps se saltean tras un fallo salvo que tengan
+#   always()/continue-on-error). El monitor de disco interno sigue igual:
+#   corre en background con `&` de bash DENTRO del mismo step (eso sí es
+#   válido, es un feature de bash, no de GH Actions).
 #
-# IMPORTANTE / FIX-014 (INFRASTRUCTURE-BLOCKED):
-#   El runner hospedado ubuntu-24.04 (~145G disco, 4 vCPU, 16G RAM) NO alcanza
-#   para un bacon completo: tras repo sync quedan ~17G libres y out/ necesita
-#   50–90G adicionales. Por eso este workflow tiene un GUARD de disco que
-#   aborta temprano si el espacio libre post-sync es menor al mínimo exigido.
-#
-#   Para ejecutar un build real hace falta un runner con recursos suficientes
-#   (recomendado: self-hosted con >=16 vCPU, >=64G RAM, >=400G SSD libres).
-#   Uso futuro con self-hosted:
-#     gh workflow run los20-build-full.yml -f runner_label=<label> -f mode=full-bacon
+# Estrategia:
+# repo sync → liberar espacio opcional → lunch → guard → build
 
-name: LOS20 build full (guarded)
+name: LOS20 build stages
 
 on:
   workflow_dispatch:
     inputs:
-      runner_label:
-        description: 'runs-on label (ubuntu-24.04 | self-hosted label)'
-        required: false
-        default: 'ubuntu-24.04'
-      mode:
-        description: 'modo del run'
-        required: false
-        default: 'lunch-only'
+      stage:
+        description: 'Target principal'
+        required: true
+        default: 'systemimage-guard'
         type: choice
         options:
-          - lunch-only
-          - full-bacon
+          - systemimage-guard
+          - bootimage
+          - recoveryimage
+
       min_free_gb:
-        description: 'GB libres mínimos post-sync para permitir bacon'
+        description: 'GB libres mínimos para systemimage'
         required: false
-        default: '70'
+        default: '40'
+
       telemetry_free_gb:
         description: 'GB libres que activan telemetría densa de diagnóstico (solo lectura)'
         required: false
         default: '25'
 
+      extra_targets:
+        description: 'Targets extra secuenciales: bootimage,recoveryimage'
+        required: false
+        default: ''
+
 concurrency:
-  group: los20-full-build
+  group: los20-stages
   cancel-in-progress: false
 
 jobs:
-  build:
-    runs-on: ${{ github.event.inputs.runner_label || 'ubuntu-24.04' }}
+  stage-build:
+    runs-on: ubuntu-24.04
     timeout-minutes: 350
 
     env:
-      # ccache ELIMINADO por completo (FIX-033, sincronizado con stages: run
-      # prueba sin cache para recuperar espacio del runner y medir impacto
-      # en tiempo total). NO re-agregar USE_CCACHE, CCACHE_EXEC, CCACHE_DIR,
-      # restore/save de actions/cache, instalación del binario, ni
-      # stats/mediciones de ccache sin autorización explícita.
+      # ccache ELIMINADO por completo (run prueba sin cache: recuperar ~1G de
+      # runner y medir impacto en tiempo total). NO re-agregar USE_CCACHE,
+      # CCACHE_EXEC, CCACHE_DIR, restore/save de actions/cache, instalación
+      # del binario, ni stats/mediciones de ccache sin autorización explícita.
       # Salta la generación de ABI dumps (.sdump/.lsdump) que systemimage no
       # necesita (solo los usa el goal debug findlsdumps). Reduce el pico de
       # out/soong. Leído por Soong vía IsEnvTrue en cc/sabi.go.
       SKIP_ABI_CHECKS: "true"
+      STAGE: ${{ github.event.inputs.stage }}
+      MIN_FREE_GB: ${{ github.event.inputs.min_free_gb }}
+      EXTRA: ${{ github.event.inputs.extra_targets }}
       TELEM_FREE_GB: ${{ github.event.inputs.telemetry_free_gb }}
 
     steps:
@@ -107,10 +78,10 @@ jobs:
       # RUNNER
       # ============================================================
 
-      - name: Checkout infra repo (manifests)
+      - name: Checkout infra repo
         uses: actions/checkout@v4
 
-      - name: Liberar espacio en disco
+      - name: Liberar espacio del runner
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: true
@@ -203,7 +174,7 @@ jobs:
         run: df -h /
 
       # ============================================================
-      # Storage diag (traído de build-stages)
+      # Storage diag
       # ============================================================
 
       - name: Diagnosticar almacenamiento
@@ -231,17 +202,24 @@ jobs:
       - name: Instalar dependencias
         run: |
           set -e
+
           sudo apt-get update
           sudo apt-get install -y git-lfs python3 curl
+
           mkdir -p "$HOME/bin"
-          curl -s https://storage.googleapis.com/git-repo-downloads/repo > "$HOME/bin/repo"
+
+          curl -s \
+            https://storage.googleapis.com/git-repo-downloads/repo \
+            > "$HOME/bin/repo"
+
           chmod a+x "$HOME/bin/repo"
           echo "$HOME/bin" >> "$GITHUB_PATH"
-          git config --global user.name  "j2lte-ci"
+
+          git config --global user.name "j2lte-ci"
           git config --global user.email "j2lte-ci@users.noreply.github.com"
+
           git lfs install
 
-          # symlinks de compat (traídos de build-stages)
           sudo ln -sf \
             /usr/lib/x86_64-linux-gnu/libncurses.so.6 \
             /usr/lib/x86_64-linux-gnu/libncurses.so.5 || true
@@ -259,45 +237,50 @@ jobs:
       # SOURCE
       # ============================================================
 
-      - name: repo init LineageOS 20.0
-        working-directory: ${{ github.workspace }}
+      - name: repo init
         run: |
           set -e
+
           mkdir -p "$HOME/los20"
           cd "$HOME/los20"
+
           repo init \
             --depth=1 \
             -u https://github.com/LineageOS/android.git \
             -b lineage-20.0 \
             --git-lfs
 
-      - name: "local_manifests: j2lte + SLSI deps"
-        working-directory: ${{ github.workspace }}
+      - name: Configurar local manifests
         run: |
           set -e
-          mkdir -p .repo/local_manifests 2>/dev/null || true
-          mkdir -p "$HOME/los20/.repo/local_manifests"
-          cp "$GITHUB_WORKSPACE/manifests/j2lte.xml"      "$HOME/los20/.repo/local_manifests/j2lte.xml"
-          cp "$GITHUB_WORKSPACE/manifests/j2lte-slsi.xml" "$HOME/los20/.repo/local_manifests/j2lte-slsi.xml"
-          if [ -f "$GITHUB_WORKSPACE/manifests/j2lte-slim.xml" ]; then
-            cp "$GITHUB_WORKSPACE/manifests/j2lte-slim.xml" "$HOME/los20/.repo/local_manifests/j2lte-slim.xml"
-          fi
-          cat "$HOME/los20/.repo/local_manifests/"*.xml
 
-      - name: repo sync (-c --no-tags)
-        working-directory: ${{ github.workspace }}
+          mkdir -p "$HOME/los20/.repo/local_manifests"
+
+          cp "$GITHUB_WORKSPACE/manifests/j2lte.xml" \
+             "$HOME/los20/.repo/local_manifests/j2lte.xml"
+
+          cp "$GITHUB_WORKSPACE/manifests/j2lte-slsi.xml" \
+             "$HOME/los20/.repo/local_manifests/j2lte-slsi.xml"
+
+          cp "$GITHUB_WORKSPACE/manifests/j2lte-slim.xml" \
+             "$HOME/los20/.repo/local_manifests/j2lte-slim.xml"
+
+      - name: repo sync
+        working-directory: /home/runner/los20
         run: |
           set -e
-          cd "$HOME/los20"
+
           echo "=== DISCO PRE-SYNC ==="
           df -h /
-          time repo sync -c --no-tags --fail-fast -j4
+
+          time repo sync \
+            -c \
+            --no-tags \
+            --fail-fast \
+            -j4
+
           echo "=== DISCO POST-SYNC ==="
           df -h /
-
-      # ============================================================
-      # PODAS POST-SYNC (sincronizadas desde los20-build-stages.yml)
-      # ============================================================
 
       - name: Poda post-sync (prebuilts/rust/darwin-x86)
         working-directory: /home/runner/los20
@@ -307,11 +290,13 @@ jobs:
           df -h /
           du -sh prebuilts/rust/darwin-x86 2>/dev/null || true
 
+          # Verificaciones de seguridad: debe existir como directorio
           if [ ! -d "prebuilts/rust/darwin-x86" ]; then
             echo "::error::Directorio esperado no existe: prebuilts/rust/darwin-x86 -> se aborta la poda"
             exit 1
           fi
 
+          # Verificar que resuelva exactamente dentro del árbol (no un enlace ambiguo)
           PARENT="$(cd prebuilts/rust/darwin-x86 && pwd)"
           EXPECTED="$(pwd)/prebuilts/rust/darwin-x86"
           if [ "$PARENT" != "$EXPECTED" ]; then
@@ -319,6 +304,7 @@ jobs:
             exit 1
           fi
 
+          # Verificar que la toolchain linux-x86 (única usada en runner Linux) SÍ existe
           if [ ! -d "prebuilts/rust/linux-x86" ]; then
             echo "::error::prebuilts/rust/linux-x86 no existe -> se aborta (se protege la toolchain activa)"
             exit 1
@@ -341,17 +327,20 @@ jobs:
           VERSIONS="prebuilts/rust/linux-x86/1.57.0 prebuilts/rust/linux-x86/1.58.0 prebuilts/rust/linux-x86/1.58.1"
           du -sh $VERSIONS 2>/dev/null || true
 
+          # Verificar que la toolchain activa (RustDefaultVersion = 1.59.0) SÍ existe
           if [ ! -d "prebuilts/rust/linux-x86/1.59.0" ]; then
             echo "::error::prebuilts/rust/linux-x86/1.59.0 no existe -> se aborta (se protege la toolchain activa)"
             exit 1
           fi
 
           for V in $VERSIONS; do
+            # Verificaciones de seguridad: debe existir como directorio
             if [ ! -d "$V" ]; then
               echo "::error::Directorio esperado no existe: $V -> se aborta la poda"
               exit 1
             fi
 
+            # Verificar que resuelva exactamente dentro del árbol (no un enlace ambiguo)
             PARENT="$(cd "$V" && pwd)"
             EXPECTED="$(pwd)/$V"
             if [ "$PARENT" != "$EXPECTED" ]; then
@@ -378,16 +367,19 @@ jobs:
           TARGET=prebuilts/module_sdk/art/3
           du -sh "$TARGET" 2>/dev/null || true
 
+          # Verificar que el snapshot activo (@1) del proyecto module_sdk/art SÍ existe
           if [ ! -d "prebuilts/module_sdk/art/1" ]; then
             echo "::error::prebuilts/module_sdk/art/1 no existe -> se aborta (se protege el snapshot activo @1)"
             exit 1
           fi
 
+          # Verificaciones de seguridad: debe existir como directorio
           if [ ! -d "$TARGET" ]; then
             echo "::error::Directorio esperado no existe: $TARGET -> se aborta la poda"
             exit 1
           fi
 
+          # Verificar que resuelva exactamente dentro del árbol (no un enlace ambiguo)
           PARENT="$(cd "$TARGET" && pwd)"
           EXPECTED="$(pwd)/$TARGET"
           if [ "$PARENT" != "$EXPECTED" ]; then
@@ -411,6 +403,9 @@ jobs:
           df -h /
           du -sh prebuilts/android-emulator prebuilts/remoteexecution-client 2>/dev/null || true
 
+          # Tolerante: el manifest j2lte-slim.xml ya puede haberlos excluido del
+          # repo sync via <remove-project>. Si no existen, se informa y se
+          # continúa (no abortar). Si existen, se podan.
           MISSING=0
           for d in android-emulator remoteexecution-client; do
             if [ ! -d "prebuilts/$d" ]; then
@@ -447,11 +442,13 @@ jobs:
           echo "=== PODA RUNTIME/MAINLINE ANTES ==="
           df -h /
 
+          # Tolerante: si no existe (posible exclusión vía manifest), se informa y continúa.
           if [ ! -d "prebuilts/runtime/mainline" ]; then
             echo "skip: prebuilts/runtime/mainline no existe -> nada que podar"
             exit 0
           fi
 
+          # Verificar que resuelva exactamente dentro del árbol (no un enlace ambiguo)
           PARENT="$(cd prebuilts/runtime/mainline && pwd)"
           EXPECTED="$(pwd)/prebuilts/runtime/mainline"
           if [ "$PARENT" != "$EXPECTED" ]; then
@@ -481,6 +478,9 @@ jobs:
           "
           du -sh $TARGETS 2>/dev/null || true
 
+          # Tolerante: si la ruta no existe se informa y se continúa (no abortar).
+          # Protección: nunca eliminar un proyecto Git completo (contiene .git),
+          # porque rompería repo manifest (patrón jdk/qemu documentado).
           for T in $TARGETS; do
             if [ ! -d "$T" ]; then
               echo "skip: $T no existe -> nada que podar"
@@ -528,6 +528,9 @@ jobs:
           "
           du -sh $TARGETS 2>/dev/null || true
 
+          # Tolerante: si la ruta no existe se informa y se continúa (no abortar).
+          # Protección: nunca eliminar un proyecto Git completo (contiene .git),
+          # porque rompería repo manifest (patrón jdk/qemu documentado).
           for T in $TARGETS; do
             if [ ! -d "$T" ]; then
               echo "skip: $T no existe -> nada que podar"
@@ -568,6 +571,9 @@ jobs:
           "
           du -sh $TARGETS 2>/dev/null || true
 
+          # Tolerante: si la ruta no existe se informa y se continúa (no abortar).
+          # Protección: nunca eliminar un proyecto Git completo (contiene .git),
+          # porque rompería repo manifest (patrón jdk/qemu documentado).
           for T in $TARGETS; do
             if [ ! -d "$T" ]; then
               echo "skip: $T no existe -> nada que podar"
@@ -607,6 +613,9 @@ jobs:
           "
           du -sh $TARGETS 2>/dev/null || true
 
+          # Tolerante: si la ruta no existe se informa y se continúa (no abortar).
+          # Protección: nunca eliminar un proyecto Git completo (contiene .git),
+          # porque rompería repo manifest (patrón jdk/qemu documentado).
           # prebuilts/sdk/32 es subdir sin .git (el proyecto es prebuilts/sdk);
           # cero sdk_version:"32" productivos en el árbol.
           for T in $TARGETS; do
@@ -648,6 +657,9 @@ jobs:
           "
           du -sh $TARGETS 2>/dev/null || true
 
+          # Tolerante: si la ruta no existe se informa y se continúa (no abortar).
+          # Protección: nunca eliminar un proyecto Git completo (contiene .git),
+          # porque rompería repo manifest (patrón jdk/qemu documentado).
           # Herramientas de profiling host sin consumidores en el grafo j2lte
           # (verificado: sin refs en system/frameworks/packages/cts/vendor).
           # NOTA: system/extras/simpleperf NO se poda (runs #117/#119/#120:
@@ -745,55 +757,88 @@ jobs:
           df -h /
 
       # ============================================================
-      # GUARD (después de TODAS las podas, igual que en stages)
-      # ============================================================
-
-      - name: GUARD espacio post-sync (FIX-014)
-        run: |
-          set -e
-          AVAIL_GB=$(df --output=avail -BG / | tail -1 | tr -dc '0-9')
-          MIN=${{ github.event.inputs.min_free_gb || 70 }}
-          echo "Libres post-sync: ${AVAIL_GB}G (mínimo requerido para bacon: ${MIN}G)"
-          if [ "${AVAIL_GB}" -lt "${MIN}" ]; then
-            echo "::error::INFRASTRUCTURE-BLOCKED (FIX-014): ${AVAIL_GB}G libres < ${MIN}G requeridos para out/ + margen. No se ejecuta bacon."
-            exit 90
-          fi
-          MODE='${{ github.event.inputs.mode }}'
-          if [ "$MODE" != "full-bacon" ]; then
-            echo "mode=lunch-only -> guard superado, se continúa solo hasta lunch."
-          fi
-
-      # ============================================================
       # BUILD CONFIG
       # ============================================================
 
-      - name: source envsetup.sh + lunch lineage_j2lte-userdebug
+      - name: Configurar lunch
         working-directory: /home/runner/los20
         run: |
           set -e
+
           source build/envsetup.sh
           lunch lineage_j2lte-userdebug
-          echo "LUNCH_EXIT=$?"
+
+      - name: Resolver target
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+
+          case "$STAGE" in
+            systemimage-guard)
+              TARGET="systemimage"
+              ;;
+            bootimage)
+              TARGET="bootimage"
+              ;;
+            recoveryimage)
+              TARGET="recoveryimage"
+              ;;
+            *)
+              echo "::error::Stage inválido: $STAGE"
+              exit 64
+              ;;
+          esac
+
+          echo "REQUESTED_STAGE=$STAGE"
+          echo "RESOLVED_TARGET=$TARGET"
+
+          echo "TARGET=$TARGET" >> "$GITHUB_ENV"
+
+      # ============================================================
+      # GUARD
+      # ============================================================
+
+      - name: Guard de espacio para systemimage
+        if: ${{ github.event.inputs.stage == 'systemimage-guard' }}
+        run: |
+          set -e
+
+          AVAIL_GB=$(
+            df --output=avail -BG / |
+            tail -1 |
+            tr -dc '0-9'
+          )
+
+          MIN="${MIN_FREE_GB:-40}"
+
+          echo "Espacio libre: ${AVAIL_GB}G"
+          echo "Mínimo requerido: ${MIN}G"
+
+          if [ "$AVAIL_GB" -lt "$MIN" ]; then
+            echo "::error::No hay espacio suficiente para systemimage."
+            echo "::error::Libres: ${AVAIL_GB}G / requeridos: ${MIN}G"
+            exit 90
+          fi
 
       # ============================================================
       # BUILD
       # ============================================================
 
       - name: Medición de disco ANTES del build
-        if: ${{ github.event.inputs.mode == 'full-bacon' }}
         working-directory: /home/runner/los20
         run: |
           set +e
-          echo "=== DISCO ANTES DE mka bacon ==="
+          echo "=== DISCO ANTES DE mka $STAGE ==="
           df -h /
           du -sh out 2>/dev/null || true
+          echo "=== Directorios más grandes en out/ ==="
+          du -sh out/* 2>/dev/null | sort -h | tail -20 || true
 
       - name: Diagnóstico de almacenamiento fuera de out
-        if: ${{ github.event.inputs.mode == 'full-bacon' }}
         working-directory: /home/runner/los20
         run: |
           set +e
-          echo "===== STORAGE DIAGNOSTIC: BEFORE BACON ====="
+          echo "===== STORAGE DIAGNOSTIC: BEFORE SYSTEMIMAGE ====="
           df -h /
           echo "===== TOP-LEVEL DIRECTORIES ====="
           du -sh /tmp /var/tmp /home/runner/.cache /home/runner/* 2>/dev/null | sort -h
@@ -802,7 +847,6 @@ jobs:
           echo "===== END STORAGE DIAGNOSTIC ====="
 
       - name: Inspección read-only de runner-cache y Gradle
-        if: ${{ github.event.inputs.mode == 'full-bacon' }}
         working-directory: /home/runner/los20
         run: |
           set +e
@@ -820,23 +864,19 @@ jobs:
           echo "=== KOTLINC (candidata registrada 94M, NO borrar) ==="
           du -sh /usr/share/kotlinc 2>/dev/null || true
 
-      - name: mka bacon (build completo)
+      - name: Build targets
         id: build
-        background: true
-        if: ${{ github.event.inputs.mode == 'full-bacon' }}
         working-directory: /home/runner/los20
         run: |
           set -o pipefail
 
-          # --- MONITOR DE DISCO (distinguir ENOSPC / kill externo / runner)
-          #     traído de los20-build-stages.yml, adaptado a target único
-          #     "bacon" (sin loop de $STAGE/$EXTRA). ---
+          # --- MONITOR DE DISCO (distinguir ENOSPC / kill externo / runner) ---
           LOG=/tmp/disk-monitor.log
           : > "$LOG"
           TELEM_FREE_GB_MB=$(( (${TELEM_FREE_GB:-25}) * 1024 ))
 
           ninja_progress() {
-            grep -aoE '\[ *[0-9]+% +[0-9]+/[0-9]+\]' /tmp/bacon.log 2>/dev/null \
+            grep -aoE '\[ *[0-9]+% +[0-9]+/[0-9]+\]' /tmp/stage.log 2>/dev/null \
               | tail -1 || true
           }
 
@@ -926,47 +966,90 @@ jobs:
           trap 'touch /tmp/BUILD_DONE 2>/dev/null || true; kill "$MON_PID" 2>/dev/null; wait "$MON_PID" 2>/dev/null || true; cat "$LOG" >&2' EXIT
           # --- FIN MONITOR ---
 
-          export WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY=true
+          export WITH_DEXPREOPT=false
 
-          echo "=== WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY=$WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY ==="
+          echo "=== WITH_DEXPREOPT=$WITH_DEXPREOPT ==="
 
           source build/envsetup.sh
           lunch lineage_j2lte-userdebug >/dev/null
 
-          echo "== mka bacon =="
+          ALL_TARGETS="$TARGET"
 
-          time mka bacon --skip-soong-tests -j"$(nproc)" 2>&1 | tee /tmp/bacon.log
-          RC=${PIPESTATUS[0]}
-          echo "BACON_RC=$RC"
-          exit "$RC"
+          if [ -n "$EXTRA" ]; then
+            OLD_IFS="$IFS"
+            IFS=','
+
+            for extra in $EXTRA; do
+              case "$extra" in
+                bootimage|recoveryimage)
+                  ;;
+                *)
+                  echo "::error::Target extra inválido: $extra"
+                  exit 66
+                  ;;
+              esac
+            done
+
+            IFS="$OLD_IFS"
+            ALL_TARGETS="$ALL_TARGETS,$EXTRA"
+          fi
+
+          echo "SECUENCIA=$ALL_TARGETS"
+
+          OLD_IFS="$IFS"
+          IFS=','
+
+          for target in $ALL_TARGETS; do
+            case "$target" in
+              bootimage|recoveryimage|systemimage)
+                ;;
+              *)
+                echo "::error::Target no permitido: $target"
+                exit 66
+                ;;
+            esac
+
+            echo "== mka $target =="
+
+            time mka --skip-soong-tests "$target" -j"$(nproc)" \
+              2>&1 | tee /tmp/stage.log
+
+            RC=${PIPESTATUS[0]}
+
+            if [ "$RC" -ne 0 ]; then
+              echo "STAGE_EXIT=$RC ($target)"
+              exit "$RC"
+            fi
+
+            echo "OK: $target"
+            df -h /
+          done
+
+          IFS="$OLD_IFS"
 
       - name: Guardia emergency checkpoint
         id: guardia
-        if: ${{ github.event.inputs.mode == 'full-bacon' }}
+        if: always()
         run: |
           set +e
-          # Espera flag de emergencia o fin del build (con deadline propio para
-          # no colgar el job). Solo prepara snapshots si hubo emergencia.
+          # Corre siempre después del step de build (haya fallado o no).
+          # Si quedó el flag de emergencia (disco crítico durante el
+          # build), empaqueta los snapshots como artifact separado.
           EMERG=/tmp/EMERGENCY
-          DONE=/tmp/BUILD_DONE
           OUT="$GITHUB_WORKSPACE/artifacts-emergency"
-          END=$(( $(date +%s) + 19800 ))
-          while [ ! -e "$EMERG" ] && [ ! -e "$DONE" ] && [ $(date +%s) -lt $END ]; do
-            sleep 30
-          done
           if [ -e "$EMERG" ]; then
             mkdir -p "$OUT" 2>/dev/null || true
             df -h / > "$OUT/df-final.txt" 2>&1 || true
             du -sh /home/runner/los20/out 2>/dev/null > "$OUT/du-final.txt" || true
             gzip -c /tmp/disk-monitor.log > "$OUT/disk-monitor.log.gz" 2>/dev/null || true
-            gzip -c /tmp/bacon.log > "$OUT/bacon.log.gz" 2>/dev/null || true
+            gzip -c /tmp/stage.log > "$OUT/stage.log.gz" 2>/dev/null || true
             echo "emergency=true" >> "$GITHUB_OUTPUT"
           else
             echo "emergency=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Upload emergency checkpoint
-        if: ${{ github.event.inputs.mode == 'full-bacon' && steps.guardia.outputs.emergency == 'true' }}
+        if: steps.guardia.outputs.emergency == 'true'
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
@@ -974,10 +1057,6 @@ jobs:
           path: ${{ github.workspace }}/artifacts-emergency/
           if-no-files-found: warn
           retention-days: 3
-
-      - name: Wait build
-        if: ${{ github.event.inputs.mode == 'full-bacon' }}
-        wait: [build]
 
       - name: Rescate de telemetría ante fallo/ENOSPC/kill
         if: always()
@@ -990,7 +1069,7 @@ jobs:
 
           mkdir -p "$GITHUB_WORKSPACE/artifacts"
 
-          for f in /tmp/bacon.log /tmp/disk-monitor.log; do
+          for f in /tmp/stage.log /tmp/disk-monitor.log; do
             if [ -f "$f" ]; then
               gzip -c "$f" > "$GITHUB_WORKSPACE/artifacts/$(basename "$f").gz" 2>/dev/null \
                 || cp "$f" "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null
@@ -1027,23 +1106,38 @@ jobs:
           echo "=== Directorios más grandes en out/ ==="
           du -sh out/* 2>/dev/null | sort -h | tail -20 || true
 
-      - name: Resumen y artefactos
+      - name: Recopilar artefactos
         if: always()
         working-directory: /home/runner/los20
         run: |
-          df -h /
-          echo "=== out/target (si existe) ==="
-          ls -la out/target/product/* 2>/dev/null || echo "(sin productos)"
-          mkdir -p "$GITHUB_WORKSPACE/artifacts"
-          if compgen -G "out/target/product/*/*.zip" > /dev/null; then
-            cp out/target/product/*/*.zip "$GITHUB_WORKSPACE/artifacts/" || true
-          fi
-          cp /tmp/bacon.log "$GITHUB_WORKSPACE/artifacts/bacon.log" 2>/dev/null || true
+          set +e
 
-      - name: Upload target files
+          df -h /
+          du -sm out 2>/dev/null || true
+
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+
+          PRODUCT=out/target/product/j2lte
+
+          cp "$PRODUCT/boot.img" \
+            "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null || true
+
+          cp "$PRODUCT/recovery.img" \
+            "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null || true
+
+          cp "$PRODUCT/system.img" \
+            "$GITHUB_WORKSPACE/artifacts/" 2>/dev/null || true
+
+          cp /tmp/stage.log \
+            "$GITHUB_WORKSPACE/artifacts/stage.log" 2>/dev/null || true
+
+          cp /tmp/disk-monitor.log \
+            "$GITHUB_WORKSPACE/artifacts/disk-monitor.log" 2>/dev/null || true
+
+      - name: Upload artefactos
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: j2lte-target-files-${{ github.run_id }}
+          name: stage-${{ github.event.inputs.stage }}-${{ github.run_id }}
           path: artifacts/
           if-no-files-found: ignore

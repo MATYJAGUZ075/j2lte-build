@@ -766,17 +766,19 @@ jobs:
           echo "=== PODA DARWIN DESPUÉS ==="
           df -h /
 
-      - name: "Poda post-sync (sdk/tools linux+lib)"
+      - name: "Poda post-sync (sdk/tools lib)"
         working-directory: /home/runner/los20
         run: |
           set -e
-          echo "=== PODA SDK-TOOLS-LINUX ANTES ==="
+          echo "=== PODA SDK-TOOLS-LIB ANTES ==="
           df -h /
-          # SOLO linux+lib auditados. NO tocar sdk/tools/darwin, windows
-          # (prohibidos), niveles 28-33/current, jetifier (futura tanda).
-          # Firma→signapk de fuente, dex→prebuilts/r8, dx/jack obsoletos.
+          # SOLO lib auditado (d8/dx/signapk prebuilt sin refs; firma→fuente,
+          # dex→prebuilts/r8). linux RESTAURADO (run #155: el genrule
+          # build-tools-lld-linux del propio sdk/tools/Android.bp:77 copia
+          # linux/lld-bin/lld y linux/lib64/libc++.so.1 por path relativo).
+          # NO tocar sdk/tools/darwin, windows (prohibidos), niveles
+          # 28-33/current, jetifier (futura tanda).
           TARGETS="
-            prebuilts/sdk/tools/linux
             prebuilts/sdk/tools/lib
           "
           du -sh $TARGETS 2>/dev/null || true
@@ -793,8 +795,8 @@ jobs:
             fi
 
             case "$T" in
-              prebuilts/sdk/tools/linux|prebuilts/sdk/tools/lib) ;;
-              *) echo "::error::$T fuera de la allowlist sdk-linux+lib -> se aborta"; exit 1 ;;
+              prebuilts/sdk/tools/lib) ;;
+              *) echo "::error::$T fuera de la allowlist sdk-lib -> se aborta"; exit 1 ;;
             esac
 
             PARENT="$(cd "$T" && pwd)"
@@ -812,7 +814,7 @@ jobs:
               || echo "OK: $T eliminado"
           done
 
-          echo "=== PODA SDK-TOOLS-LINUX DESPUÉS ==="
+          echo "=== PODA SDK-TOOLS-LIB DESPUÉS ==="
           df -h /
 
       - name: "Poda post-sync (tools/common/metalava)"

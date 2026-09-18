@@ -41,20 +41,27 @@
 #   Gradle" antes del build, igual que en stages. mka bacon sigue siendo el
 #   único target de este workflow: no se agrega selector de stage ni la
 #   lógica de systemimage/bootimage/recoveryimage de los20-build-stages.yml.
-# FIX-034 (2026-09-17): sincronizados 2 detalles del step de build que
-#   habían quedado afuera del FIX-033: (1) flag --skip-soong-tests en el
-#   comando mka (mka --skip-soong-tests bacon -j..., igual orden que en
-#   stages: mka --skip-soong-tests "$target" -j...); (2) el mecanismo de
-#   emergency checkpoint completo — el step de build pasa a id: build +
-#   background: true, el trap agrega touch /tmp/BUILD_DONE al salir, y el
-#   monitor marca touch /tmp/EMERGENCY una sola vez al llegar a <100MB
-#   libres. Se agregaron los steps "Guardia emergency checkpoint" (espera
-#   EMERGENCY o BUILD_DONE con deadline propio y sube snapshots de
-#   df/du/disk-monitor.log/bacon.log si hubo emergencia), "Upload emergency
-#   checkpoint" y "Wait build" (wait: [build]), los tres condicionados a
-#   mode=='full-bacon' ya que a diferencia de stages este workflow no
-#   siempre construye. Target sigue siendo únicamente bacon: no se tocó el
-#   loop de $STAGE/$EXTRA porque ese loop no existe aquí.
+# FIX-034 (2026-09-17): revertido — el mecanismo de emergency checkpoint
+#   (id: build + background: true en el step de mka, más un step separado
+#   con wait: [build]) NO es sintaxis válida de GitHub Actions: un step solo
+#   admite run/shell/uses/with/working-directory, y los steps de un job
+#   siempre corren en secuencia — no existe forma nativa de que un step siga
+#   en paralelo mientras corren los siguientes. Esto rompió la validación
+#   del workflow (run 35294355736, línea 1015: "Unexpected value 'wait'").
+#   El mismo patrón está presente en los20-build-stages.yml (steps "Build
+#   targets"/"Guardia emergency checkpoint"/"Wait build") y fallaría igual
+#   si se corre ahí — recomendado aplicar el mismo revert en ese workflow.
+#   Se mantiene SOLO el flag --skip-soong-tests en el comando mka (eso sí es
+#   válido, es un argumento del binario, no sintaxis de Actions). El step de
+#   build vuelve a ser secuencial (sin id/background); el monitor de disco
+#   interno sigue usando "&" dentro del propio script bash del step (eso es
+#   backgrounding de procesos del shell, no de steps de Actions, y sí
+#   funciona). Se eliminaron los steps "Guardia emergency checkpoint",
+#   "Upload emergency checkpoint" y "Wait build". El "Rescate de telemetría"
+#   (if: always(), ya existente) sigue siendo la red de seguridad real:
+#   recupera stage/bacon.log y disk-monitor.log si el build falla o el job
+#   es cancelado, que es lo máximo que Actions permite sin runners
+#   self-hosted con lógica custom de reporte.
 #
 # IMPORTANTE / FIX-014 (INFRASTRUCTURE-BLOCKED):
 #   El runner hospedado ubuntu-24.04 (~145G disco, 4 vCPU, 16G RAM) NO alcanza
@@ -856,8 +863,6 @@ jobs:
           du -sh /usr/share/kotlinc 2>/dev/null || true
 
       - name: mka bacon (build completo)
-        id: build
-        background: true
         if: ${{ github.event.inputs.mode == 'full-bacon' }}
         working-directory: /home/runner/los20
         run: |
@@ -942,11 +947,6 @@ jobs:
                   f2=$(df -B1 / | awk 'NR==2{print $4/1048576}')
                   if [ "${f2%.*}" -lt 100 ]; then
                     last_gasp | tee -a "$LOG" 2>&1
-                    # Emergency checkpoint: marcar UNA sola vez para que el
-                    # guardia dispare el upload sin detener mka (umbral 100MB).
-                    if [ ! -e /tmp/EMERGENCY ]; then
-                      touch /tmp/EMERGENCY 2>/dev/null || true
-                    fi
                     break
                   fi
                   sleep 5
@@ -958,7 +958,7 @@ jobs:
             done
           ) &
           MON_PID=$!
-          trap 'touch /tmp/BUILD_DONE 2>/dev/null || true; kill "$MON_PID" 2>/dev/null; wait "$MON_PID" 2>/dev/null || true; cat "$LOG" >&2' EXIT
+          trap 'kill "$MON_PID" 2>/dev/null; wait "$MON_PID" 2>/dev/null || true; cat "$LOG" >&2' EXIT
           # --- FIN MONITOR ---
 
           export WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY=true
@@ -974,45 +974,6 @@ jobs:
           RC=${PIPESTATUS[0]}
           echo "BACON_RC=$RC"
           exit "$RC"
-
-      - name: Guardia emergency checkpoint
-        id: guardia
-        if: ${{ github.event.inputs.mode == 'full-bacon' }}
-        run: |
-          set +e
-          # Espera flag de emergencia o fin del build (con deadline propio para
-          # no colgar el job). Solo prepara snapshots si hubo emergencia.
-          EMERG=/tmp/EMERGENCY
-          DONE=/tmp/BUILD_DONE
-          OUT="$GITHUB_WORKSPACE/artifacts-emergency"
-          END=$(( $(date +%s) + 19800 ))
-          while [ ! -e "$EMERG" ] && [ ! -e "$DONE" ] && [ $(date +%s) -lt $END ]; do
-            sleep 30
-          done
-          if [ -e "$EMERG" ]; then
-            mkdir -p "$OUT" 2>/dev/null || true
-            df -h / > "$OUT/df-final.txt" 2>&1 || true
-            du -sh /home/runner/los20/out 2>/dev/null > "$OUT/du-final.txt" || true
-            gzip -c /tmp/disk-monitor.log > "$OUT/disk-monitor.log.gz" 2>/dev/null || true
-            gzip -c /tmp/bacon.log > "$OUT/bacon.log.gz" 2>/dev/null || true
-            echo "emergency=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "emergency=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Upload emergency checkpoint
-        if: steps.guardia.outputs.emergency == 'true'
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
-        with:
-          name: emergency-telemetry-${{ github.run_id }}
-          path: ${{ github.workspace }}/artifacts-emergency/
-          if-no-files-found: warn
-          retention-days: 3
-
-      - name: Wait build
-        if: ${{ github.event.inputs.mode == 'full-bacon' }}
-        wait: [build]
 
       - name: Rescate de telemetría ante fallo/ENOSPC/kill
         if: always()

@@ -336,7 +336,12 @@
        fuera del cierre j2lte). Si Soong falla, revertir la correspondiente. -->
   <remove-project name="platform/tools/ndkports" />
   <remove-project name="platform/tools/test/connectivity" />
-  <remove-project name="platform/tools/metalava" />
+  <!-- platform/tools/metalava RESTAURADO (run #154:
+       tools/metalava/Android.bp:52 define `stub-annotations`, requerido por
+       `java-current-stubs-system-modules` en libcore/JavaLibrary.bp:892 ->
+       Soong "depends on undefined module" sin tools/metalava. La auditoría
+       revisó paths pero jamás inventarió los módulos de su Android.bp
+       (mezcla gradle+Soong). NO volver a excluir. -->
   <remove-project name="platform/tools/test/graphicsbenchmark" />
   <remove-project name="LineageOS/android_vendor_codeaurora_telephony" />
 </manifest>

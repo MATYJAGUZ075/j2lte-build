@@ -327,8 +327,16 @@
   <remove-project name="device/generic/uml" />
   <remove-project name="device/generic/x86" />
   <remove-project name="device/generic/x86_64" />
-  <!-- jdk8: proyecto repo independiente (default.xml:991). Cero
-       java_version:"8" global; bootstrap-jars sin uso; jdk9/17 prohibidos
-       intactos; jdk11 intacto. NO tocar otros JDK. -->
-  <remove-project name="platform/prebuilts/jdk/jdk8" />
+  <!-- platform/prebuilts/jdk/jdk8 RESTAURADO (run #153:
+       tools/apksig/Android.bp:36 (java_version "1.8") y apache-commons-math
+       necesitan jce.jar+rt.jar como SOURCE PATH -> "does not exist" sin
+       jdk8. Falso negativo: se buscó java_version:"8", texto real "1.8".
+       NO volver a excluir. -->
+  <!-- Tanda chicas auditadas R1–R19 (sin .bp vivo / cero consumidores /
+       fuera del cierre j2lte). Si Soong falla, revertir la correspondiente. -->
+  <remove-project name="platform/tools/ndkports" />
+  <remove-project name="platform/tools/test/connectivity" />
+  <remove-project name="platform/tools/metalava" />
+  <remove-project name="platform/tools/test/graphicsbenchmark" />
+  <remove-project name="LineageOS/android_vendor_codeaurora_telephony" />
 </manifest>

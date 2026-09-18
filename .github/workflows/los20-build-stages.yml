@@ -766,6 +766,101 @@ jobs:
           echo "=== PODA DARWIN DESPUÉS ==="
           df -h /
 
+      - name: "Poda post-sync (sdk/tools linux+lib)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA SDK-TOOLS-LINUX ANTES ==="
+          df -h /
+          # SOLO linux+lib auditados. NO tocar sdk/tools/darwin, windows
+          # (prohibidos), niveles 28-33/current, jetifier (futura tanda).
+          # Firma→signapk de fuente, dex→prebuilts/r8, dx/jack obsoletos.
+          TARGETS="
+            prebuilts/sdk/tools/linux
+            prebuilts/sdk/tools/lib
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git, no subdir) -> se aborta"
+              exit 1
+            fi
+
+            case "$T" in
+              prebuilts/sdk/tools/linux|prebuilts/sdk/tools/lib) ;;
+              *) echo "::error::$T fuera de la allowlist sdk-linux+lib -> se aborta"; exit 1 ;;
+            esac
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            # Proteger el padre platform/prebuilts/sdk y .repo: solo rm del subdir.
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA SDK-TOOLS-LINUX DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (tools/common/metalava)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA METALAVA ANTES ==="
+          df -h /
+          # SOLO metalava prebuilt auditado (sin .bp, cero refs; metalava se
+          # compila de fuente). NO tocar resto de tools/common ni .repo.
+          TARGETS="
+            prebuilts/tools/common/metalava
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git, no subdir) -> se aborta"
+              exit 1
+            fi
+
+            case "$T" in
+              prebuilts/tools/common/metalava) ;;
+              *) echo "::error::$T fuera de la allowlist metalava -> se aborta"; exit 1 ;;
+            esac
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA METALAVA DESPUÉS ==="
+          df -h /
+
       # ============================================================
       # BUILD CONFIG
       # ============================================================

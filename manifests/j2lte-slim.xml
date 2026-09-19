@@ -344,4 +344,8 @@
        (mezcla gradle+Soong). NO volver a excluir. -->
   <remove-project name="platform/tools/test/graphicsbenchmark" />
   <remove-project name="LineageOS/android_vendor_codeaurora_telephony" />
+  <!-- grpc-grpc 61M: TODOS los módulos cero consumidores globales;
+       PRODUCT/namespace limpios; ausente en fallidas/prohibidas. Si Soong
+       falla con undefined module, revertir y marcar 🔴. -->
+  <remove-project name="platform/external/grpc-grpc" />
 </manifest>

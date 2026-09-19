@@ -361,5 +361,9 @@
   <remove-project name="platform/frameworks/layoutlib" />
   <remove-project name="platform/hardware/nxp/nfc" />
   <remove-project name="platform/hardware/nxp/secure_element" />
-  <remove-project name="platform/frameworks/opt/setupwizard" />
+  <!-- platform/frameworks/opt/setupwizard RESTAURADO (run #163:
+       frameworks/base/packages/SimAppDialog/Android.bp (static_libs) necesita
+       `setup-wizard-lib` -> Soong "depends on undefined module" sin
+       setupwizard. La reversa previa no lo encontró (barrido incompleto).
+       NO volver a excluir. -->
 </manifest>

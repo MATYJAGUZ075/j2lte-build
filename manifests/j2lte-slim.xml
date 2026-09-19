@@ -359,8 +359,12 @@
        TvSettings. La auditoría omitió cts/ en la reversa (regla 4 del MD).
        NO volver a excluir. -->
   <remove-project name="platform/frameworks/layoutlib" />
-  <remove-project name="platform/hardware/nxp/nfc" />
-  <remove-project name="platform/hardware/nxp/secure_element" />
+  <!-- hardware/nxp/nfc + secure_element RESTAURADOS (run #164:
+       vendor/nxp/secure_element/Android.bp:19 `ese_spi_nxp.p73` necesita
+       `vendor.nxp.nxpese@1.0` + `vendor.nxp.nxpnfc@2.0` de hardware/nxp.
+       La auditoría cubrió hardware/nxp pero jamás el árbol hermano
+       vendor/nxp (3.7M, no inventariado). R2 incompleto. NO volver a
+       excluir sin auditar vendor/nxp. -->
   <!-- platform/frameworks/opt/setupwizard RESTAURADO (run #163:
        frameworks/base/packages/SimAppDialog/Android.bp (static_libs) necesita
        `setup-wizard-lib` -> Soong "depends on undefined module" sin

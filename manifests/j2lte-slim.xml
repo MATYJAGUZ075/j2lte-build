@@ -353,7 +353,11 @@
        (Samples/TvSettings/layoutlib/nxp). Si Soong falla, revertir la
        correspondiente y marcar 🔴. gcam excluida de la tanda (inventario
        incompleto: common/hal/* sin barrer). -->
-  <remove-project name="LineageOS/android_packages_apps_TvSettings" />
+  <!-- LineageOS/android_packages_apps_TvSettings RESTAURADO (run #160:
+       cts/tests/atv/SettingsAPI/Android.bp:19 `CtsSettingsAPITestCases`
+       necesita `TvSettingsAPI` -> Soong "depends on undefined module" sin
+       TvSettings. La auditoría omitió cts/ en la reversa (regla 4 del MD).
+       NO volver a excluir. -->
   <remove-project name="platform/frameworks/layoutlib" />
   <remove-project name="platform/hardware/nxp/nfc" />
   <remove-project name="platform/hardware/nxp/secure_element" />

@@ -975,6 +975,52 @@ jobs:
           echo "=== PODA CHICAS DESPUÉS ==="
           df -h /
 
+      - name: "Poda post-sync (misc-frameworks)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA MISCFW ANTES ==="
+          df -h /
+          # SOLO platformprotos prebuilt (cero consumidores globales,
+          # libplatformprotos real se compila de frameworks/base).
+          TARGETS="
+            prebuilts/misc/common/frameworks
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git, no subdir) -> se aborta"
+              exit 1
+            fi
+
+            case "$T" in
+              prebuilts/misc/common/frameworks) ;;
+              *) echo "::error::$T fuera de la allowlist miscfw -> se aborta"; exit 1 ;;
+            esac
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA MISCFW DESPUÉS ==="
+          df -h /
+
       # ============================================================
       # BUILD CONFIG
       # ============================================================

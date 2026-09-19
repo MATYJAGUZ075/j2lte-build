@@ -370,4 +370,12 @@
        `setup-wizard-lib` -> Soong "depends on undefined module" sin
        setupwizard. La reversa previa no lo encontró (barrido incompleto).
        NO volver a excluir. -->
+  <!-- Tanda atv+layoutlib+py (R1-R19, Grep-tool como 2da vía). Si Soong
+       falla, revertir la correspondiente. py-par con override explícito
+       del 🔴 #133 (evidencia nueva: par disuelve la dependencia). -->
+  <remove-project name="LineageOS/android_device_google_atv" />
+  <remove-project name="LineageOS/android_device_lineage_atv" />
+  <remove-project name="platform/frameworks/layoutlib" />
+  <remove-project name="platform/external/python/pyopenssl" />
+  <remove-project name="platform/external/python/cryptography" />
 </manifest>

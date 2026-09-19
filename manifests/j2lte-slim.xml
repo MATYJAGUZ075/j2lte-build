@@ -344,8 +344,9 @@
        (mezcla gradle+Soong). NO volver a excluir. -->
   <remove-project name="platform/tools/test/graphicsbenchmark" />
   <remove-project name="LineageOS/android_vendor_codeaurora_telephony" />
-  <!-- grpc-grpc 61M: TODOS los módulos cero consumidores globales;
-       PRODUCT/namespace limpios; ausente en fallidas/prohibidas. Si Soong
-       falla con undefined module, revertir y marcar 🔴. -->
-  <remove-project name="platform/external/grpc-grpc" />
+  <!-- platform/external/grpc-grpc RESTAURADO (firma de error verificada en
+       run #154: grpcio-sys + VehicleHalProtos necesitan libgrpc++: en #154
+       grpc NO estaba podado (causa raíz NO DETERMINADA, posible flake de
+       sync), pero este commit SÍ lo excluye y reproduciría el mismo fallo
+       con certeza. NO volver a excluir. -->
 </manifest>

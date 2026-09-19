@@ -375,6 +375,9 @@
        del 🔴 #133 (evidencia nueva: par disuelve la dependencia). -->
   <remove-project name="LineageOS/android_device_google_atv" />
   <remove-project name="LineageOS/android_device_lineage_atv" />
-  <remove-project name="platform/external/python/pyopenssl" />
-  <remove-project name="platform/external/python/cryptography" />
+  <!-- par pyopenssl+cryptography RESTAURADO (run #170:
+       external/python/bumble/Android.bp (`bumble`, libs) necesita
+       `py-cryptography` -> Soong "depends on undefined module" sin
+       cryptography. El barrido previo no lo encontró (otra omisión).
+       El override #133 queda revocado por esta evidencia. NO reintentar. -->
 </manifest>

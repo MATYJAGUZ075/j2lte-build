@@ -917,13 +917,14 @@ jobs:
           echo "=== PODA CHICAS ANTES ==="
           df -h /
           # Subdirs auditados con grep -F + control positivo, cero
-          # consumidores (bionic/apex/brotli) o samples sin cierre
+          # consumidores (bionic-bench/apex/brotli) o samples sin cierre
           # (device/sample/apps; etc/ INTACTO por apns-full-conf.xml).
-          # gcam EXCLUIDA (inventario incompleto). ahat RESTAURADO (run #159:
-          # libcore-memory-metrics-tests lo necesita como static_lib).
+          # gcam EXCLUIDA (inventario incompleto). ahat RESTAURADO (run #159).
+          # bionic/tests RESTAURADO (run #162: CtsBionicTestCases necesita
+          # libBionicTests y libs hermanas de bionic/tests; inventario previo
+          # solo cubrió bionic-unit-tests*, no las test-libs).
           TARGETS="
             bionic/benchmarks
-            bionic/tests
             system/apex/tests
             prebuilts/tools/common/google-api-java-client
             libcore/harmony-tests
@@ -946,7 +947,7 @@ jobs:
             fi
 
             case "$T" in
-              bionic/benchmarks|bionic/tests|system/apex/tests|prebuilts/tools/common/google-api-java-client|libcore/harmony-tests|libcore/jsr166-tests|libcore/benchmarks|external/brotli/tests/testdata|device/sample/apps) ;;
+              bionic/benchmarks|system/apex/tests|prebuilts/tools/common/google-api-java-client|libcore/harmony-tests|libcore/jsr166-tests|libcore/benchmarks|external/brotli/tests/testdata|device/sample/apps) ;;
               *) echo "::error::$T fuera de la allowlist chicas-R1F -> se aborta"; exit 1 ;;
             esac
 

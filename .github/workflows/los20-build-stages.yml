@@ -930,8 +930,10 @@ jobs:
           # Kati "Installable device module must have LOCAL_SOONG_DEX_JAR".
           # Trampa inversa: módulo fuera, fuentes dentro. harmony/benchmarks
           # siguen podados (sin errores en #166; si fallan, se restauran).
+          # bionic/benchmarks RESTAURADO (run #167:
+          # native_metric_test_list.mk lo exige; R5 miraba solo
+          # native_test_list.mk, no las 5 listas).
           TARGETS="
-            bionic/benchmarks
             prebuilts/tools/common/google-api-java-client
             libcore/harmony-tests
             libcore/benchmarks
@@ -952,7 +954,7 @@ jobs:
             fi
 
             case "$T" in
-              bionic/benchmarks|prebuilts/tools/common/google-api-java-client|libcore/harmony-tests|libcore/benchmarks|external/brotli/tests/testdata|device/sample/apps) ;;
+              prebuilts/tools/common/google-api-java-client|libcore/harmony-tests|libcore/benchmarks|external/brotli/tests/testdata|device/sample/apps) ;;
               *) echo "::error::$T fuera de la allowlist chicas-R1F -> se aborta"; exit 1 ;;
             esac
 

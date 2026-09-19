@@ -923,9 +923,10 @@ jobs:
           # bionic/tests RESTAURADO (run #162: CtsBionicTestCases necesita
           # libBionicTests y libs hermanas de bionic/tests; inventario previo
           # solo cubrió bionic-unit-tests*, no las test-libs).
+          # apex/tests RESTAURADO (run #165: ApexTestCases en apexd necesita
+          # sharedlibs_generated de tests/testdata; inventario no bajó ahí).
           TARGETS="
             bionic/benchmarks
-            system/apex/tests
             prebuilts/tools/common/google-api-java-client
             libcore/harmony-tests
             libcore/jsr166-tests
@@ -947,7 +948,7 @@ jobs:
             fi
 
             case "$T" in
-              bionic/benchmarks|system/apex/tests|prebuilts/tools/common/google-api-java-client|libcore/harmony-tests|libcore/jsr166-tests|libcore/benchmarks|external/brotli/tests/testdata|device/sample/apps) ;;
+              bionic/benchmarks|prebuilts/tools/common/google-api-java-client|libcore/harmony-tests|libcore/jsr166-tests|libcore/benchmarks|external/brotli/tests/testdata|device/sample/apps) ;;
               *) echo "::error::$T fuera de la allowlist chicas-R1F -> se aborta"; exit 1 ;;
             esac
 

@@ -349,4 +349,13 @@
        grpc NO estaba podado (causa raíz NO DETERMINADA, posible flake de
        sync), pero este commit SÍ lo excluye y reproduciría el mismo fallo
        con certeza. NO volver a excluir. -->
+  <!-- Tanda chicas re-auditadas R1-R19 con grep -F + control positivo
+       (Samples/TvSettings/layoutlib/nxp). Si Soong falla, revertir la
+       correspondiente y marcar 🔴. gcam excluida de la tanda (inventario
+       incompleto: common/hal/* sin barrer). -->
+  <remove-project name="LineageOS/android_packages_apps_TvSettings" />
+  <remove-project name="platform/frameworks/layoutlib" />
+  <remove-project name="platform/hardware/nxp/nfc" />
+  <remove-project name="platform/hardware/nxp/secure_element" />
+  <remove-project name="platform/frameworks/opt/setupwizard" />
 </manifest>

@@ -910,6 +910,63 @@ jobs:
           echo "=== PODA APPCOMPAT DESPUÉS ==="
           df -h /
 
+      - name: "Poda post-sync (chicas auditadas R1-F)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA CHICAS ANTES ==="
+          df -h /
+          # Subdirs auditados con grep -F + control positivo, cero
+          # consumidores (bionic/apex/brotli/ahat) o samples sin cierre
+          # (device/sample/apps; etc/ INTACTO por apns-full-conf.xml).
+          # gcam EXCLUIDA (inventario incompleto).
+          TARGETS="
+            bionic/benchmarks
+            bionic/tests
+            system/apex/tests
+            prebuilts/tools/common/google-api-java-client
+            libcore/harmony-tests
+            libcore/jsr166-tests
+            libcore/benchmarks
+            art/tools/ahat
+            external/brotli/tests/testdata
+            device/sample/apps
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git, no subdir) -> se aborta"
+              exit 1
+            fi
+
+            case "$T" in
+              bionic/benchmarks|bionic/tests|system/apex/tests|prebuilts/tools/common/google-api-java-client|libcore/harmony-tests|libcore/jsr166-tests|libcore/benchmarks|art/tools/ahat|external/brotli/tests/testdata|device/sample/apps) ;;
+              *) echo "::error::$T fuera de la allowlist chicas-R1F -> se aborta"; exit 1 ;;
+            esac
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA CHICAS DESPUÉS ==="
+          df -h /
+
       # ============================================================
       # BUILD CONFIG
       # ============================================================

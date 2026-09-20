@@ -1021,6 +1021,53 @@ jobs:
           echo "=== PODA MISCFW DESPUÉS ==="
           df -h /
 
+      - name: "Poda post-sync (contents+sysroots)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA CONTENTS/SYSROOTS ANTES ==="
+          df -h /
+          # contents: test media sin refs globales (todo tipo); sysroots:
+          # musl cuyo toolchain ya fue podado. Padres intactos.
+          TARGETS="
+            frameworks/base/media/tests/contents
+            prebuilts/build-tools/sysroots
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git, no subdir) -> se aborta"
+              exit 1
+            fi
+
+            case "$T" in
+              frameworks/base/media/tests/contents|prebuilts/build-tools/sysroots) ;;
+              *) echo "::error::$T fuera de la allowlist -> se aborta"; exit 1 ;;
+            esac
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA CONTENTS/SYSROOTS DESPUÉS ==="
+          df -h /
+
       # ============================================================
       # BUILD CONFIG
       # ============================================================

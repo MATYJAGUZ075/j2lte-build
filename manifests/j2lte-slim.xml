@@ -380,4 +380,10 @@
        `py-cryptography` -> Soong "depends on undefined module" sin
        cryptography. El barrido previo no lo encontró (otra omisión).
        El override #133 queda revocado por esta evidencia. NO reintentar. -->
+  <!-- Tanda test-trio (R1-R19 + Grep-tool 2da vía, control positivo).
+       Test-only: inventario total + reversa combinada cero. Si Soong
+       falla, revertir la correspondiente y marcar 🔴. -->
+  <remove-project name="platform/external/ltp" />
+  <remove-project name="platform/external/oss-fuzz" />
+  <remove-project name="platform/external/OpenCL-CTS" />
 </manifest>

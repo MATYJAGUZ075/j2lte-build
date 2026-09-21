@@ -1074,13 +1074,13 @@ jobs:
           set -e
           echo "=== PODA TANDA2 ANTES ==="
           df -h /
-          # sdk/renderscript-prebuilt (support sin consumidores),
           # samsung/j1xlte+on5ltetmo (blobs hermanas, guards por device),
           # clang/python3 (bundled lldb, python sistema en uso),
           # incidentd/testdata (cero refs). servicestests RESTAURADO
-          # (run #174: PackageManagerComponentOverrideTests lo necesita).
+          # (run #174). renderscript RESTAURADO (run #175:
+          # development/build `build-tools` necesita
+          # `renderscript_sdk_prebuilts`; reversa no cubrió development/).
           TARGETS="
-            prebuilts/sdk/renderscript
             vendor/samsung/j1xlte
             vendor/samsung/on5ltetmo
             prebuilts/clang/host/linux-x86/clang-r450784d/python3
@@ -1100,7 +1100,7 @@ jobs:
             fi
 
             case "$T" in
-              prebuilts/sdk/renderscript|vendor/samsung/j1xlte|vendor/samsung/on5ltetmo|prebuilts/clang/host/linux-x86/clang-r450784d/python3|frameworks/base/cmds/incidentd/testdata) ;;
+              vendor/samsung/j1xlte|vendor/samsung/on5ltetmo|prebuilts/clang/host/linux-x86/clang-r450784d/python3|frameworks/base/cmds/incidentd/testdata) ;;
               *) echo "::error::$T fuera de la allowlist tanda2 -> se aborta"; exit 1 ;;
             esac
 

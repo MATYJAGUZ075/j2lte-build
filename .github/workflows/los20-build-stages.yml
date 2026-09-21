@@ -1235,6 +1235,10 @@ jobs:
             .repo/repo*|.repo/manifests*) echo "SKIP(tool) $g" >>"$LOG"; exit 0 ;;
           esac
           [ -d "$g/objects" ] || { echo "SKIP(no-objects) $g" >>"$LOG"; exit 0; }
+          # Los stores de CI pueden no traer objects/pack/ (objetos loose);
+          # se crea (a través del symlink comparte el store real; idempotente).
+          mkdir -p "$g/objects/pack" 2>/dev/null \
+            || { echo "FAIL(mkdir) $g" >>"$LOG"; exit 1; }
           keep="$(mktemp)"
           git -C "$g" cat-file --batch-check --batch-all-objects 2>/dev/null \
             | awk '$2=="commit"||$2=="tree"||$2=="tag"{print $1}' > "$keep"
@@ -1253,19 +1257,24 @@ jobs:
           fi
           # Recién ahora: borrar packs viejos + loose blobs (nunca trees/commits/tags).
           find "$g/objects/pack" \( -name 'pack-*.pack' -o -name 'pack-*.idx' -o -name 'pack-*.rev' -o -name 'pack-*.bitmap' -o -name 'pack-*.promisor' \) ! -name 'keep-pack-*' -delete
-          if [ -n "$(find "$g/objects" -type f -path '*/??/*' ! -path '*/pack/*' -print -quit 2>/dev/null)" ]; then
-            find "$g/objects" -type f -path '*/??/*' ! -path '*/pack/*' | while read -r f; do
-              h=$(echo "${f##*/objects/}" | tr -d '/')
-              t=$(git -C "$g" cat-file -t "$h" 2>/dev/null || true)
-              [ "$t" = "blob" ] && rm -f "$f"
-            done
-          fi
+          # Borrado batcheado de loose-blobs (una sola invocación git;
+          # conjunto idéntico al loop anterior: solo paths loose cuyo objeto es blob).
+          git -C "$g" cat-file --batch-check --batch-all-objects 2>/dev/null \
+            | awk '$2=="blob" {print substr($1,1,2)"/"substr($1,3)}' \
+            | while read -r p; do rm -f "$g/objects/$p"; done
           echo "OK $g" >>"$LOG"
           exit 0
           FILTER_EOF
           : > /tmp/filter-a.log
           : > /tmp/filter-a.err
-          find .repo -name "*.git" -type d \
+          # Dedup por store real: mirrors (.repo/projects) y stores
+          # (.repo/project-objects) comparten objects/ por symlink; se
+          # procesa cada store UNA vez (prefiere ruta project-objects).
+          find .repo -name "*.git" -type d | while read -r _g; do
+            [ -d "$_g/objects" ] || continue
+            _r=$(realpath "$_g/objects" 2>/dev/null) || continue
+            echo "$_r $_g"
+          done | sort -k1,1 -k2,2 | awk '!seen[$1]++ {print $2}' \
             | xargs -P 4 -I{} bash /tmp/filter-one-ci.sh "{}" 2>>/tmp/filter-a.err || XARGS_EXIT=$?
           XARGS_EXIT=${XARGS_EXIT:-0}
           echo "XARGS_EXIT=$XARGS_EXIT"

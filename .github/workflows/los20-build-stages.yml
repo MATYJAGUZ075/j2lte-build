@@ -1077,14 +1077,14 @@ jobs:
           # sdk/renderscript-prebuilt (support sin consumidores),
           # samsung/j1xlte+on5ltetmo (blobs hermanas, guards por device),
           # clang/python3 (bundled lldb, python sistema en uso),
-          # incidentd/testdata (cero refs), servicestests (cero consumidores).
+          # incidentd/testdata (cero refs). servicestests RESTAURADO
+          # (run #174: PackageManagerComponentOverrideTests lo necesita).
           TARGETS="
             prebuilts/sdk/renderscript
             vendor/samsung/j1xlte
             vendor/samsung/on5ltetmo
             prebuilts/clang/host/linux-x86/clang-r450784d/python3
             frameworks/base/cmds/incidentd/testdata
-            frameworks/base/services/tests/servicestests
           "
           du -sh $TARGETS 2>/dev/null || true
 
@@ -1100,7 +1100,7 @@ jobs:
             fi
 
             case "$T" in
-              prebuilts/sdk/renderscript|vendor/samsung/j1xlte|vendor/samsung/on5ltetmo|prebuilts/clang/host/linux-x86/clang-r450784d/python3|frameworks/base/cmds/incidentd/testdata|frameworks/base/services/tests/servicestests) ;;
+              prebuilts/sdk/renderscript|vendor/samsung/j1xlte|vendor/samsung/on5ltetmo|prebuilts/clang/host/linux-x86/clang-r450784d/python3|frameworks/base/cmds/incidentd/testdata) ;;
               *) echo "::error::$T fuera de la allowlist tanda2 -> se aborta"; exit 1 ;;
             esac
 

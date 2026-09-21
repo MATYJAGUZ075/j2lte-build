@@ -1244,7 +1244,7 @@ jobs:
             | awk '$2=="commit"||$2=="tree"||$2=="tag"{print $1}' > "$keep"
           n=$(wc -l < "$keep")
           if [ "$n" -eq 0 ]; then echo "SKIP(empty) $g" >>"$LOG"; rm -f "$keep"; exit 0; fi
-          if ! git -C "$g" pack-objects --depth=0 --non-empty "$g/objects/pack/keep-pack" < "$keep" >>"$LOG" 2>&1; then
+          if ! git -C "$g" pack-objects --depth=0 --non-empty "$PWD/$g/objects/pack/keep-pack" < "$keep" >>"$LOG" 2>&1; then
             echo "FAIL(pack) $g" >>"$LOG"; rm -f "$keep"; exit 1
           fi
           rm -f "$keep"

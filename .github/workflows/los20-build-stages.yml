@@ -1036,6 +1036,52 @@ jobs:
           echo "=== PODA MISCFW DESPUÉS ==="
           df -h /
 
+      - name: "Poda post-sync (webview no-arm)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA WEBVIEW-NOARM ANTES ==="
+          df -h /
+          # SOLO los 3 APKs no-arm auditados (x86_64/arm64/x86). j2lte resuelve
+          # prebuilt/$(TARGET_ARCH=arm) vía get-prebuilt-src-arch; cero refs
+          # a los otros en device/vendor/build/frameworks/packages/system/
+          # hardware/external/tools/art/prebuilts (barridos completados, sin
+          # globs: Android.mk usa ruta explícita por arch). arm/ INTACTO.
+          TARGETS="
+            external/chromium-webview/prebuilt/x86_64/webview.apk
+            external/chromium-webview/prebuilt/arm64/webview.apk
+            external/chromium-webview/prebuilt/x86/webview.apk
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          for T in $TARGETS; do
+            if [ ! -f "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            case "$T" in
+              external/chromium-webview/prebuilt/x86_64/webview.apk|external/chromium-webview/prebuilt/arm64/webview.apk|external/chromium-webview/prebuilt/x86/webview.apk) ;;
+              *) echo "::error::$T fuera de la allowlist webview-noarm -> se aborta"; exit 1 ;;
+            esac
+
+            PARENT="$(cd "$(dirname "$T")" && pwd)"
+            EXPECTED="$(pwd)/external/chromium-webview/prebuilt"
+            case "$PARENT" in
+              "$EXPECTED"/x86_64|"$EXPECTED"/arm64|"$EXPECTED"/x86) ;;
+              *) echo "::error::ruta inesperada para $T -> abort"; exit 1 ;;
+            esac
+
+            rm -f "$T"
+
+            ls "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA WEBVIEW-NOARM DESPUÉS ==="
+          df -h /
+
       - name: "Poda post-sync (contents+sysroots)"
         working-directory: /home/runner/los20
         run: |

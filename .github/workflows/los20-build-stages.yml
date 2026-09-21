@@ -300,6 +300,10 @@ jobs:
           du -sh .repo/project-objects 2>/dev/null || true
           echo "=== projects ==="
           du -sh .repo/projects 2>/dev/null || true
+          echo "=== .repo/projects breakdown (temporal, solo lectura) ==="
+          du -sh .repo/projects/* 2>/dev/null | sort -rh | head -30 || true
+          echo "=== largest files in projects ==="
+          find .repo/projects -type f -printf '%s %p\n' 2>/dev/null | sort -nr | head -30 || true
           echo "=== FREE SPACE ==="
           df -h /
 

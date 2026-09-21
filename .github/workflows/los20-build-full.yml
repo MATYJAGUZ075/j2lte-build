@@ -1228,57 +1228,70 @@ jobs:
           fi
           echo "OK: todos los HEAD resuelven antes del filtrado"
 
-          # --- filtro (equivalente a filter-one.sh validado; diff en descripción) ---
+          # --- driver validado: script temporal + xargs -P4 (mismo patrón
+          # que la prueba /tmp/repo-test 2515/2515; sin export -f) ---
           ROOT="$(pwd)"
           case "$ROOT" in
             */los20) ;;
             *) echo "::error::cwd inesperado ($ROOT), se esperaba .../los20 -> abort"; exit 1 ;;
           esac
           test -d .repo -a -f build/envsetup.sh || { echo "::error::no es checkout los20 -> abort"; exit 1; }
-
-          filter_git() {
-            g="$1"
-            case "$g" in
-              "$ROOT"/.repo/*) ;;
-              *) echo "RECHAZADO (fuera de .repo): $g" >&2; return 2 ;;
-            esac
-            case "$g" in
-              "$ROOT"/.repo/repo*|"$ROOT"/.repo/manifests*) echo "SKIP(tool) $g"; return 0 ;;
-            esac
-            [ -d "$g/objects" ] || { echo "SKIP(no-objects) $g"; return 0; }
-            keep="$(mktemp)"
-            git -C "$g" cat-file --batch-check --batch-all-objects 2>/dev/null \
-              | awk '$2=="commit"||$2=="tree"||$2=="tag"{print $1}' > "$keep"
-            n=$(wc -l < "$keep")
-            if [ "$n" -eq 0 ]; then echo "SKIP(empty) $g"; rm -f "$keep"; return 0; fi
-            if ! git -C "$g" pack-objects --depth=0 --non-empty "$g/objects/pack/keep-pack" < "$keep" >/dev/null 2>&1; then
-              echo "FAIL(pack) $g" >&2; rm -f "$keep"; return 1
-            fi
-            rm -f "$keep"
-            newidx=$(ls "$g"/objects/pack/keep-pack-*.idx 2>/dev/null | head -1)
-            [ -n "$newidx" ] || { echo "FAIL(no-newidx) $g" >&2; return 1; }
-            nb=$(git verify-pack -v "$newidx" 2>/dev/null | awk '$2=="blob"' | wc -l)
-            [ "$nb" -eq 0 ] || { echo "FAIL(blobs=$nb) $g" >&2; rm -f "$g"/objects/pack/keep-pack-*; return 1; }
-            git -C "$g" rev-parse --all >/dev/null 2>&1 \
-              || { echo "FAIL(refs) $g" >&2; rm -f "$g"/objects/pack/keep-pack-*; return 1; }
-            # Recién ahora: borrar packs viejos + loose blobs (nunca trees/commits/tags).
-            find "$g/objects/pack" \( -name 'pack-*.pack' -o -name 'pack-*.idx' -o -name 'pack-*.rev' -o -name 'pack-*.bitmap' -o -name 'pack-*.promisor' \) ! -name 'keep-pack-*' -delete
-            if [ -n "$(find "$g/objects" -type f -path '*/??/*' ! -path '*/pack/*' -print -quit 2>/dev/null)" ]; then
-              find "$g/objects" -type f -path '*/??/*' ! -path '*/pack/*' | while read -r f; do
-                h=$(echo "${f##*/objects/}" | tr -d '/')
-                t=$(git -C "$g" cat-file -t "$h" 2>/dev/null || true)
-                [ "$t" = "blob" ] && rm -f "$f"
-              done
-            fi
-            echo "OK $g"
-          }
-          export -f filter_git
-          export ROOT
-          find .repo -name "*.git" -type d -print0 \
-            | xargs -0 -P 4 -I{} bash -c 'filter_git "$@"' _ {} > /tmp/filter-a.log 2>&1 || {
-              echo "::error::falló el filtrado; primeras fallas:"; grep "^FAIL" /tmp/filter-a.log | head -10; exit 1;
-            }
+          cat > /tmp/filter-one-ci.sh <<'FILTER_EOF'
+          #!/bin/bash
+          # Filtra UN git dir: conserva commits+tags+trees, elimina solo blobs.
+          # Lógica idéntica a filter-one.sh validado en /tmp/repo-test.
+          # Uso: filter-one-ci.sh <gitdir-relativo-al-checkout>
+          g="$1"
+          LOG=/tmp/filter-a.log
+          case "$g" in
+            .repo/*) ;;
+            *) echo "RECHAZADO (fuera de .repo): $g" >>"$LOG"; exit 2 ;;
+          esac
+          case "$g" in
+            .repo/repo*|.repo/manifests*) echo "SKIP(tool) $g" >>"$LOG"; exit 0 ;;
+          esac
+          [ -d "$g/objects" ] || { echo "SKIP(no-objects) $g" >>"$LOG"; exit 0; }
+          keep="$(mktemp)"
+          git -C "$g" cat-file --batch-check --batch-all-objects 2>/dev/null \
+            | awk '$2=="commit"||$2=="tree"||$2=="tag"{print $1}' > "$keep"
+          n=$(wc -l < "$keep")
+          if [ "$n" -eq 0 ]; then echo "SKIP(empty) $g" >>"$LOG"; rm -f "$keep"; exit 0; fi
+          if ! git -C "$g" pack-objects --depth=0 --non-empty "$g/objects/pack/keep-pack" < "$keep" >>"$LOG" 2>&1; then
+            echo "FAIL(pack) $g" >>"$LOG"; rm -f "$keep"; exit 1
+          fi
+          rm -f "$keep"
+          newidx=$(ls "$g"/objects/pack/keep-pack-*.idx 2>/dev/null | head -1)
+          [ -n "$newidx" ] || { echo "FAIL(no-newidx) $g" >>"$LOG"; exit 1; }
+          nb=$(git verify-pack -v "$newidx" 2>/dev/null | awk '$2=="blob"' | wc -l)
+          [ "$nb" -eq 0 ] || { echo "FAIL(blobs=$nb) $g" >>"$LOG"; rm -f "$g"/objects/pack/keep-pack-*; exit 1; }
+          if ! git -C "$g" rev-parse --all >/dev/null 2>&1; then
+            echo "FAIL(refs) $g" >>"$LOG"; rm -f "$g"/objects/pack/keep-pack-*; exit 1
+          fi
+          # Recién ahora: borrar packs viejos + loose blobs (nunca trees/commits/tags).
+          find "$g/objects/pack" \( -name 'pack-*.pack' -o -name 'pack-*.idx' -o -name 'pack-*.rev' -o -name 'pack-*.bitmap' -o -name 'pack-*.promisor' \) ! -name 'keep-pack-*' -delete
+          if [ -n "$(find "$g/objects" -type f -path '*/??/*' ! -path '*/pack/*' -print -quit 2>/dev/null)" ]; then
+            find "$g/objects" -type f -path '*/??/*' ! -path '*/pack/*' | while read -r f; do
+              h=$(echo "${f##*/objects/}" | tr -d '/')
+              t=$(git -C "$g" cat-file -t "$h" 2>/dev/null || true)
+              [ "$t" = "blob" ] && rm -f "$f"
+            done
+          fi
+          echo "OK $g" >>"$LOG"
+          exit 0
+          FILTER_EOF
+          : > /tmp/filter-a.log
+          : > /tmp/filter-a.err
+          find .repo -name "*.git" -type d \
+            | xargs -P 4 -I{} bash /tmp/filter-one-ci.sh "{}" 2>>/tmp/filter-a.err || XARGS_EXIT=$?
+          XARGS_EXIT=${XARGS_EXIT:-0}
+          echo "XARGS_EXIT=$XARGS_EXIT"
+          echo "--- filter-a.log (primeras 20 líneas):"
+          head -20 /tmp/filter-a.log
+          echo "--- child stderr (primeras 20 líneas):"
+          head -20 /tmp/filter-a.err
           echo "filtrados OK: $(grep -c '^OK' /tmp/filter-a.log || true) FAIL: $(grep -c '^FAIL' /tmp/filter-a.log || true)"
+          test "$XARGS_EXIT" = "0" \
+            || { echo "::error::xargs exit=$XARGS_EXIT -> abort"; exit 1; }
           test "$(grep -c '^FAIL' /tmp/filter-a.log || true)" = "0" \
             || { echo "::error::hubo FAILs en filtrado -> abort"; exit 1; }
 
@@ -1316,6 +1329,19 @@ jobs:
           test -d .repo/projects \
             && echo "OK: .repo/projects conservado" \
             || { echo "::error::.repo/projects desapareció -> abort"; exit 1; }
+
+      - name: Upload filter-a forense (solo si el filtro falló)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: filter-a-bacon-${{ github.run_id }}
+          path: |
+            /tmp/filter-a.log
+            /tmp/filter-a.err
+            /tmp/manifest-before.xml
+            /tmp/manifest-after.xml
+          if-no-files-found: warn
+          retention-days: 3
 
       # ============================================================
       # GUARD (después de TODAS las podas, igual que en stages)

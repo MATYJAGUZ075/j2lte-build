@@ -1182,6 +1182,45 @@ jobs:
           echo "=== PODA TANDA2 DESPUÉS ==="
           df -h /
 
+      - name: "Captura manifest + poda .repo object metadata (prueba controlada)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== REPO-META ANTES ==="
+          df -h /
+          du -sh .repo 2>/dev/null || true
+          du -sh .repo/project-objects 2>/dev/null || true
+          du -sh .repo/projects 2>/dev/null || true
+
+          # 1. Capturar provenance ANTES de borrar (para diagnóstico).
+          python3 .repo/repo/repo manifest -o /tmp/manifest-frozen.xml -r 2>&1 | head -3 || true
+          ls -la /tmp/manifest-frozen.xml 2>/dev/null || echo "::warning::no se pudo capturar manifest"
+
+          # 2. Protección: verificar checkout exacto y rutas exactas.
+          # NUNCA rm -rf .repo/* ni wildcards: solo estas dos rutas.
+          for T in .repo/project-objects .repo/projects; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+            # Proteger lo que debe quedar: repo/, manifests/, manifest.xml,
+            # local_manifests/ y TODOS los .git de working trees.
+            rm -rf "$T"
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::no se eliminó $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== REPO-META DESPUÉS ==="
+          df -h /
+          du -sh .repo 2>/dev/null || true
+
       # ============================================================
       # BUILD CONFIG
       # ============================================================

@@ -1377,7 +1377,10 @@ jobs:
 
             echo "== mka $target =="
 
-            time mka --skip-soong-tests "$target" -j"$(nproc)" \
+            # Prueba MINIMIZE (override por línea de comandos, pisa el `:=`
+            # por ser asignación de línea de comandos; no toca device tree):
+            # recorta tablas de variables locales java (-g:source,lines).
+            time mka --skip-soong-tests PRODUCT_MINIMIZE_JAVA_DEBUG_INFO=true "$target" -j"$(nproc)" \
               2>&1 | tee /tmp/stage.log
 
             RC=${PIPESTATUS[0]}

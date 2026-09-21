@@ -1229,6 +1229,50 @@ jobs:
           echo "=== KOTLINC (candidata registrada 94M, NO borrar) ==="
           du -sh /usr/share/kotlinc 2>/dev/null || true
 
+      - name: Limpieza tardía symbols (una vez, solo systemimage sin EXTRA)
+        id: symbolsclean
+        background: true
+        working-directory: /home/runner/los20
+        run: |
+          set +e
+          # Gate estricto: solo STAGE=systemimage (TARGET resuelto) y EXTRA
+          # vacío. Cualquier otro caso: salir sin tocar nada.
+          if [ "${TARGET:-}" != "systemimage" ]; then
+            echo "skip: TARGET=$TARGET no es systemimage -> sin limpieza"
+            exit 0
+          fi
+          if [ -n "${EXTRA:-}" ]; then
+            echo "skip: EXTRA no vacío ($EXTRA) -> sin limpieza (dist/ota podrían necesitar symbols/)"
+            exit 0
+          fi
+          SYMDIR="out/target/product/j2lte/symbols"
+          BRKDIR="out/target/product/j2lte/breakpad"
+          FLAG="/tmp/SYMBOLS_CLEANED"
+          # Bucle vigilante: dispara UNA sola vez al cruzar el umbral tardío
+          # (~90% ninja) o symbols/>1G con progreso >85%. Las copias son
+          # order-only por diseño (dynamic_binary.mk:86-89): borrarlas no
+          # fuerza rebuilds; systemimage filtra TARGET_OUT y nunca las lee.
+          while [ ! -e /tmp/BUILD_DONE ]; do
+            PROG="$(grep -aoE '\[ *[0-9]+% +[0-9]+/[0-9]+\]' /tmp/stage.log 2>/dev/null | tail -1 || true)"
+            PCT="$(echo "$PROG" | grep -oE '[0-9]+%' | tr -d '%' | head -1)"
+            PCT="${PCT:-0}"
+            SYMSZ="$(du -sb "$SYMDIR" 2>/dev/null | cut -f1 || echo 0)"
+            SYMSZ="${SYMSZ:-0}"
+            FIRE=0
+            [ "$PCT" -ge 90 ] && FIRE=1
+            if [ "$SYMSZ" -gt 1073741824 ] && [ "$PCT" -gt 85 ]; then FIRE=1; fi
+            if [ "$FIRE" = "1" ] && [ ! -e "$FLAG" ]; then
+              echo "### LIMPIEZA SYMBOLS pct=${PCT}% symsize=${SYMSZ}B -> rm UNA vez ###"
+              df -h / | head -2
+              rm -rf "$SYMDIR" "$BRKDIR" 2>/dev/null || true
+              touch "$FLAG" 2>/dev/null || true
+              df -h / | head -2
+              break
+            fi
+            sleep 60
+          done
+          echo "fin vigía symbols (BUILD_DONE o ya disparado)"
+
       - name: Build targets
         id: build
         background: true

@@ -1196,13 +1196,14 @@ jobs:
           python3 .repo/repo/repo manifest -o /tmp/manifest-frozen.xml -r 2>&1 | head -3 || true
           ls -la /tmp/manifest-frozen.xml 2>/dev/null || echo "::warning::no se pudo capturar manifest"
 
-          # 2. Protección: verificar checkout exacto y rutas exactas.
-          # NUNCA rm -rf .repo/* ni wildcards: solo estas dos rutas.
-          for T in .repo/project-objects .repo/projects; do
-            if [ ! -d "$T" ]; then
-              echo "skip: $T no existe -> nada que podar"
-              continue
-            fi
+          # 2. Protección: verificar checkout exacto y ruta exacta.
+          # PRUEBA CONTROLADA: SOLO .repo/project-objects (~19G).
+          # .repo/projects se CONSERVA (build-manifest lo necesita).
+          # NUNCA rm -rf .repo/* ni wildcards.
+          test -d .repo/project-objects || { echo "skip: .repo/project-objects no existe"; }
+          test -d .repo/projects || { echo "::error::.repo/projects debe existir -> abort"; exit 1; }
+          T=".repo/project-objects"
+          if [ -d "$T" ]; then
             PARENT="$(cd "$T" && pwd)"
             EXPECTED="$(pwd)/$T"
             if [ "$PARENT" != "$EXPECTED" ]; then
@@ -1210,16 +1211,20 @@ jobs:
               exit 1
             fi
             # Proteger lo que debe quedar: repo/, manifests/, manifest.xml,
-            # local_manifests/ y TODOS los .git de working trees.
+            # local_manifests/, projects/ y TODOS los .git de working trees.
             rm -rf "$T"
             ls -d "$T" 2>/dev/null \
               && echo "::error::no se eliminó $T" \
               || echo "OK: $T eliminado"
-          done
+          fi
+          test -d .repo/projects \
+            && echo "OK: .repo/projects conservado" \
+            || { echo "::error::.repo/projects desapareció -> abort"; exit 1; }
 
           echo "=== REPO-META DESPUÉS ==="
           df -h /
           du -sh .repo 2>/dev/null || true
+          du -sh .repo/projects 2>/dev/null || true
 
       # ============================================================
       # BUILD CONFIG

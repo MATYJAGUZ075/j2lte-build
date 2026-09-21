@@ -292,6 +292,17 @@ jobs:
           echo "=== DISCO POST-SYNC ==="
           df -h /
 
+          echo "=== .repo SIZE AFTER SYNC (medición temporal, no borra nada) ==="
+          du -sh .repo 2>/dev/null || true
+          echo "=== .repo COMPONENTS ==="
+          du -sh .repo/* 2>/dev/null | sort -h || true
+          echo "=== project-objects ==="
+          du -sh .repo/project-objects 2>/dev/null || true
+          echo "=== projects ==="
+          du -sh .repo/projects 2>/dev/null || true
+          echo "=== FREE SPACE ==="
+          df -h /
+
       - name: Poda post-sync (prebuilts/rust/darwin-x86)
         working-directory: /home/runner/los20
         run: |

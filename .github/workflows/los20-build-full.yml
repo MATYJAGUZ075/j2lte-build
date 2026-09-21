@@ -62,6 +62,17 @@
 #   recupera stage/bacon.log y disk-monitor.log si el build falla o el job
 #   es cancelado, que es lo máximo que Actions permite sin runners
 #   self-hosted con lógica custom de reporte.
+# FIX-035 (2026-09-21): portadas las optimizaciones generales de
+#   los20-build-stages.yml que faltaban aquí, sin cambiar la naturaleza
+#   `mka bacon` de este workflow: 8 podas post-sync tardías (sdk-tools-lib,
+#   metalava, appcompat, chicas-R1F, miscfw, webview-noarm,
+#   contents+sysroots, tanda2) + filtro .repo opción A (conserva
+#   commits/tags/trees, elimina solo blobs, con guards G1-G5).
+#   Deliberadamente NO portado: selector de stage, systemimage-guard,
+#   bootimage/recoveryimage, EXTRA, limpieza tardía symbols (sintaxis
+#   background:/wait: inválida en Actions + riesgo en zip OTA),
+#   PRODUCT_MINIMIZE_JAVA_DEBUG_INFO (altera artefacto full),
+#   WITH_DEXPREOPT=false (bacon usa BOOT_IMG_AND_SYSTEM_SERVER_ONLY).
 #
 # IMPORTANTE / FIX-014 (INFRASTRUCTURE-BLOCKED):
 #   El runner hospedado ubuntu-24.04 (~145G disco, 4 vCPU, 16G RAM) NO alcanza
@@ -786,6 +797,526 @@ jobs:
           echo "=== PODA DARWIN DESPUÉS ==="
           df -h /
 
+      - name: "Poda post-sync (sdk/tools lib)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA SDK-TOOLS-LIB ANTES ==="
+          df -h /
+          # SOLO lib auditado (d8/dx/signapk prebuilt sin refs; firma→fuente,
+          # dex→prebuilts/r8). linux RESTAURADO (run #155: el genrule
+          # build-tools-lld-linux del propio sdk/tools/Android.bp:77 copia
+          # linux/lld-bin/lld y linux/lib64/libc++.so.1 por path relativo).
+          # NO tocar sdk/tools/darwin, windows (prohibidos), niveles
+          # 28-33/current, jetifier (futura tanda).
+          TARGETS="
+            prebuilts/sdk/tools/lib
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git, no subdir) -> se aborta"
+              exit 1
+            fi
+
+            case "$T" in
+              prebuilts/sdk/tools/lib) ;;
+              *) echo "::error::$T fuera de la allowlist sdk-lib -> se aborta"; exit 1 ;;
+            esac
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            # Proteger el padre platform/prebuilts/sdk y .repo: solo rm del subdir.
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA SDK-TOOLS-LIB DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (tools/common/metalava)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA METALAVA ANTES ==="
+          df -h /
+          # SOLO metalava prebuilt auditado (sin .bp, cero refs; metalava se
+          # compila de fuente). NO tocar resto de tools/common ni .repo.
+          TARGETS="
+            prebuilts/tools/common/metalava
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git, no subdir) -> se aborta"
+              exit 1
+            fi
+
+            case "$T" in
+              prebuilts/tools/common/metalava) ;;
+              *) echo "::error::$T fuera de la allowlist metalava -> se aborta"; exit 1 ;;
+            esac
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA METALAVA DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (runtime/appcompat)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA APPCOMPAT ANTES ==="
+          df -h /
+          # SOLO appcompat auditado (appcompat.sh/veridex dev-tool externo;
+          # cero refs en build/art/frameworks). NO tocar resto de runtime
+          # (mainline ya podado; adb/iorap/appcompat-activo fuera de alcance).
+          TARGETS="
+            prebuilts/runtime/appcompat
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git, no subdir) -> se aborta"
+              exit 1
+            fi
+
+            case "$T" in
+              prebuilts/runtime/appcompat) ;;
+              *) echo "::error::$T fuera de la allowlist appcompat -> se aborta"; exit 1 ;;
+            esac
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA APPCOMPAT DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (chicas auditadas R1-F)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA CHICAS ANTES ==="
+          df -h /
+          # Subdirs auditados con grep -F + control positivo, cero
+          # consumidores (bionic-bench/apex/brotli) o samples sin cierre
+          # (device/sample/apps; etc/ INTACTO por apns-full-conf.xml).
+          # gcam EXCLUIDA (inventario incompleto). ahat RESTAURADO (run #159).
+          # bionic/tests RESTAURADO (run #162: CtsBionicTestCases necesita
+          # libBionicTests y libs hermanas de bionic/tests; inventario previo
+          # solo cubrió bionic-unit-tests*, no las test-libs).
+          # apex/tests RESTAURADO (run #165: ApexTestCases en apexd necesita
+          # sharedlibs_generated de tests/testdata; inventario no bajó ahí).
+          # jsr166-tests RESTAURADO (run #166: módulo `jsr166-tests` definido
+          # en libcore/JavaLibrary.bp:545 con srcs DENTRO del dir podado ->
+          # Kati "Installable device module must have LOCAL_SOONG_DEX_JAR".
+          # Trampa inversa: módulo fuera, fuentes dentro. harmony/benchmarks
+          # siguen podados (sin errores en #166; si fallan, se restauran).
+          # bionic/benchmarks RESTAURADO (run #167:
+          # native_metric_test_list.mk lo exige; R5 miraba solo
+          # native_test_list.mk, no las 5 listas).
+          TARGETS="
+            prebuilts/tools/common/google-api-java-client
+            libcore/harmony-tests
+            libcore/benchmarks
+            external/brotli/tests/testdata
+            device/sample/apps
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git, no subdir) -> se aborta"
+              exit 1
+            fi
+
+            case "$T" in
+              prebuilts/tools/common/google-api-java-client|libcore/harmony-tests|libcore/benchmarks|external/brotli/tests/testdata|device/sample/apps) ;;
+              *) echo "::error::$T fuera de la allowlist chicas-R1F -> se aborta"; exit 1 ;;
+            esac
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA CHICAS DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (misc-frameworks)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA MISCFW ANTES ==="
+          df -h /
+          # SOLO platformprotos prebuilt (cero consumidores globales,
+          # libplatformprotos real se compila de frameworks/base).
+          TARGETS="
+            prebuilts/misc/common/frameworks
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git, no subdir) -> se aborta"
+              exit 1
+            fi
+
+            case "$T" in
+              prebuilts/misc/common/frameworks) ;;
+              *) echo "::error::$T fuera de la allowlist miscfw -> se aborta"; exit 1 ;;
+            esac
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA MISCFW DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (webview no-arm)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA WEBVIEW-NOARM ANTES ==="
+          df -h /
+          # SOLO los 3 APKs no-arm auditados (x86_64/arm64/x86). j2lte resuelve
+          # prebuilt/$(TARGET_ARCH=arm) vía get-prebuilt-src-arch; cero refs
+          # a los otros en device/vendor/build/frameworks/packages/system/
+          # hardware/external/tools/art/prebuilts (barridos completados, sin
+          # globs: Android.mk usa ruta explícita por arch). arm/ INTACTO.
+          TARGETS="
+            external/chromium-webview/prebuilt/x86_64/webview.apk
+            external/chromium-webview/prebuilt/arm64/webview.apk
+            external/chromium-webview/prebuilt/x86/webview.apk
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          for T in $TARGETS; do
+            if [ ! -f "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            case "$T" in
+              external/chromium-webview/prebuilt/x86_64/webview.apk|external/chromium-webview/prebuilt/arm64/webview.apk|external/chromium-webview/prebuilt/x86/webview.apk) ;;
+              *) echo "::error::$T fuera de la allowlist webview-noarm -> se aborta"; exit 1 ;;
+            esac
+
+            PARENT="$(cd "$(dirname "$T")" && pwd)"
+            EXPECTED="$(pwd)/external/chromium-webview/prebuilt"
+            case "$PARENT" in
+              "$EXPECTED"/x86_64|"$EXPECTED"/arm64|"$EXPECTED"/x86) ;;
+              *) echo "::error::ruta inesperada para $T -> abort"; exit 1 ;;
+            esac
+
+            rm -f "$T"
+
+            ls "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA WEBVIEW-NOARM DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (contents+sysroots)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA CONTENTS/SYSROOTS ANTES ==="
+          df -h /
+          # contents: test media sin refs globales (todo tipo); sysroots:
+          # musl cuyo toolchain ya fue podado. Padres intactos.
+          TARGETS="
+            frameworks/base/media/tests/contents
+            prebuilts/build-tools/sysroots
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git, no subdir) -> se aborta"
+              exit 1
+            fi
+
+            case "$T" in
+              frameworks/base/media/tests/contents|prebuilts/build-tools/sysroots) ;;
+              *) echo "::error::$T fuera de la allowlist -> se aborta"; exit 1 ;;
+            esac
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA CONTENTS/SYSROOTS DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (rs-prebuilt+siblings+clangpy+incidentd+svctests)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA TANDA2 ANTES ==="
+          df -h /
+          # samsung/j1xlte+on5ltetmo (blobs hermanas, guards por device),
+          # clang/python3 (bundled lldb, python sistema en uso),
+          # incidentd/testdata (cero refs). servicestests RESTAURADO
+          # (run #174). renderscript RESTAURADO (run #175:
+          # development/build `build-tools` necesita
+          # `renderscript_sdk_prebuilts`; reversa no cubrió development/).
+          TARGETS="
+            vendor/samsung/j1xlte
+            vendor/samsung/on5ltetmo
+            prebuilts/clang/host/linux-x86/clang-r450784d/python3
+            frameworks/base/cmds/incidentd/testdata
+          "
+          du -sh $TARGETS 2>/dev/null || true
+
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git, no subdir) -> se aborta"
+              exit 1
+            fi
+
+            case "$T" in
+              vendor/samsung/j1xlte|vendor/samsung/on5ltetmo|prebuilts/clang/host/linux-x86/clang-r450784d/python3|frameworks/base/cmds/incidentd/testdata) ;;
+              *) echo "::error::$T fuera de la allowlist tanda2 -> se aborta"; exit 1 ;;
+            esac
+
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+
+            rm -rf "$T"
+
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+
+          echo "=== PODA TANDA2 DESPUÉS ==="
+          df -h /
+
+      - name: "Filtro .repo opción A (blobs) + guards"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          # OPCIÓN A validada en /tmp/repo-test (prueba reversible 2026-09-21):
+          # conserva commits+tags+trees, elimina SOLO blobs. Mantiene
+          # `repo manifest -r` y setlocalversion (rev-parse + diff-index).
+          # NO elimina .repo, NO usa manifest slim, NO toca device/kernel/vendor.
+          echo "=== FILTRO-A .repo ANTES ==="
+          df -h /
+          du -sh .repo 2>/dev/null || true
+          du -sh .repo/project-objects 2>/dev/null || true
+          du -sh .repo/projects 2>/dev/null || true
+          FREE_BEFORE_MB=$(df -B1 / | awk 'NR==2{print int($4/1048576)}')
+          echo "FREE_BEFORE_MB=$FREE_BEFORE_MB"
+
+          # G1: manifest baseline (si falla aquí, el sync ya está roto -> abort).
+          python3 .repo/repo/repo manifest -o /tmp/manifest-before.xml -r
+          test -s /tmp/manifest-before.xml || { echo "::error::manifest-before vacío -> abort"; exit 1; }
+          echo "OK: manifest-before capturado"
+
+          # G2: todos los HEAD resuelven ANTES (baseline del sync).
+          UNRES_BEFORE=$(repo forall -c 'git rev-parse --verify -q HEAD >/dev/null 2>&1 || echo "UNRESOLVED:$REPO_PATH"' 2>/dev/null || true)
+          if [ -n "$UNRES_BEFORE" ]; then
+            echo "::error::HEADs sin resolver ANTES del filtrado -> abort (sync incompleto):"
+            echo "$UNRES_BEFORE" | head -10
+            exit 1
+          fi
+          echo "OK: todos los HEAD resuelven antes del filtrado"
+
+          # --- filtro (equivalente a filter-one.sh validado; diff en descripción) ---
+          ROOT="$(pwd)"
+          case "$ROOT" in
+            */los20) ;;
+            *) echo "::error::cwd inesperado ($ROOT), se esperaba .../los20 -> abort"; exit 1 ;;
+          esac
+          test -d .repo -a -f build/envsetup.sh || { echo "::error::no es checkout los20 -> abort"; exit 1; }
+
+          filter_git() {
+            g="$1"
+            case "$g" in
+              "$ROOT"/.repo/*) ;;
+              *) echo "RECHAZADO (fuera de .repo): $g" >&2; return 2 ;;
+            esac
+            case "$g" in
+              "$ROOT"/.repo/repo*|"$ROOT"/.repo/manifests*) echo "SKIP(tool) $g"; return 0 ;;
+            esac
+            [ -d "$g/objects" ] || { echo "SKIP(no-objects) $g"; return 0; }
+            keep="$(mktemp)"
+            git -C "$g" cat-file --batch-check --batch-all-objects 2>/dev/null \
+              | awk '$2=="commit"||$2=="tree"||$2=="tag"{print $1}' > "$keep"
+            n=$(wc -l < "$keep")
+            if [ "$n" -eq 0 ]; then echo "SKIP(empty) $g"; rm -f "$keep"; return 0; fi
+            if ! git -C "$g" pack-objects --depth=0 --non-empty "$g/objects/pack/keep-pack" < "$keep" >/dev/null 2>&1; then
+              echo "FAIL(pack) $g" >&2; rm -f "$keep"; return 1
+            fi
+            rm -f "$keep"
+            newidx=$(ls "$g"/objects/pack/keep-pack-*.idx 2>/dev/null | head -1)
+            [ -n "$newidx" ] || { echo "FAIL(no-newidx) $g" >&2; return 1; }
+            nb=$(git verify-pack -v "$newidx" 2>/dev/null | awk '$2=="blob"' | wc -l)
+            [ "$nb" -eq 0 ] || { echo "FAIL(blobs=$nb) $g" >&2; rm -f "$g"/objects/pack/keep-pack-*; return 1; }
+            git -C "$g" rev-parse --all >/dev/null 2>&1 \
+              || { echo "FAIL(refs) $g" >&2; rm -f "$g"/objects/pack/keep-pack-*; return 1; }
+            # Recién ahora: borrar packs viejos + loose blobs (nunca trees/commits/tags).
+            find "$g/objects/pack" \( -name 'pack-*.pack' -o -name 'pack-*.idx' -o -name 'pack-*.rev' -o -name 'pack-*.bitmap' -o -name 'pack-*.promisor' \) ! -name 'keep-pack-*' -delete
+            if [ -n "$(find "$g/objects" -type f -path '*/??/*' ! -path '*/pack/*' -print -quit 2>/dev/null)" ]; then
+              find "$g/objects" -type f -path '*/??/*' ! -path '*/pack/*' | while read -r f; do
+                h=$(echo "${f##*/objects/}" | tr -d '/')
+                t=$(git -C "$g" cat-file -t "$h" 2>/dev/null || true)
+                [ "$t" = "blob" ] && rm -f "$f"
+              done
+            fi
+            echo "OK $g"
+          }
+          export -f filter_git
+          export ROOT
+          find .repo -name "*.git" -type d -print0 \
+            | xargs -0 -P 4 -I{} bash -c 'filter_git "$@"' _ {} > /tmp/filter-a.log 2>&1 || {
+              echo "::error::falló el filtrado; primeras fallas:"; grep "^FAIL" /tmp/filter-a.log | head -10; exit 1;
+            }
+          echo "filtrados OK: $(grep -c '^OK' /tmp/filter-a.log || true) FAIL: $(grep -c '^FAIL' /tmp/filter-a.log || true)"
+          test "$(grep -c '^FAIL' /tmp/filter-a.log || true)" = "0" \
+            || { echo "::error::hubo FAILs en filtrado -> abort"; exit 1; }
+
+          # G3: manifest DESPUÉS debe funcionar y ser idéntico al baseline.
+          python3 .repo/repo/repo manifest -o /tmp/manifest-after.xml -r \
+            || { echo "::error::repo manifest -r falló DESPUÉS del filtrado -> abort"; exit 1; }
+          diff -q /tmp/manifest-before.xml /tmp/manifest-after.xml \
+            || { echo "::error::el manifest CAMBIÓ tras el filtrado -> abort"; exit 1; }
+          echo "OK: manifest idéntico antes/después"
+
+          # G4: todos los HEAD resuelven DESPUÉS (objetos requeridos presentes).
+          UNRES_AFTER=$(repo forall -c 'git rev-parse --verify -q HEAD >/dev/null 2>&1 || echo "UNRESOLVED:$REPO_PATH"' 2>/dev/null || true)
+          if [ -n "$UNRES_AFTER" ]; then
+            echo "::error::HEADs sin resolver DESPUÉS del filtrado -> abort (objeto requerido ausente):"
+            echo "$UNRES_AFTER" | head -10
+            exit 1
+          fi
+          echo "OK: todos los HEAD resuelven después del filtrado"
+
+          # G5: operaciones git de setlocalversion (kernel) siguen funcionando.
+          KDIR="kernel/samsung/exynos3475"
+          git -C "$KDIR" rev-parse --verify --short HEAD >/dev/null \
+            || { echo "::error::kernel rev-parse HEAD falló -> abort"; exit 1; }
+          git -C "$KDIR" diff-index --name-only HEAD >/dev/null \
+            || { echo "::error::kernel diff-index HEAD falló -> abort"; exit 1; }
+          echo "OK: setlocalversion (rev-parse + diff-index) funciona"
+
+          echo "=== FILTRO-A .repo DESPUÉS ==="
+          df -h /
+          du -sh .repo 2>/dev/null || true
+          du -sh .repo/project-objects 2>/dev/null || true
+          du -sh .repo/projects 2>/dev/null || true
+          FREE_AFTER_MB=$(df -B1 / | awk 'NR==2{print int($4/1048576)}')
+          echo "FREE_BEFORE_MB=$FREE_BEFORE_MB FREE_AFTER_MB=$FREE_AFTER_MB RECUPERADO_MB=$((FREE_AFTER_MB - FREE_BEFORE_MB))"
+          test -d .repo/projects \
+            && echo "OK: .repo/projects conservado" \
+            || { echo "::error::.repo/projects desapareció -> abort"; exit 1; }
+
       # ============================================================
       # GUARD (después de TODAS las podas, igual que en stages)
       # ============================================================
@@ -829,6 +1360,8 @@ jobs:
           echo "=== DISCO ANTES DE mka bacon ==="
           df -h /
           du -sh out 2>/dev/null || true
+          echo "=== Directorios más grandes en out/ ==="
+          du -sh out/* 2>/dev/null | sort -h | tail -20 || true
 
       - name: Diagnóstico de almacenamiento fuera de out
         if: ${{ github.event.inputs.mode == 'full-bacon' }}

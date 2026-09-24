@@ -43,6 +43,15 @@ on:
         default: false
         type: boolean
 
+      kernel_toolchain:
+        description: 'Toolchain del kernel (experimento A/B): clang (CI actual) o gcc (TARGET_KERNEL_CLANG_COMPILE=false)'
+        required: false
+        default: 'clang'
+        type: choice
+        options:
+          - clang
+          - gcc
+
 concurrency:
   group: los20-stages
   cancel-in-progress: false
@@ -81,6 +90,7 @@ jobs:
       MIN_FREE_GB: ${{ github.event.inputs.min_free_gb }}
       EXTRA: ${{ github.event.inputs.extra_targets }}
       TELEM_FREE_GB: ${{ github.event.inputs.telemetry_free_gb }}
+      KERNEL_TOOLCHAIN: ${{ github.event.inputs.kernel_toolchain }}
 
     steps:
 
@@ -1339,6 +1349,31 @@ jobs:
       # ============================================================
       # BUILD CONFIG
       # ============================================================
+
+      - name: Toolchain del kernel (experimento A/B)
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          case "$KERNEL_TOOLCHAIN" in
+            clang)
+              echo "kernel_toolchain=clang (CI estandar, sin cambios)"
+              ;;
+            gcc)
+              CFG=device/samsung/universal3475-common/BoardConfigCommon.mk
+              test -f "$CFG" || { echo "::error::falta $CFG"; exit 2; }
+              # Inyección EFÍMERA: solo en el checkout del runner; no commitea nada.
+              printf '\n# [A/B experiment] kernel con GCC 4.9 (kernel.mk: CLANG_COMPILE=false -> CC=arm-linux-androidkernel-gcc, sin deps clang salvo HOSTCC)\nTARGET_KERNEL_CLANG_COMPILE := false\n' >> "$CFG"
+              grep -n "TARGET_KERNEL_CLANG_COMPILE" "$CFG"
+              # HOSTLDFLAGS/HOSTCFLAGS usan -fuse-ld=lld -> asegurar ld.lld en PATH.
+              echo "$HOME/lineage20/lineage/prebuilts" >/dev/null
+              echo "PATH=/home/runner/los20/prebuilts/clang/host/linux-x86/clang-r450784d/bin:$PATH" >> "$GITHUB_ENV"
+              echo "kernel_toolchain=gcc -> TARGET_KERNEL_CLANG_COMPILE=false inyectado"
+              ;;
+            *)
+              echo "::error::kernel_toolchain inválido: $KERNEL_TOOLCHAIN"
+              exit 64
+              ;;
+          esac
 
       - name: Configurar lunch
         working-directory: /home/runner/los20

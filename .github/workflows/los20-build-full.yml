@@ -110,6 +110,14 @@ on:
         description: 'GB libres que activan telemetría densa de diagnóstico (solo lectura)'
         required: false
         default: '25'
+      kernel_toolchain:
+        description: 'Toolchain del kernel (experimento A/B): clang (CI actual) o gcc (TARGET_KERNEL_CLANG_COMPILE=false)'
+        required: false
+        default: 'clang'
+        type: choice
+        options:
+          - clang
+          - gcc
 
 concurrency:
   group: los20-full-build
@@ -130,6 +138,7 @@ jobs:
       # out/soong. Leído por Soong vía IsEnvTrue en cc/sabi.go.
       SKIP_ABI_CHECKS: "true"
       TELEM_FREE_GB: ${{ github.event.inputs.telemetry_free_gb }}
+      KERNEL_TOOLCHAIN: ${{ github.event.inputs.kernel_toolchain }}
 
     steps:
 
@@ -1375,6 +1384,30 @@ jobs:
       # BUILD CONFIG
       # ============================================================
 
+      - name: Toolchain del kernel (experimento A/B)
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          case "$KERNEL_TOOLCHAIN" in
+            clang)
+              echo "kernel_toolchain=clang (CI estandar, sin cambios)"
+              ;;
+            gcc)
+              CFG=device/samsung/universal3475-common/BoardConfigCommon.mk
+              test -f "$CFG" || { echo "::error::falta $CFG"; exit 2; }
+              # Inyección EFÍMERA: solo en el checkout del runner; no commitea nada.
+              printf '\n# [A/B experiment] kernel con GCC 4.9 (kernel.mk: CLANG_COMPILE=false -> CC=arm-linux-androidkernel-gcc, sin deps clang salvo HOSTCC)\nTARGET_KERNEL_CLANG_COMPILE := false\n' >> "$CFG"
+              grep -n "TARGET_KERNEL_CLANG_COMPILE" "$CFG"
+              # HOSTLDFLAGS/HOSTCFLAGS usan -fuse-ld=lld -> asegurar ld.lld en PATH.
+              echo "PATH=/home/runner/los20/prebuilts/clang/host/linux-x86/clang-r450784d/bin:$PATH" >> "$GITHUB_ENV"
+              echo "kernel_toolchain=gcc -> TARGET_KERNEL_CLANG_COMPILE=false inyectado"
+              ;;
+            *)
+              echo "::error::kernel_toolchain inválido: $KERNEL_TOOLCHAIN"
+              exit 64
+              ;;
+          esac
+
       - name: source envsetup.sh + lunch lineage_j2lte-userdebug
         working-directory: /home/runner/los20
         run: |
@@ -1611,3 +1644,14 @@ jobs:
           name: j2lte-target-files-${{ github.run_id }}
           path: artifacts/
           if-no-files-found: ignore
+
+      - name: Upload kernel forense (A/B toolchain)
+        if: ${{ github.event.inputs.mode == 'full-bacon' || github.event.inputs.kernel_toolchain == 'gcc' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-forensic-${{ github.event.inputs.kernel_toolchain }}-${{ github.run_id }}
+          path: |
+            /home/runner/los20/out/target/product/j2lte/obj/KERNEL_OBJ/.config
+            /home/runner/los20/out/target/product/j2lte/obj/KERNEL_OBJ/arch/arm/boot/zImage-dtb
+            /home/runner/los20/out/target/product/j2lte/obj/KERNEL_OBJ/arch/arm/boot/dts/exynos3475-j2lte_swa_open_*.dtb
+          if-no-files-found: warn

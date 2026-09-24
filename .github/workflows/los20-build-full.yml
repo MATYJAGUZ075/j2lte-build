@@ -138,7 +138,8 @@ jobs:
       # out/soong. Leído por Soong vía IsEnvTrue en cc/sabi.go.
       SKIP_ABI_CHECKS: "true"
       TELEM_FREE_GB: ${{ github.event.inputs.telemetry_free_gb }}
-      KERNEL_TOOLCHAIN: ${{ github.event.inputs.kernel_toolchain }}
+      # ATENCIÓN: el nombre NO puede ser KERNEL_TOOLCHAIN (ver los20-build-stages.yml).
+      AB_KERNEL_TC: ${{ github.event.inputs.kernel_toolchain }}
 
     steps:
 
@@ -1388,7 +1389,7 @@ jobs:
         working-directory: /home/runner/los20
         run: |
           set -e
-          case "$KERNEL_TOOLCHAIN" in
+          case "$AB_KERNEL_TC" in
             clang)
               echo "kernel_toolchain=clang (CI estandar, sin cambios)"
               ;;
@@ -1399,11 +1400,11 @@ jobs:
               printf '\n# [A/B experiment] kernel con GCC 4.9 (kernel.mk: CLANG_COMPILE=false -> CC=arm-linux-androidkernel-gcc, sin deps clang salvo HOSTCC)\nTARGET_KERNEL_CLANG_COMPILE := false\n' >> "$CFG"
               grep -n "TARGET_KERNEL_CLANG_COMPILE" "$CFG"
               # HOSTLDFLAGS/HOSTCFLAGS usan -fuse-ld=lld -> asegurar ld.lld en PATH.
-              echo "PATH=/home/runner/los20/prebuilts/clang/host/linux-x86/clang-r450784d/bin:$PATH" >> "$GITHUB_ENV"
+              echo "/home/runner/los20/prebuilts/clang/host/linux-x86/clang-r450784d/bin" >> "$GITHUB_PATH"
               echo "kernel_toolchain=gcc -> TARGET_KERNEL_CLANG_COMPILE=false inyectado"
               ;;
             *)
-              echo "::error::kernel_toolchain inválido: $KERNEL_TOOLCHAIN"
+              echo "::error::kernel_toolchain inválido: $AB_KERNEL_TC"
               exit 64
               ;;
           esac
@@ -1645,13 +1646,21 @@ jobs:
           path: artifacts/
           if-no-files-found: ignore
 
+      - name: Copiar forense kernel (fuera del workspace -> dentro)
+        if: ${{ always() && (github.event.inputs.mode == 'full-bacon' || github.event.inputs.kernel_toolchain == 'gcc') }}
+        run: |
+          set +e
+          mkdir -p "$GITHUB_WORKSPACE/kernel-forensic"
+          KOBJ=/home/runner/los20/out/target/product/j2lte/obj/KERNEL_OBJ
+          cp "$KOBJ/.config" "$GITHUB_WORKSPACE/kernel-forensic/" 2>/dev/null || echo "skip: .config ausente"
+          cp "$KOBJ/arch/arm/boot/zImage-dtb" "$GITHUB_WORKSPACE/kernel-forensic/" 2>/dev/null || echo "skip: zImage-dtb ausente"
+          cp "$KOBJ"/arch/arm/boot/dts/exynos3475-j2lte_swa_open_*.dtb "$GITHUB_WORKSPACE/kernel-forensic/" 2>/dev/null || echo "skip: dtbs ausentes"
+          ls -la "$GITHUB_WORKSPACE/kernel-forensic/"
+
       - name: Upload kernel forense (A/B toolchain)
-        if: ${{ github.event.inputs.mode == 'full-bacon' || github.event.inputs.kernel_toolchain == 'gcc' }}
+        if: ${{ always() && (github.event.inputs.mode == 'full-bacon' || github.event.inputs.kernel_toolchain == 'gcc') }}
         uses: actions/upload-artifact@v4
         with:
           name: kernel-forensic-${{ github.event.inputs.kernel_toolchain }}-${{ github.run_id }}
-          path: |
-            /home/runner/los20/out/target/product/j2lte/obj/KERNEL_OBJ/.config
-            /home/runner/los20/out/target/product/j2lte/obj/KERNEL_OBJ/arch/arm/boot/zImage-dtb
-            /home/runner/los20/out/target/product/j2lte/obj/KERNEL_OBJ/arch/arm/boot/dts/exynos3475-j2lte_swa_open_*.dtb
+          path: kernel-forensic/
           if-no-files-found: warn

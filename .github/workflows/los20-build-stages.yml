@@ -1810,3 +1810,14 @@ jobs:
           name: stage-${{ github.event.inputs.stage }}-${{ github.run_id }}
           path: artifacts/
           if-no-files-found: ignore
+
+      - name: Upload kernel forense (A/B toolchain)
+        if: ${{ github.event.inputs.stage == 'bootimage' || github.event.inputs.kernel_toolchain == 'gcc' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-forensic-${{ github.event.inputs.kernel_toolchain }}-${{ github.run_id }}
+          path: |
+            /home/runner/los20/out/target/product/j2lte/obj/KERNEL_OBJ/.config
+            /home/runner/los20/out/target/product/j2lte/obj/KERNEL_OBJ/arch/arm/boot/zImage-dtb
+            /home/runner/los20/out/target/product/j2lte/obj/KERNEL_OBJ/arch/arm/boot/dts/exynos3475-j2lte_swa_open_*.dtb
+          if-no-files-found: warn

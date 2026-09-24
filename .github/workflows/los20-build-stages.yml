@@ -52,6 +52,12 @@ on:
           - clang
           - gcc
 
+      pstore_diag:
+        description: 'Diagnóstico: inyecta pstore/ramoops + ram console al defconfig del kernel (boot colgado se captura en RAM y sobrevive warm reboot)'
+        required: false
+        default: false
+        type: boolean
+
 concurrency:
   group: los20-stages
   cancel-in-progress: false
@@ -1377,6 +1383,24 @@ jobs:
               exit 64
               ;;
           esac
+
+      - name: Inyección pstore/ramoops (diagnóstico boot colgado)
+        if: ${{ inputs.pstore_diag == true }}
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          KDIR=kernel/samsung/exynos3475
+          CFG=""
+          for c in arch/arm/configs/lineage_j2lte_defconfig arch/arm/configs/lineage-j2lte_defconfig; do
+            if [ -f "$KDIR/$c" ]; then
+              CFG="$KDIR/$c"
+              break
+            fi
+          done
+          test -n "$CFG" || { echo "::error::defconfig no encontrado (lineage_j2lte_defconfig/lineage-j2lte_defconfig) en $KDIR"; exit 2; }
+          printf '\n# [diag pstore] kernel-console + ram-console en RAM -> sobreviven warm reboot (leer /proc/last_kmsg y /sys/fs/pstore desde recovery)\nCONFIG_PSTORE=y\nCONFIG_PSTORE_CONSOLE=y\nCONFIG_PSTORE_RAM=y\nCONFIG_ANDROID=y\nCONFIG_ANDROID_RAM_CONSOLE=y\nCONFIG_ANDROID_RAM_CONSOLE_ENABLE_VERBOSE=y\n' >> "$CFG"
+          grep -nE "CONFIG_(PSTORE|ANDROID_RAM_CONSOLE)" "$CFG"
+          echo "OK: pstore/ramoops inyectado en $CFG"
 
       - name: Configurar lunch
         working-directory: /home/runner/los20

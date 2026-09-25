@@ -58,6 +58,15 @@ on:
         default: false
         type: boolean
 
+      cache:
+        description: 'Caché de compilación (ccache). activado: restaura y GUARDA la ccache entre runs; desactivado: no la usa y BORRA la caché guardada. La clave es fija por toolchain (clang/gcc), tamaño máx 2G (límite de caché del repo de GitHub).'
+        required: false
+        default: 'desactivado'
+        type: choice
+        options:
+          - desactivado
+          - activado
+
 concurrency:
   group: los20-stages
   cancel-in-progress: false
@@ -83,15 +92,31 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 350
 
+    permissions:
+      contents: read
+      actions: write
+
     env:
-      # ccache ELIMINADO por completo (run prueba sin cache: recuperar ~1G de
-      # runner y medir impacto en tiempo total). NO re-agregar USE_CCACHE,
-      # CCACHE_EXEC, CCACHE_DIR, restore/save de actions/cache, instalación
-      # del binario, ni stats/mediciones de ccache sin autorización explícita.
+      # ccache: OPTO-IN por input `cache`. activado -> USE_CCACHE=1 y
+      # CCACHE_DISABLE=0 (restaura al inicio, guarda al final); desactivado ->
+      # CCACHE_DISABLE=1 (totalmente inerte) y un paso borra la caché guardada.
+      # El experimento "sin cache" por defecto se preserva: la caché solo
+      # existe si el usuario la pide al lanzar la run.
+      USE_CCACHE: ${{ inputs.cache == 'activado' && '1' || '0' }}
+      CCACHE_DISABLE: ${{ inputs.cache == 'activado' && '0' || '1' }}
+      CCACHE_DIR: /home/runner/.cache/ccache
+      CCACHE_EXEC: /usr/bin/ccache
+      CCACHE_MAXSIZE: 2G
+      CCACHE_COMPRESS: '1'
+      CCACHE_COMPRESSLEVEL: '6'
       # Salta la generación de ABI dumps (.sdump/.lsdump) que systemimage no
       # necesita (solo los usa el goal debug findlsdumps). Reduce el pico de
       # out/soong. Leído por Soong vía IsEnvTrue en cc/sabi.go.
       SKIP_ABI_CHECKS: "true"
+      # Idem para API checks de Java/genimetrics y metadata (acelera los
+      # targets bootimage/recoveryimage sin tocar el resultado final).
+      SKIP_API_CHECKS: "true"
+      SKIP_METADATA_API_CHECKS: "true"
       STAGE: ${{ github.event.inputs.stage }}
       MIN_FREE_GB: ${{ github.event.inputs.min_free_gb }}
       EXTRA: ${{ github.event.inputs.extra_targets }}
@@ -236,6 +261,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y git-lfs python3 curl
 
+          if [ "${{ inputs.cache }}" = "activado" ]; then
+            sudo apt-get install -y ccache
+            ccache --version | head -1
+          fi
+
           mkdir -p "$HOME/bin"
 
           curl -s \
@@ -266,6 +296,20 @@ jobs:
       # ============================================================
       # SOURCE
       # ============================================================
+
+      - name: Borrar ccache guardado (cache=desactivado)
+        if: ${{ inputs.cache == 'desactivado' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          FOUND=0
+          for id in $(gh cache list --key ccache-j2lte- --limit 100 --jq '.[].id' 2>/dev/null); do
+            gh cache delete "$id" >/dev/null 2>&1 || true
+            echo "caché eliminada: $id"
+            FOUND=1
+          done
+          [ "$FOUND" = "1" ] && echo "OK: caché de ccache borrada (modo off)" || echo "OK: no había caché de ccache que borrar"
 
       - name: repo init
         run: |
@@ -307,7 +351,7 @@ jobs:
             -c \
             --no-tags \
             --fail-fast \
-            -j4
+            -j8
 
           echo "=== DISCO POST-SYNC ==="
           df -h /
@@ -1444,6 +1488,14 @@ jobs:
           grep -n "reserved-memory\|ramoops" "$DTSI"
           echo "OK: pstore/ramoops inyectado en $CFG (base RAM 0x47000000)"
 
+      - name: Restaurar ccache (cache=activado)
+        if: ${{ inputs.cache == 'activado' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/.cache/ccache
+          key: ccache-j2lte-${{ inputs.kernel_toolchain }}
+          restore-keys: ccache-j2lte-${{ inputs.kernel_toolchain }}
+
       - name: Configurar lunch
         working-directory: /home/runner/los20
         run: |
@@ -1795,6 +1847,17 @@ jobs:
 
       - name: Wait build
         wait: [build]
+
+      - name: Guardar ccache (cache=activado)
+        if: ${{ always() && inputs.cache == 'activado' }}
+        uses: actions/cache/save@v4
+        with:
+          path: /home/runner/.cache/ccache
+          key: ccache-j2lte-${{ inputs.kernel_toolchain }}
+
+      - name: Ccache stats (cache=activado)
+        if: ${{ always() && inputs.cache == 'activado' }}
+        run: ccache -s || true
 
       - name: Rescate de telemetría ante fallo/ENOSPC/kill
         if: always()

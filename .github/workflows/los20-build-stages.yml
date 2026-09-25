@@ -1875,7 +1875,9 @@ jobs:
           # Conserva solo la caché recién guardada por run_id; borra las viejas
           # del mismo toolchain (incluye la legada sin -runid). `--key` es
           # substring, asi que "$PREFIX" sin guion final cubre ambas variantes.
-          gh cache list --key "$PREFIX" --limit 100 --jq '.[] | "\(.id) \(.key)"' 2>/dev/null | while read -r id key; do
+          # OJO: gh cache list exige --json para poder usar --jq (sin él el
+          # paso moría en silencio y nunca borraba nada).
+          gh cache list --key "$PREFIX" --limit 100 --json id,key --jq '.[] | "\(.id) \(.key)"' 2>/dev/null | while read -r id key; do
             if [ "$key" != "$NEW_KEY" ]; then
               gh cache delete "$id" >/dev/null 2>&1 && echo "caché vieja borrada: $key"
             fi

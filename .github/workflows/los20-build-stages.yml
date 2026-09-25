@@ -1620,7 +1620,9 @@ jobs:
            */
           #include <linux/kernel.h>
           #include <linux/init.h>
+          #include <linux/compiler.h>
           #include <asm/memory.h>
+          #include <asm/barrier.h>
 
           #define DIAG_MARK_BASE 0x46E00000UL
 
@@ -1672,15 +1674,18 @@ jobs:
                             '\textern void diag_mark(unsigned int, unsigned int);\n'
                             '\tdiag_mark(0x00, 0x52414D4F); /* RAMO */\n')
               src = src[:m.start()] + block_init + src[m.end():]
-              # 2) marca el exito del probe tras registrar pstore
-              pat_probe = re.compile(r'pr_info\("attached 0x%lx@0x%llx, ecc: %d/%d\\n",')
+              # 2) marca el exito del probe tras registrar pstore. La llamada
+              #    pr_info("attached ...") es MULTILINEA: hay que anclar hasta
+              #    el cierre ");" o el marcador quedaria en medio de los
+              #    argumentos (ram.c:536 "expected expression before 'extern'").
+              pat_probe = re.compile(r'pr_info\("attached 0x%lx@0x%llx, ecc: %d/%d\\n",.*?\);\n', re.S)
               m = pat_probe.search(src)
               if not m:
-                  print("::error::ancla 'attached ...' de ramoops_probe no encontrado en", p)
+                  print("::error::ancla 'attached ...);' de ramoops_probe no encontrado en", p)
                   sys.exit(2)
               block_probe = ('\textern void diag_mark(unsigned int, unsigned int);\n'
                              '\tdiag_mark(0x04, 0x50524F42); /* PROB */\n')
-              src = src[:m.end()] + '\n' + block_probe + src[m.end():]
+              src = src[:m.end()] + block_probe + src[m.end():]
               open(p, "w", encoding="utf-8").write(src)
               print("OK: diag_markers enlazados en ram.c")
           PYEOF

@@ -98,12 +98,15 @@ jobs:
 
     env:
       # ccache: OPTO-IN por input `cache`. activado -> USE_CCACHE=1 y
-      # CCACHE_DISABLE=0 (restaura al inicio, guarda al final); desactivado ->
-      # CCACHE_DISABLE=1 (totalmente inerte) y un paso borra la caché guardada.
+      # CCACHE_DISABLE=false (restaura al inicio, guarda al final); desactivado
+      # -> CCACHE_DISABLE=true (totalmente inerte) y un paso borra la caché.
+      # ccache 4.x solo acepta true/false para CCACHE_DISABLE ("0"/"1" son
+      # inválidos y hacen que `ccache -s` falle). USE_CCACHE (var de Android)
+      # sigue siendo el gate real.
       # El experimento "sin cache" por defecto se preserva: la caché solo
       # existe si el usuario la pide al lanzar la run.
       USE_CCACHE: ${{ inputs.cache == 'activado' && '1' || '0' }}
-      CCACHE_DISABLE: ${{ inputs.cache == 'activado' && '0' || '1' }}
+      CCACHE_DISABLE: ${{ inputs.cache == 'activado' && 'false' || 'true' }}
       CCACHE_DIR: /home/runner/.cache/ccache
       CCACHE_EXEC: /usr/bin/ccache
       CCACHE_MAXSIZE: 2G
@@ -1475,11 +1478,15 @@ jobs:
           if "ramoops.mem_address" in src:
               print("bootargs ramoops ya presentes, sin cambios")
           else:
-              m = re.search(r'(bootargs\s*=\s*"[^"]*")(\s*;)', src)
+              # DTS NO concatena literales de string: `"a" "b"` = error de
+              # sintaxis (array de strings necesita comas y bootargs es un
+              # string unico). Los parametros van DENTRO del mismo literal,
+              # justo antes de la comilla de cierre de /chosen/bootargs.
+              m = re.search(r'(bootargs\s*=\s*"[^"]*)(["]\s*;)', src)
               if not m:
                   print("::error::no se encontro /chosen/bootargs en", p); sys.exit(2)
-              extra = '" ramoops.mem_address=0x47000000 ramoops.mem_size=0x100000 ramoops.record_size=0x20000 ramoops.console_size=0x80000 ramoops.ecc=16"'
-              src = src[:m.end(1)] + " " + extra + src[m.start(2):]
+              params = ' ramoops.mem_address=0x47000000 ramoops.mem_size=0x100000 ramoops.record_size=0x20000 ramoops.console_size=0x80000 ramoops.ecc=16'
+              src = src[:m.end(1)] + params + src[m.start(2):]
               open(p, "w", encoding="utf-8").write(src)
               print("OK: parametros ramoops anadidos a /chosen/bootargs en", p)
           PYEOF
@@ -1491,7 +1498,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: /home/runner/.cache/ccache
-          key: ccache-j2lte-${{ inputs.kernel_toolchain }}
+          key: ccache-j2lte-${{ inputs.kernel_toolchain }}-${{ github.run_id }}
           restore-keys: ccache-j2lte-${{ inputs.kernel_toolchain }}
 
       - name: Configurar lunch
@@ -1851,7 +1858,23 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: /home/runner/.cache/ccache
-          key: ccache-j2lte-${{ inputs.kernel_toolchain }}
+          key: ccache-j2lte-${{ inputs.kernel_toolchain }}-${{ github.run_id }}
+
+      - name: Limpiar cachés ccache viejas (cache=activado)
+        if: ${{ always() && inputs.cache == 'activado' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          PREFIX="ccache-j2lte-${{ inputs.kernel_toolchain }}"
+          NEW_KEY="ccache-j2lte-${{ inputs.kernel_toolchain }}-${{ github.run_id }}"
+          # Conserva solo la caché recién guardada por run_id; borra las viejas
+          # del mismo toolchain (evita acumular entradas por cada run).
+          gh cache list --key "$PREFIX-" --limit 100 --jq '.[] | "\(.id) \(.key)"' 2>/dev/null | while read -r id key; do
+            if [ "$key" != "$NEW_KEY" ]; then
+              gh cache delete "$id" >/dev/null 2>&1 && echo "caché vieja borrada: $key"
+            fi
+          done
 
       - name: Ccache stats (cache=activado)
         if: ${{ always() && inputs.cache == 'activado' }}

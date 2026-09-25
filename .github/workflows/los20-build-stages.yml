@@ -1451,7 +1451,7 @@ jobs:
           #    ya viene pre-existente en el defconfig y eso abortaba el append
           #    entero; y la marca NO debe tener corchetes (regex=char class).
           MARK="# diag_pstore"
-          grep -qF "$MARK" "$CFG" || printf '\n# diag_pstore ramoops @0x47000000 (leible por dd en recovery) - espejo continuo printk\nCONFIG_PSTORE=y\nCONFIG_PSTORE_CONSOLE=y\nCONFIG_PSTORE_RAM=y\n' >> "$CFG"
+          grep -qF "$MARK" "$CFG" || printf '\n# diag_pstore ramoops @0x44000000 (leible por dd en recovery, ver nota base) - espejo continuo printk\nCONFIG_PSTORE=y\nCONFIG_PSTORE_CONSOLE=y\nCONFIG_PSTORE_RAM=y\n' >> "$CFG"
           grep -nE "CONFIG_(PSTORE|PSTORE_CONSOLE|PSTORE_RAM)" "$CFG"
 
           # 2) BOOTARGS: este kernel 3.10 NO tiene soporte DT para ramoops
@@ -1483,13 +1483,19 @@ jobs:
               m = re.search(r'(bootargs\s*=\s*"[^"]*)(["]\s*;)', src)
               if not m:
                   print("::error::no se encontro /chosen/bootargs en", p); sys.exit(2)
-              params = ' ramoops.mem_address=0x47000000 ramoops.mem_size=0x100000 ramoops.record_size=0x20000 ramoops.console_size=0x80000 ramoops.ecc=16'
+              # BASE RAMOPS = 0x44000000: el recovery (omni, kernel 3.10)
+              # mapea su RAM hasta 0x47000000 (para recovery la RAM es
+              # 0x20000000..0x47000000); /dev/mem da "Bad address" en
+              # 0x47000000+. La base anterior no era legible. 0x44000000 esta
+              # dentro de la RAM del kernel colgado (0x20000000..0x60000000)
+              # y es legible por /dev/mem del recovery (validado en vivo).
+              params = ' ramoops.mem_address=0x44000000 ramoops.mem_size=0x100000 ramoops.record_size=0x20000 ramoops.console_size=0x80000 ramoops.ecc=16'
               src = src[:m.end(1)] + params + src[m.start(2):]
               open(p, "w", encoding="utf-8").write(src)
               print("OK: parametros ramoops anadidos a /chosen/bootargs en", p)
           PYEOF
           grep -n "bootargs" "$DTSI"
-          echo "OK: pstore/ramoops inyectado en $CFG + bootargs (base RAM 0x47000000)"
+          echo "OK: pstore/ramoops inyectado en $CFG + bootargs (base RAM 0x44000000)"
 
       - name: Restaurar ccache (cache=activado)
         if: ${{ inputs.cache == 'activado' }}

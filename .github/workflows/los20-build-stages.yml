@@ -1443,11 +1443,22 @@ jobs:
           done
           test -n "$CFG" || { echo "::error::defconfig no encontrado (lineage_j2lte_defconfig/lineage-j2lte_defconfig) en $KDIR"; exit 2; }
 
-          # 1) CONFIG: pstore + ramoops + RAM console (espejo continuo)
-          grep -q "CONFIG_PSTORE=y" "$CFG" || printf '\n# [diag pstore] buffer de log en RAM baja (leible por dd sin pstore en recovery)\nCONFIG_PSTORE=y\nCONFIG_PSTORE_CONSOLE=y\nCONFIG_PSTORE_RAM=y\n# pstore solo libera oops/panic -> ademas espejo continuo printk:\nCONFIG_ANDROID=y\nCONFIG_ANDROID_RAM_CONSOLE=y\nCONFIG_ANDROID_RAM_CONSOLE_ENABLE_VERBOSE=y\n' >> "$CFG"
-          grep -nE "CONFIG_(PSTORE|ANDROID_RAM_CONSOLE)" "$CFG"
+          # 1) CONFIG: PSTORE_CONSOLE habilita el espejo continuo de printk en
+          #    la particion console de ramoops (fs/pstore/platform.c, #ifdef
+          #    CONFIG_PSTORE_CONSOLE). El guard usa MARCA + grep -qF (string
+          #    fija): no se puede usar CONFIG_PSTORE=y como centinela porque
+          #    ya viene pre-existente en el defconfig y eso abortaba el append
+          #    entero; y la marca NO debe tener corchetes (regex=char class).
+          MARK="# diag_pstore"
+          grep -qF "$MARK" "$CFG" || printf '\n# diag_pstore ramoops @0x47000000 (leible por dd en recovery) - espejo continuo printk\nCONFIG_PSTORE=y\nCONFIG_PSTORE_CONSOLE=y\nCONFIG_PSTORE_RAM=y\n' >> "$CFG"
+          grep -nE "CONFIG_(PSTORE|PSTORE_CONSOLE|PSTORE_RAM)" "$CFG"
 
-          # 2) DT: ramoops @ 0x47000000 dentro del reserved-memory ya existente (banda legible por /dev/mem de recovery)
+          # 2) BOOTARGS: este kernel 3.10 NO tiene soporte DT para ramoops
+          #    (fs/pstore/ram.c = platform-driver "ramoops" solo por nombre,
+          #    sin of_match_table; no hay ram_console.c). La base se fija por
+          #    parametros de modulo en el cmdline, que en esta placa vive en
+          #    /chosen/bootargs del DTB (el header cmdline del boot.img viene
+          #    vacio; el bootargs real es el del chosen).
           DTSI=""
           for c in exynos3475-j2_common.dtsi exynos3475-j2lte_swa_open.dtsi exynos3475-j2lte.dtsi exynos3475.dtsi; do
             if [ -f "$KDIR/arch/arm/boot/dts/$c" ]; then
@@ -1461,32 +1472,19 @@ jobs:
           import sys, re
           p = sys.argv[1]
           src = open(p, encoding="utf-8", errors="replace").read()
-          node = '''
-          ramoops@47000000 {
-              compatible = "ramoops";
-              reg = <0x47000000 0x100000>;
-              record-size = <0x20000>;
-              console-size = <0x80000>;
-              ecc-size = <16>;
-          };'''
-          if "ramoops@47000000" in src:
-              print("ramoops ya presente, sin cambios")
+          if "ramoops.mem_address" in src:
+              print("bootargs ramoops ya presentes, sin cambios")
           else:
-              m = re.search(r"reserved-memory\s*\{(.*?)\n\t\};", src, re.S)
+              m = re.search(r'(bootargs\s*=\s*"[^"]*")(\s*;)', src)
               if not m:
-                  m = re.search(r"reserved-memory\s*\{(.*?);", src, re.S)
-              if not m:
-                  print("::error::no se encontro bloque reserved-memory en", p); sys.exit(2)
-              start = m.start(1)
-              # insertar como hermano antes del cierre del bloque (tras la ultima propiedad del bloque)
-              inner = m.group(1)
-              ins = start + len(inner.rstrip())
-              src = src[:ins] + "\n" + node + "\n" + src[ins:]
+                  print("::error::no se encontro /chosen/bootargs en", p); sys.exit(2)
+              extra = '" ramoops.mem_address=0x47000000 ramoops.mem_size=0x100000 ramoops.record_size=0x20000 ramoops.console_size=0x80000 ramoops.ecc=16"'
+              src = src[:m.end(1)] + " " + extra + src[m.start(2):]
               open(p, "w", encoding="utf-8").write(src)
-              print("OK: ramoops@0x47000000 inyectado en", p)
+              print("OK: parametros ramoops anadidos a /chosen/bootargs en", p)
           PYEOF
-          grep -n "reserved-memory\|ramoops" "$DTSI"
-          echo "OK: pstore/ramoops inyectado en $CFG (base RAM 0x47000000)"
+          grep -n "bootargs" "$DTSI"
+          echo "OK: pstore/ramoops inyectado en $CFG + bootargs (base RAM 0x47000000)"
 
       - name: Restaurar ccache (cache=activado)
         if: ${{ inputs.cache == 'activado' }}

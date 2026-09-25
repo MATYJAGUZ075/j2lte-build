@@ -97,16 +97,14 @@ jobs:
       actions: write
 
     env:
-      # ccache: OPTO-IN por input `cache`. activado -> USE_CCACHE=1 y
-      # CCACHE_DISABLE=false (restaura al inicio, guarda al final); desactivado
-      # -> CCACHE_DISABLE=true (totalmente inerte) y un paso borra la caché.
-      # ccache 4.x solo acepta true/false para CCACHE_DISABLE ("0"/"1" son
-      # inválidos y hacen que `ccache -s` falle). USE_CCACHE (var de Android)
-      # sigue siendo el gate real.
+      # ccache: OPTO-IN por input `cache`. Se NO usa CCACHE_DISABLE: ccache
+      # solo acepta valores "true" para esa var (0/false/1 son inválidos y
+      # rompen `ccache -s`). El gate real es USE_CCACHE (0 -> el build no
+      # invoca ccache en absoluto; el paso de borrado de caché remota tambien
+      # se encarga). "activado" restaura al inicio y guarda al final.
       # El experimento "sin cache" por defecto se preserva: la caché solo
       # existe si el usuario la pide al lanzar la run.
       USE_CCACHE: ${{ inputs.cache == 'activado' && '1' || '0' }}
-      CCACHE_DISABLE: ${{ inputs.cache == 'activado' && 'false' || 'true' }}
       CCACHE_DIR: /home/runner/.cache/ccache
       CCACHE_EXEC: /usr/bin/ccache
       CCACHE_MAXSIZE: 2G
@@ -1869,8 +1867,9 @@ jobs:
           PREFIX="ccache-j2lte-${{ inputs.kernel_toolchain }}"
           NEW_KEY="ccache-j2lte-${{ inputs.kernel_toolchain }}-${{ github.run_id }}"
           # Conserva solo la caché recién guardada por run_id; borra las viejas
-          # del mismo toolchain (evita acumular entradas por cada run).
-          gh cache list --key "$PREFIX-" --limit 100 --jq '.[] | "\(.id) \(.key)"' 2>/dev/null | while read -r id key; do
+          # del mismo toolchain (incluye la legada sin -runid). `--key` es
+          # substring, asi que "$PREFIX" sin guion final cubre ambas variantes.
+          gh cache list --key "$PREFIX" --limit 100 --jq '.[] | "\(.id) \(.key)"' 2>/dev/null | while read -r id key; do
             if [ "$key" != "$NEW_KEY" ]; then
               gh cache delete "$id" >/dev/null 2>&1 && echo "caché vieja borrada: $key"
             fi

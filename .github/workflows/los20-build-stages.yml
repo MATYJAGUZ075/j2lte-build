@@ -1570,16 +1570,109 @@ jobs:
                        '\t/* diag_pstore_reserve: region fija de ramoops para el\n'
                        '\t * boot colgado. Leible por /dev/mem desde el recovery\n'
                        '\t * omni (0x20000000..0x47000000). Base fina en extremo\n'
-                       '\t * alto, 2MB, termina en 0x46E00000 < 0x47000000. */\n'
-                       '\tif (!memblock_is_region_reserved(0x46C00000, 0x200000))\n'
-                       '\t\tmemblock_reserve(0x46C00000, 0x200000);\n'
-                       '\tpr_info("diag_pstore: reservados 2MB @0x46C00000 para ramoops\\n");\n')
+                       '\t * alto, 2MB+4KB, termina en 0x46E01000 < 0x47000000.\n'
+                       '\t * los 4KB extra los usan los marcadores escalonados de\n'
+                       '\t * fase de boot (fs/pstore/diag_markers.c). */\n'
+                       '\tif (!memblock_is_region_reserved(0x46C00000, 0x201000))\n'
+                       '\t\tmemblock_reserve(0x46C00000, 0x201000);\n'
+                       '\tpr_info("diag_pstore: reservados 2MB+4KB @0x46C00000 para ramoops\\n");\n')
               new = src[:m.start()] + block + src[m.end():]
               open(p, "w", encoding="utf-8").write(new)
               print("OK: reserva memblock 2MB @0x46C00000 en universal3475_reserve")
           PYEOF
           grep -n "diag_pstore_reserve" "$KDIR/$MACH"
-          echo "OK: pstore/ramoops inyectado en $CFG + bootargs + ram.c + reserva mach (base RAM 0x46C00000)"
+
+          # 5) MARCADORES ESCALONADOS DE FASE DE BOOT (fs/pstore/diag_markers.c):
+          #    el ring de ramoops salió VACÍO en los 4 experimentos (diag5
+          #    cmdline ignorado, diag6 buddy pisa, diag7 region virgen). Hay
+          #    que saber HASTA DÓNDE llega el kernel colgado. Esta pagina
+          #    (0x46E00000, dentro de la reserva memblock) guarda palabras que
+          #    cada fase escribe:
+          #      0x00 "RAMO" ramoops_init (postcore) en marcha
+          #      0x04 "PROB" ramoops_probe terminó OK (ring escrito)
+          #      0x08 "CORE" core_initcall
+          #      0x0c "DEVI" device_initcall
+          #      0x10 "LATE" late_initcall
+          #    Si NINGUNA palabra aparece, el boot.img no llegó a ejecutar el
+          #    kernel (problema de arranque/imagen, no de nuestro codigo).
+          cat > "$KDIR/fs/pstore/diag_markers.c" <<'EOF'
+          /*
+           * diag_pstore: marcadores escalonados de fase de boot.
+           * Palabras en 0x46E00000 (dentro de la reserva memblock de ramoops):
+           *   0x00 RAMO ramoops_init (postcore)
+           *   0x04 PROB ramoops_probe OK
+           *   0x08 CORE core_initcall
+           *   0x0c DEVI device_initcall
+           *   0x10 LATE late_initcall
+           */
+          #include <linux/kernel.h>
+          #include <linux/init.h>
+          #include <asm/memory.h>
+
+          #define DIAG_MARK_BASE 0x46E00000UL
+
+          void diag_mark(unsigned int off, unsigned int val)
+          {
+          	*(volatile unsigned int *)phys_to_virt(DIAG_MARK_BASE + off) = val;
+          	barrier();
+          }
+
+          static int __init diag_mark_core(void)
+          {
+          	diag_mark(0x08, 0x434F5245); /* CORE */
+          	return 0;
+          }
+          core_initcall(diag_mark_core);
+
+          static int __init diag_mark_dev(void)
+          {
+          	diag_mark(0x0c, 0x44455649); /* DEVI */
+          	return 0;
+          }
+          device_initcall(diag_mark_dev);
+
+          static int __init diag_mark_late(void)
+          {
+          	diag_mark(0x10, 0x4C415445); /* LATE */
+          	return 0;
+          }
+          late_initcall(diag_mark_late);
+          EOF
+          grep -qF "diag_markers.o" "$KDIR/fs/pstore/Makefile" || \
+            printf '\nobj-y += diag_markers.o\n' >> "$KDIR/fs/pstore/Makefile"
+          grep -n "diag_markers.o" "$KDIR/fs/pstore/Makefile"
+
+          python3 - "$KDIR/fs/pstore/ram.c" <<'PYEOF'
+          import sys, re
+          p = sys.argv[1]
+          src = open(p, encoding="utf-8", errors="replace").read()
+          if "50524F42" in src:
+              print("ram.c ya enlazado con diag_markers")
+          else:
+              # 1) marca el inicio de ramoops_init (postcore)
+              pat_init = re.compile(r'static int __init ramoops_init\(void\)\n\{')
+              m = pat_init.search(src)
+              if not m:
+                  print("::error::ramoops_init no encontrado en", p)
+                  sys.exit(2)
+              block_init = ('static int __init ramoops_init(void)\n{\n'
+                            '\textern void diag_mark(unsigned int, unsigned int);\n'
+                            '\tdiag_mark(0x00, 0x52414D4F); /* RAMO */\n')
+              src = src[:m.start()] + block_init + src[m.end():]
+              # 2) marca el exito del probe tras registrar pstore
+              pat_probe = re.compile(r'pr_info\("attached 0x%lx@0x%llx, ecc: %d/%d\\n",')
+              m = pat_probe.search(src)
+              if not m:
+                  print("::error::ancla 'attached ...' de ramoops_probe no encontrado en", p)
+                  sys.exit(2)
+              block_probe = ('\textern void diag_mark(unsigned int, unsigned int);\n'
+                             '\tdiag_mark(0x04, 0x50524F42); /* PROB */\n')
+              src = src[:m.end()] + '\n' + block_probe + src[m.end():]
+              open(p, "w", encoding="utf-8").write(src)
+              print("OK: diag_markers enlazados en ram.c")
+          PYEOF
+          grep -n "diag_mark" "$KDIR/fs/pstore/ram.c"
+          echo "OK: pstore/ramoops+diag_markers inyectado (ring base RAM 0x46C00000, marcadores 0x46E00000)"
 
       - name: Restaurar ccache (cache=activado)
         if: ${{ inputs.cache == 'activado' }}

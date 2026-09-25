@@ -68,9 +68,14 @@ on:
           - activado
 
       build_jobs:
-        description: 'Cantidad de jobs paralelos (-j) para mka y repo sync. Sube el número para más velocidad; default 16'
+        description: 'Cantidad de jobs paralelos (-j) para repo sync. Sube el número para más velocidad; default 16'
         required: false
         default: '16'
+
+      mka_jobs:
+        description: 'Jobs paralelos (-j) para mka. Vacío = automático (nproc). En runner hosted (4 vCPU) un -j mayor satura: no suele acelerar y puede petar de RAM'
+        required: false
+        default: ''
 
 concurrency:
   group: los20-stages
@@ -351,6 +356,7 @@ jobs:
           set -e
 
           echo "BUILD_JOBS=${{ inputs.build_jobs }}" >> "$GITHUB_ENV"
+          echo "MKA_JOBS=${{ inputs.mka_jobs }}" >> "$GITHUB_ENV"
 
           echo "=== DISCO PRE-SYNC ==="
           df -h /
@@ -1988,7 +1994,7 @@ jobs:
             # Prueba MINIMIZE (override por línea de comandos, pisa el `:=`
             # por ser asignación de línea de comandos; no toca device tree):
             # recorta tablas de variables locales java (-g:source,lines).
-            time mka --skip-soong-tests PRODUCT_MINIMIZE_JAVA_DEBUG_INFO=true "$target" -j"${BUILD_JOBS:-$(nproc)}" \
+            time mka --skip-soong-tests PRODUCT_MINIMIZE_JAVA_DEBUG_INFO=true "$target" -j"${MKA_JOBS:-$(nproc)}" \
               2>&1 | tee /tmp/stage.log
 
             RC=${PIPESTATUS[0]}

@@ -1398,9 +1398,45 @@ jobs:
             fi
           done
           test -n "$CFG" || { echo "::error::defconfig no encontrado (lineage_j2lte_defconfig/lineage-j2lte_defconfig) en $KDIR"; exit 2; }
-          printf '\n# [diag pstore] kernel-console + ram-console en RAM -> sobreviven warm reboot (leer /proc/last_kmsg y /sys/fs/pstore desde recovery)\nCONFIG_PSTORE=y\nCONFIG_PSTORE_CONSOLE=y\nCONFIG_PSTORE_RAM=y\nCONFIG_ANDROID=y\nCONFIG_ANDROID_RAM_CONSOLE=y\nCONFIG_ANDROID_RAM_CONSOLE_ENABLE_VERBOSE=y\n' >> "$CFG"
+
+          # 1) CONFIG: pstore + ramoops + RAM console (espejo continuo)
+          printf '\n# [diag pstore] buffer de log en RAM baja (leible por dd sin pstore en recovery)\nCONFIG_PSTORE=y\nCONFIG_PSTORE_CONSOLE=y\nCONFIG_PSTORE_RAM=y\n# pstore solo libera oops/panic -> ademas espejo continuo printk:\nCONFIG_ANDROID=y\nCONFIG_ANDROID_RAM_CONSOLE=y\nCONFIG_ANDROID_RAM_CONSOLE_ENABLE_VERBOSE=y\n' >> "$CFG"
           grep -nE "CONFIG_(PSTORE|ANDROID_RAM_CONSOLE)" "$CFG"
-          echo "OK: pstore/ramoops inyectado en $CFG"
+
+          # 2) DT: reserved-memory ramoops @ 0x47000000 (dentro de la banda que /dev/mem de recovery lee)
+          DTSI="$KDIR/arch/arm/boot/dts/exynos3475-j2lte.dtsi"
+          test -f "$DTSI" || { echo "::error::dtsi base no encontrado: $DTSI"; exit 2; }
+          python3 - "$DTSI" <<'PYEOF'
+          import sys
+          p = sys.argv[1]
+          src = open(p, encoding="utf-8", errors="replace").read()
+          node = '''
+          	reserved-memory {
+          		#address-cells = <1>;
+          		#size-cells = <1>;
+          		ranges;
+
+          		ramoops@47000000 {
+          			compatible = "ramoops";
+          			reg = <0x47000000 0x100000>;
+          			record-size = <0x20000>;
+          			console-size = <0x80000>;
+          			ecc-size = <16>;
+          		};
+          	};'''
+          if "ramoops@47000000" in src:
+              print("ramoops ya presente, sin cambios")
+          else:
+              i = src.find("/ {")
+              if i < 0:
+                  print("::error::no se encontro raiz \"/ {\" en dtsi"); sys.exit(2)
+              j = src.index("\n", i) + 1
+              src = src[:j] + node + "\n" + src[j:]
+              open(p, "w", encoding="utf-8").write(src)
+              print("OK: ramoops@0x47000000 inyectado en", p)
+          PYEOF
+          grep -n "ramoops" "$DTSI"
+          echo "OK: pstore/ramoops inyectado en $CFG (base RAM 0x47000000)"
 
       - name: Configurar lunch
         working-directory: /home/runner/los20
@@ -1844,7 +1880,11 @@ jobs:
           set +e
           mkdir -p "$GITHUB_WORKSPACE/kernel-forensic"
           KOBJ=/home/runner/los20/out/target/product/j2lte/obj/KERNEL_OBJ
-          cp "$KOBJ/.config" "$GITHUB_WORKSPACE/kernel-forensic/" 2>/dev/null || echo "skip: .config ausente"
+          cp "$KOBJ/.config" "$GITHUB_WORKSPACE/kernel-forensic/" 2>/dev/null || echo "skip: .config ausente en KOBJ"
+          CFG2=$(find /home/runner/los20/kernel/samsung/exynos3475 /home/runner/los20/out -maxdepth 7 -name ".config" 2>/dev/null | head -1)
+          [ -n "$CFG2" ] && { cp "$CFG2" "$GITHUB_WORKSPACE/kernel-forensic/kernel-config-fallback"; echo "config fallback: $CFG2"; } || echo "skip: .config no encontrado por find"
+          DCONF=$(grep -l "CONFIG_PSTORE=y" /home/runner/los20/kernel/samsung/exynos3475/arch/arm/configs/*.defconfig 2>/dev/null | head -1)
+          [ -n "$DCONF" ] && { cp "$DCONF" "$GITHUB_WORKSPACE/kernel-forensic/defconfig-$(basename "$DCONF")"; echo "defconfig inyectado: $DCONF"; } || echo "skip: defconfig con pstore no encontrado"
           cp "$KOBJ/arch/arm/boot/zImage-dtb" "$GITHUB_WORKSPACE/kernel-forensic/" 2>/dev/null || echo "skip: zImage-dtb ausente"
           cp "$KOBJ"/arch/arm/boot/dts/exynos3475-j2lte_swa_open_*.dtb "$GITHUB_WORKSPACE/kernel-forensic/" 2>/dev/null || echo "skip: dtbs ausentes"
           ls -la "$GITHUB_WORKSPACE/kernel-forensic/"

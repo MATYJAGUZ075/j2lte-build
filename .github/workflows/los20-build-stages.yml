@@ -1509,7 +1509,7 @@ jobs:
               # 0x46C00000 esta en el extremo-alto de la RAM del kernel
               # colgado (1GB: 0x20000000..0x60000000) y es legible por
               # /dev/mem del recovery (validado en vivo).
-              params = ' ramoops.mem_address=0x46C00000 ramoops.mem_size=0x200000 ramoops.record_size=0x20000 ramoops.console_size=0x80000 ramoops.ecc=16'
+              params = ' ramoops.mem_address=0x46C00000 ramoops.mem_size=0x200000 ramoops.record_size=0x60000 ramoops.console_size=0x80000 ramoops.ecc=16'
               src = src[:m.end(1)] + params + src[m.start(2):]
               open(p, "w", encoding="utf-8").write(src)
               print("OK: parametros ramoops anadidos a /chosen/bootargs en", p)
@@ -1546,7 +1546,7 @@ jobs:
                   '\t\tpr_warn("ramoops diag: sin params de cmdline; region fija 0x46C00000");\n'
                   '\t\tmem_size = 0x200000;\n'
                   '\t\tmem_address = 0x46C00000;\n'
-                  '\t\trecord_size = 0x20000;\n'
+                  '\t\trecord_size = 0x60000;\n'
                   '\t\tramoops_console_size = 0x80000;\n'
                   '\t\tramoops_ecc = 16;\n'
                   '\t}\n\n'
@@ -1691,6 +1691,100 @@ jobs:
           PYEOF
           grep -n "diag_mark" "$KDIR/fs/pstore/ram.c"
           echo "OK: pstore/ramoops+diag_markers inyectado (ring base RAM 0x46C00000, marcadores 0x46E00000)"
+
+      - name: Diag decon: step-markers en decon_probe (localizar deadlock)
+        if: ${{ inputs.pstore_diag == true }}
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          KDIR=kernel/samsung/exynos3475
+          DCORE="$KDIR/drivers/video/exynos/decon_3475/decon_core.c"
+          test -f "$DCORE" || { echo "::error::$DCORE no existe"; exit 2; }
+          python3 - "$DCORE" <<'PYEOF'
+          import sys, re
+          p = sys.argv[1]
+          src = open(p, encoding="utf-8", errors="replace").read()
+          if "diag_decon" in src:
+              print("decon_core.c ya instrumentado (diag_decon presente), sin cambios")
+              sys.exit(0)
+
+          # 1) includes para current->pid/comm y smp_processor_id()
+          m = re.search(r'#include <linux/bug\.h>\n', src)
+          if not m:
+              print("::error::anchor include <linux/bug.h> no encontrado en", p); sys.exit(2)
+          src = src[:m.end()] + '#include <linux/smp.h>\n#include <linux/sched.h>\n' + src[m.end():]
+
+          def inject(after, block):
+              global src
+              i = src.find(after)
+              if i < 0:
+                  print("::error::anchor no encontrado (diag_decon):\n---\n%s\n---" % after)
+                  sys.exit(2)
+              src = src[:i+len(after)] + block + src[i+len(after):]
+
+          # A) entrada del probe (tras el dev_info "decon_probe start")
+          inject(
+              '\tdev_info(dev, "%s start\\n", __func__);\n',
+              '\tpr_info("diag_decon probe_begin pid=%d cpu=%d comm=%s\\n",\n'
+              '\t\tcurrent->pid, smp_processor_id(), current->comm);\n')
+
+          # B) tras register_framebuffer (el paso colgado en diag8)
+          inject(
+              '\tret = register_framebuffer(fbinfo);\n'
+              '\tif (ret < 0) {\n'
+              '\t\tdecon_err("failed to register framebuffer\\n");\n'
+              '\t\tgoto fail_iovmm;\n'
+              '\t}\n',
+              '\tpr_info("diag_decon step=post_fb pid=%d cpu=%d\\n",\n'
+              '\t\tcurrent->pid, smp_processor_id());\n')
+
+          # C) tras crear el hilo de update_regs
+          inject(
+              '\tinit_kthread_work(&decon->update_regs_work, decon_update_regs_handler);\n',
+              '\tpr_info("diag_decon step=post_kthread pid=%d cpu=%d\\n",\n'
+              '\t\tcurrent->pid, smp_processor_id());\n')
+
+          # D) tras decon_int_set_lcd_config + pm_runtime_enable
+          inject(
+              '\tplatform_set_drvdata(pdev, decon);\n'
+              '\tpm_runtime_enable(dev);\n',
+              '\tpr_info("diag_decon step=post_setlcd pid=%d cpu=%d\\n",\n'
+              '\t\tcurrent->pid, smp_processor_id());\n')
+
+          # E) tras pm_runtime_get_sync (bloque CONFIG_PM_RUNTIME del probe;
+          #    anchor largo para no pisar la copia de decon_runtime_resume)
+          inject(
+              '\tdecon->max_win_bw = decon_calc_bandwidth(decon->lcd_info->xres,\n'
+              '\t\t\tdecon->lcd_info->yres, 4,\n'
+              '\t\t\tdecon->lcd_info->fps);\n'
+              '\n'
+              '#if defined(CONFIG_PM_RUNTIME)\n'
+              '\tpm_runtime_get_sync(decon->dev);\n'
+              '#else\n'
+              '\tdecon_runtime_resume(decon->dev);\n'
+              '#endif\n',
+              '\tpr_info("diag_decon step=post_pm pid=%d cpu=%d\\n",\n'
+              '\t\tcurrent->pid, smp_processor_id());\n')
+
+          # F) camino full_init completado: tras call_panel_ops(displayon),
+          #    antes de entrar al label done
+          inject(
+              '\tcall_panel_ops(dsim, displayon, dsim);\n',
+              '\tpr_info("diag_decon step=full_init pid=%d cpu=%d\\n",\n'
+              '\t\tcurrent->pid, smp_processor_id());\n')
+
+          # G) entrada al label done (tambien por el camino bootloader_fb)
+          inject(
+              'decon_init_done:\n',
+              '\tpr_info("diag_decon step=done_label pid=%d cpu=%d\\n",\n'
+              '\t\tcurrent->pid, smp_processor_id());\n')
+
+          open(p, "w", encoding="utf-8").write(src)
+          print("OK: decon_probe instrumentado con marcadores diag_decon en", p)
+          print("marcadores: probe_begin / post_fb / post_kthread / post_setlcd / post_pm / full_init / done_label")
+          PYEOF
+          grep -n "diag_decon" "$DCORE"
+          echo "OK: step-markers diag_decon inyectados (probe_begin post_fb post_kthread post_setlcd post_pm full_init done_label)"
 
       - name: Restaurar ccache (cache=activado)
         if: ${{ inputs.cache == 'activado' }}

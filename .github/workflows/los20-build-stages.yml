@@ -1719,6 +1719,62 @@ jobs:
           grep -nE "^#? ?CONFIG_FRAMEBUFFER_CONSOLE" "$CFG"
           echo "OK: fbcon apagado en la defconfig diag (test register_framebuffer)"
 
+      - name: 'Diag userspace: neutralizar bpfloader (bootloop bpfloader-failed)'
+        if: ${{ inputs.pstore_diag == true }}
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          BPFDIR=system/bpf/bpfloader
+          TGT=""
+          if [ -d "$BPFDIR" ]; then
+            for f in "$BPFDIR"/*.cpp; do
+              if grep -qE 'int main\s*\(' "$f"; then TGT="$f"; break; fi
+            done
+          fi
+          test -n "$TGT" || { echo "::error::bpfloader main no encontrado en system/bpf/bpfloader"; exit 2; }
+          echo "TGT=$TGT"
+          python3 - "$TGT" <<'PYEOF'
+          import sys, re
+          p = sys.argv[1]
+          src = open(p, encoding="utf-8", errors="replace").read()
+          if "diag_bpfloader" in src:
+              print("bpfloader ya neutralizado, sin cambios")
+              sys.exit(0)
+          # diag11 (run 36212107939) probo la causa del bootloop (LOS20 = Android 13, fork lineage-17.1):
+          #   [15.98] bpfloader: Failed to create directory /sys/fs/bpf/..., No such file (x6)
+          #   [15.99] LibBpfLoader: Failed to create maps: (ret=-38) / Function not implemented
+          #   [40.99] Restarting system with command 'bpfloader-failed'
+          # -> kernel 3.10 SIN eBPF (bpf()=ENOSYS -38, sin CONFIG_BPF_SYSCALL ni /sys/fs/bpf).
+          # Android 13 bpfloader falla -> init reboots -> bootloop. Neutralizado:
+          # main() devuelve 0 y deja bpf.progs_loaded=1 para no colgar netd/system_server.
+          if not ("cstdio" in src or "stdio.h" in src):
+              src = "#include <cstdio>  // diag_bpfloader: fopen/fprintf en main\n" + src
+          m = re.search(r'int main\s*\([^)]*\)\s*\{', src)
+          if not m:
+              print("::error::int main no encontrado en", p); sys.exit(2)
+          has_base = "android::base::SetProperty" in src
+          has_prop = "property_set" in src
+          block = ('\n\t/* diag_bpfloader: kernel 3.10 sin eBPF (bpf()=-38 ENOSYS). '
+                   'Neutralizado para evitar reboot bpfloader-failed y seguir el boot. */\n'
+                   '\tif (FILE *diag_fk = fopen("/dev/kmsg", "w")) {\n'
+                   '\t\tfprintf(diag_fk, "diag_bpfloader: neutralizado, kernel 3.10 sin eBPF (bpf()=-38 ENOSYS)\\n");\n'
+                   '\t\tfclose(diag_fk);\n'
+                   '\t}\n')
+          if has_base:
+              block += '\tandroid::base::SetProperty("bpf.progs_loaded", "1");\n'
+          elif has_prop:
+              block += '\tproperty_set("bpf.progs_loaded", "1");\n'
+          else:
+              block += '\textern int property_set(const char*, const char*);\n'
+              block += '\tproperty_set("bpf.progs_loaded", "1");\n'
+          block += '\treturn 0;\n'
+          src = src[:m.end()] + block + src[m.end():]
+          open(p, "w", encoding="utf-8").write(src)
+          print("OK: bpfloader neutralizado (main -> return 0) en", p)
+          PYEOF
+          grep -n "diag_bpfloader" "$TGT"
+          echo "OK: bpfloader neutralizado en builds diag (bootloop bpfloader-failed)"
+
       - name: 'Diag decon: step-markers en decon_probe (localizar deadlock)'
         if: ${{ inputs.pstore_diag == true }}
         working-directory: /home/runner/los20

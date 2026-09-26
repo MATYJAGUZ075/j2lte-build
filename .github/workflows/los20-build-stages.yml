@@ -58,6 +58,12 @@ on:
         default: false
         type: boolean
 
+      bpfloader_module:
+        description: 'OPCIONAL (vector rápido, no es la vía limpia): compila solo el módulo bpfloader neutralizado y lo sube como artefacto para reemplazarlo en /system in-place (sin reconstruir systemimage). La vía limpia es stage=systemimage-guard + flashear system.img'
+        required: false
+        default: false
+        type: boolean
+
       cache:
         description: 'Caché de compilación (ccache). activado: restaura y GUARDA la ccache entre runs; desactivado: no la usa y BORRA la caché guardada. La clave es fija por toolchain (clang/gcc), tamaño máx 2G (límite de caché del repo de GitHub).'
         required: false
@@ -2230,7 +2236,7 @@ jobs:
         wait: [build]
 
       - name: Build modulo bpfloader (diag) y guardar en artefactos
-        if: ${{ always() && inputs.pstore_diag == true }}
+        if: ${{ always() && inputs.bpfloader_module == true }}
         working-directory: /home/runner/los20
         run: |
           set +e

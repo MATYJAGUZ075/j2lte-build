@@ -119,6 +119,28 @@ on:
           - clang
           - gcc
 
+      pstore_diag:
+        description: 'Diagnóstico: inyecta pstore/ramoops + ram console al defconfig del kernel (boot colgado se captura en RAM y sobrevive warm reboot); ademas apaga fbcon, neutraliza bpfloader (A13 sin eBPF en kernel 3.10) y pone step-markers en decon_probe'
+        required: false
+        default: false
+        type: boolean
+
+      bpfloader_module:
+        description: 'OPCIONAL (vector rápido, no es la vía limpia): compila solo el módulo bpfloader neutralizado y lo sube como artefacto para reemplazarlo en /system in-place (sin reconstruir systemimage). La vía limpia es mode=full-bacon (el bacon ya lleva el bpfloader neutralizado).'
+        required: false
+        default: false
+        type: boolean
+
+      build_jobs:
+        description: 'Cantidad de jobs paralelos (-j) para repo sync. Sube el número para más velocidad; default 16'
+        required: false
+        default: '16'
+
+      mka_jobs:
+        description: 'Jobs paralelos (-j) para mka. Vacío = automático (nproc). En runner hosted (4 vCPU) un -j mayor satura: no suele acelerar y puede petar de RAM'
+        required: false
+        default: ''
+
 concurrency:
   group: los20-full-build
   cancel-in-progress: false
@@ -331,7 +353,10 @@ jobs:
           cd "$HOME/los20"
           echo "=== DISCO PRE-SYNC ==="
           df -h /
-          time repo sync -c --no-tags --fail-fast -j4
+          echo "BUILD_JOBS=${{ inputs.build_jobs }}" >> "$GITHUB_ENV"
+          echo "MKA_JOBS=${{ inputs.mka_jobs }}" >> "$GITHUB_ENV"
+
+          time repo sync -c --no-tags --fail-fast -j"${BUILD_JOBS:-16}"
           echo "=== DISCO POST-SYNC ==="
           df -h /
 
@@ -1408,6 +1433,432 @@ jobs:
               exit 64
               ;;
           esac
+      - name: Inyección pstore/ramoops (diagnóstico boot colgado)
+        if: ${{ inputs.pstore_diag == true }}
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          KDIR=kernel/samsung/exynos3475
+          CFG=""
+          for c in arch/arm/configs/lineage_j2lte_defconfig arch/arm/configs/lineage-j2lte_defconfig; do
+            if [ -f "$KDIR/$c" ]; then
+              CFG="$KDIR/$c"
+              break
+            fi
+          done
+          test -n "$CFG" || { echo "::error::defconfig no encontrado (lineage_j2lte_defconfig/lineage-j2lte_defconfig) en $KDIR"; exit 2; }
+
+          # 1) CONFIG: PSTORE_CONSOLE habilita el espejo continuo de printk en
+          #    la particion console de ramoops (fs/pstore/platform.c, #ifdef
+          #    CONFIG_PSTORE_CONSOLE). El guard usa MARCA + grep -qF (string
+          #    fija): no se puede usar CONFIG_PSTORE=y como centinela porque
+          #    ya viene pre-existente en el defconfig y eso abortaba el append
+          #    entero; y la marca NO debe tener corchetes (regex=char class).
+          MARK="# diag_pstore"
+          grep -qF "$MARK" "$CFG" || printf '\n# diag_pstore ramoops @0x46C00000 (2MB; reservada early por memblock; leible por dd en recovery) - espejo continuo printk\nCONFIG_PSTORE=y\nCONFIG_PSTORE_CONSOLE=y\nCONFIG_PSTORE_RAM=y\n' >> "$CFG"
+          grep -nE "CONFIG_(PSTORE|PSTORE_CONSOLE|PSTORE_RAM)" "$CFG"
+
+          # 2) BOOTARGS: este kernel 3.10 NO tiene soporte DT para ramoops
+          #    (fs/pstore/ram.c = platform-driver "ramoops" solo por nombre,
+          #    sin of_match_table; no hay ram_console.c). La base se fija por
+          #    parametros de modulo en el cmdline, que en esta placa vive en
+          #    /chosen/bootargs del DTB (el header cmdline del boot.img viene
+          #    vacio; el bootargs real es el del chosen).
+          DTSI=""
+          for c in exynos3475-j2_common.dtsi exynos3475-j2lte_swa_open.dtsi exynos3475-j2lte.dtsi exynos3475.dtsi; do
+            if [ -f "$KDIR/arch/arm/boot/dts/$c" ]; then
+              DTSI="$KDIR/arch/arm/boot/dts/$c"
+              break
+            fi
+          done
+          test -n "$DTSI" || { echo "::error::ningun dtsi candidato encontrado (j2_common/j2lte_swa_open/j2lte/exynos3475)"; exit 2; }
+          echo "DTSI objetivo: $DTSI"
+          python3 - "$DTSI" <<'PYEOF'
+          import sys, re
+          p = sys.argv[1]
+          src = open(p, encoding="utf-8", errors="replace").read()
+          if "ramoops.mem_address" in src:
+              print("bootargs ramoops ya presentes, sin cambios")
+          else:
+              # DTS NO concatena literales de string: `"a" "b"` = error de
+              # sintaxis (array de strings necesita comas y bootargs es un
+              # string unico). Los parametros van DENTRO del mismo literal,
+              # justo antes de la comilla de cierre de /chosen/bootargs.
+              m = re.search(r'(bootargs\s*=\s*"[^"]*)(["]\s*;)', src)
+              if not m:
+                  print("::error::no se encontro /chosen/bootargs en", p); sys.exit(2)
+              # BASE RAMOPS = 0x46C00000 (2MB, termina en 0x46E00000): el recovery
+              # (omni, kernel 3.10) mapea su RAM hasta 0x47000000 y da
+              # "Bad address" en 0x47000000+, asi que todo lo que leamos
+              # debe quedar por debajo. El bootloader de Samsung IGNORA
+              # /chosen/bootargs (inyecta su propio cmdline), asi que estos
+              # params NO llegan al kernel: el que manda es el fallback
+              # hardcodeado en fs/pstore/ram.c (paso 3) y la reserva EARLY
+              # via memblock en mach-universal3475.c (paso 4), que impide
+              # que el buddy asigne esas paginas (probado: sin reserva, el
+              # slab pisa la region y no queda ni firma persistent_ram).
+              # 0x46C00000 esta en el extremo-alto de la RAM del kernel
+              # colgado (1GB: 0x20000000..0x60000000) y es legible por
+              # /dev/mem del recovery (validado en vivo).
+              params = ' ramoops.mem_address=0x46C00000 ramoops.mem_size=0x200000 ramoops.record_size=0x60000 ramoops.console_size=0x80000 ramoops.ecc=16'
+              src = src[:m.end(1)] + params + src[m.start(2):]
+              open(p, "w", encoding="utf-8").write(src)
+              print("OK: parametros ramoops anadidos a /chosen/bootargs en", p)
+          PYEOF
+          grep -n "bootargs" "$DTSI"
+
+          # 3) FALLBACK en fs/pstore/ram.c: garantiza la region aun cuando el
+          #    cmdline (que controla el bootloader, no nosotros) no traiga los
+          #    ramoops.*. ramoops_register_dummy() solo crea el platform
+          #    device si mem_size != 0; si no hay params (caso esperado aqui),
+          #    hardcodeamos la region 0x45000000 + tamanos.
+          RAMC="$KDIR/fs/pstore/ram.c"
+          test -f "$RAMC" || { echo "::error::$RAMC no existe"; exit 2; }
+          python3 - "$RAMC" <<'PYEOF'
+          import sys, re
+          p = sys.argv[1]
+          src = open(p, encoding="utf-8", errors="replace").read()
+          if "diag_pstore" in src:
+              print("ram.c ya patcheado (diag_pstore presente), sin cambios")
+          else:
+              anchor = re.compile(
+                  r'if \(!mem_size\)\n\t\treturn;\n\n\tpr_info\("using module parameters\\n"\);')
+              m = anchor.search(src)
+              if not m:
+                  print("::error::anchor de ramoops_register_dummy no encontrado en", p)
+                  sys.exit(2)
+              block = (
+                  'if (!mem_size) {\n'
+                  '\t\t/* diag_pstore: el bootloader de Samsung inyecta su propio\n'
+                  '\t\t * cmdline e ignora /chosen/bootargs: los ramoops.* del\n'
+                  '\t\t * cmdline nunca llegan. Region fija en RAM leible por\n'
+                  '\t\t * /dev/mem desde el recovery omni (reservada EARLY por\n'
+                  '\t\t * memblock en mach-universal3475.c paso 4). */\n'
+                  '\t\tpr_warn("ramoops diag: sin params de cmdline; region fija 0x46C00000");\n'
+                  '\t\tmem_size = 0x200000;\n'
+                  '\t\tmem_address = 0x46C00000;\n'
+                  '\t\trecord_size = 0x60000;\n'
+                  '\t\tramoops_console_size = 0x80000;\n'
+                  '\t\tramoops_ecc = 16;\n'
+                  '\t}\n\n'
+                  '\tpr_info("using module parameters\\n");')
+              new = src[:m.start()] + block + src[m.end():]
+              open(p, "w", encoding="utf-8").write(new)
+              print("OK: fallback ramoops 0x46C00000 anadido en", p)
+          PYEOF
+          grep -n "diag_pstore" "$RAMC"
+
+          # 4) RESERVA EARLY (memblock) en el mach del j2 (universal3475):
+          #    sin esto el window de absorcion (buddy/slab) usa la region
+          #    durante el boot colgado y no queda nada que leer (dumps diag4/5
+          #    vacios). ramoops_probe corre postcore, DESPUES de mem_init: ya
+          #    es tarde para reservar; la reserva debe ir en el hook
+          #    .reserve del DT_MACHINE, que setup_arch() llama antes de que
+          #    el buddy exista.
+          MACH="arch/arm/mach-exynos/mach-universal3475.c"
+          test -f "$KDIR/$MACH" || { echo "::error::$MACH no existe"; exit 2; }
+          python3 - "$KDIR/$MACH" <<'PYEOF'
+          import sys, re
+          p = sys.argv[1]
+          src = open(p, encoding="utf-8", errors="replace").read()
+          if "diag_pstore_reserve" in src:
+              print("mach-universal3475 ya reservado, sin cambios")
+          else:
+              anchor = re.compile(r'static void __init universal3475_reserve\(void\)\n\{')
+              m = anchor.search(src)
+              if not m:
+                  print("::error::universal3475_reserve no encontrado en", p)
+                  sys.exit(2)
+              block = ('static void __init universal3475_reserve(void)\n'
+                       '{\n'
+                       '\t/* diag_pstore_reserve: region fija de ramoops para el\n'
+                       '\t * boot colgado. Leible por /dev/mem desde el recovery\n'
+                       '\t * omni (0x20000000..0x47000000). Base fina en extremo\n'
+                       '\t * alto, 2MB+4KB, termina en 0x46E01000 < 0x47000000.\n'
+                       '\t * los 4KB extra los usan los marcadores escalonados de\n'
+                       '\t * fase de boot (fs/pstore/diag_markers.c). */\n'
+                       '\tif (!memblock_is_region_reserved(0x46C00000, 0x201000))\n'
+                       '\t\tmemblock_reserve(0x46C00000, 0x201000);\n'
+                       '\tpr_info("diag_pstore: reservados 2MB+4KB @0x46C00000 para ramoops\\n");\n')
+              new = src[:m.start()] + block + src[m.end():]
+              open(p, "w", encoding="utf-8").write(new)
+              print("OK: reserva memblock 2MB @0x46C00000 en universal3475_reserve")
+          PYEOF
+          grep -n "diag_pstore_reserve" "$KDIR/$MACH"
+
+          # 5) MARCADORES ESCALONADOS DE FASE DE BOOT (fs/pstore/diag_markers.c):
+          #    el ring de ramoops salió VACÍO en los 4 experimentos (diag5
+          #    cmdline ignorado, diag6 buddy pisa, diag7 region virgen). Hay
+          #    que saber HASTA DÓNDE llega el kernel colgado. Esta pagina
+          #    (0x46E00000, dentro de la reserva memblock) guarda palabras que
+          #    cada fase escribe:
+          #      0x00 "RAMO" ramoops_init (postcore) en marcha
+          #      0x04 "PROB" ramoops_probe terminó OK (ring escrito)
+          #      0x08 "CORE" core_initcall
+          #      0x0c "DEVI" device_initcall
+          #      0x10 "LATE" late_initcall
+          #    Si NINGUNA palabra aparece, el boot.img no llegó a ejecutar el
+          #    kernel (problema de arranque/imagen, no de nuestro codigo).
+          cat > "$KDIR/fs/pstore/diag_markers.c" <<'EOF'
+          /*
+           * diag_pstore: marcadores escalonados de fase de boot.
+           * Palabras en 0x46E00000 (dentro de la reserva memblock de ramoops):
+           *   0x00 RAMO ramoops_init (postcore)
+           *   0x04 PROB ramoops_probe OK
+           *   0x08 CORE core_initcall
+           *   0x0c DEVI device_initcall
+           *   0x10 LATE late_initcall
+           */
+          #include <linux/kernel.h>
+          #include <linux/init.h>
+          #include <linux/compiler.h>
+          #include <asm/memory.h>
+          #include <asm/barrier.h>
+
+          #define DIAG_MARK_BASE 0x46E00000UL
+
+          void diag_mark(unsigned int off, unsigned int val)
+          {
+          	*(volatile unsigned int *)phys_to_virt(DIAG_MARK_BASE + off) = val;
+          	barrier();
+          }
+
+          static int __init diag_mark_core(void)
+          {
+          	diag_mark(0x08, 0x434F5245); /* CORE */
+          	return 0;
+          }
+          core_initcall(diag_mark_core);
+
+          static int __init diag_mark_dev(void)
+          {
+          	diag_mark(0x0c, 0x44455649); /* DEVI */
+          	return 0;
+          }
+          device_initcall(diag_mark_dev);
+
+          static int __init diag_mark_late(void)
+          {
+          	diag_mark(0x10, 0x4C415445); /* LATE */
+          	return 0;
+          }
+          late_initcall(diag_mark_late);
+          EOF
+          grep -qF "diag_markers.o" "$KDIR/fs/pstore/Makefile" || \
+            printf '\nobj-y += diag_markers.o\n' >> "$KDIR/fs/pstore/Makefile"
+          grep -n "diag_markers.o" "$KDIR/fs/pstore/Makefile"
+
+          python3 - "$KDIR/fs/pstore/ram.c" <<'PYEOF'
+          import sys, re
+          p = sys.argv[1]
+          src = open(p, encoding="utf-8", errors="replace").read()
+          if "50524F42" in src:
+              print("ram.c ya enlazado con diag_markers")
+          else:
+              # 1) marca el inicio de ramoops_init (postcore)
+              pat_init = re.compile(r'static int __init ramoops_init\(void\)\n\{')
+              m = pat_init.search(src)
+              if not m:
+                  print("::error::ramoops_init no encontrado en", p)
+                  sys.exit(2)
+              block_init = ('static int __init ramoops_init(void)\n{\n'
+                            '\textern void diag_mark(unsigned int, unsigned int);\n'
+                            '\tdiag_mark(0x00, 0x52414D4F); /* RAMO */\n')
+              src = src[:m.start()] + block_init + src[m.end():]
+              # 2) marca el exito del probe tras registrar pstore. La llamada
+              #    pr_info("attached ...") es MULTILINEA: hay que anclar hasta
+              #    el cierre ");" o el marcador quedaria en medio de los
+              #    argumentos (ram.c:536 "expected expression before 'extern'").
+              pat_probe = re.compile(r'pr_info\("attached 0x%lx@0x%llx, ecc: %d/%d\\n",.*?\);\n', re.S)
+              m = pat_probe.search(src)
+              if not m:
+                  print("::error::ancla 'attached ...);' de ramoops_probe no encontrado en", p)
+                  sys.exit(2)
+              block_probe = ('\textern void diag_mark(unsigned int, unsigned int);\n'
+                             '\tdiag_mark(0x04, 0x50524F42); /* PROB */\n')
+              src = src[:m.end()] + block_probe + src[m.end():]
+              open(p, "w", encoding="utf-8").write(src)
+              print("OK: diag_markers enlazados en ram.c")
+          PYEOF
+          grep -n "diag_mark" "$KDIR/fs/pstore/ram.c"
+          echo "OK: pstore/ramoops+diag_markers inyectado (ring base RAM 0x46C00000, marcadores 0x46E00000)"
+
+      - name: 'Diag decon: desactivar fbcon en defconfig (test register_framebuffer)'
+        if: ${{ inputs.pstore_diag == true }}
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          KDIR=kernel/samsung/exynos3475
+          CFG=""
+          for c in arch/arm/configs/lineage_j2lte_defconfig arch/arm/configs/lineage-j2lte_defconfig; do
+            if [ -f "$KDIR/$c" ]; then
+              CFG="$KDIR/$c"
+              break
+            fi
+          done
+          test -n "$CFG" || { echo "::error::defconfig no encontrado para test fbcon"; exit 2; }
+          echo "CFG=$CFG"
+          if grep -q '^# CONFIG_FRAMEBUFFER_CONSOLE is not set' "$CFG"; then
+            echo "fbcon ya desactivado, sin cambios"
+          elif grep -q '^CONFIG_FRAMEBUFFER_CONSOLE=y' "$CFG"; then
+            sed -i 's/^CONFIG_FRAMEBUFFER_CONSOLE=y$/# CONFIG_FRAMEBUFFER_CONSOLE is not set/' "$CFG"
+            echo "fbcon desactivado (CONFIG_FRAMEBUFFER_CONSOLE=n)"
+          else
+            printf '\n# diag_fbcon_off\n# CONFIG_FRAMEBUFFER_CONSOLE is not set\n' >> "$CFG"
+            echo "fbcon no estaba en defconfig; anadido '# CONFIG_FRAMEBUFFER_CONSOLE is not set'"
+          fi
+          grep -nE "^#? ?CONFIG_FRAMEBUFFER_CONSOLE" "$CFG"
+          echo "OK: fbcon apagado en la defconfig diag (test register_framebuffer)"
+
+      - name: 'Diag userspace: neutralizar bpfloader (bootloop bpfloader-failed)'
+        if: ${{ inputs.pstore_diag == true }}
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          BPFDIR=system/bpf/bpfloader
+          TGT=""
+          if [ -d "$BPFDIR" ]; then
+            for f in "$BPFDIR"/*.cpp; do
+              if grep -qE 'int main\s*\(' "$f"; then TGT="$f"; break; fi
+            done
+          fi
+          test -n "$TGT" || { echo "::error::bpfloader main no encontrado en system/bpf/bpfloader"; exit 2; }
+          echo "TGT=$TGT"
+          python3 - "$TGT" <<'PYEOF'
+          import sys, re
+          p = sys.argv[1]
+          src = open(p, encoding="utf-8", errors="replace").read()
+          if "diag_bpfloader" in src:
+              print("bpfloader ya neutralizado, sin cambios")
+              sys.exit(0)
+          # diag11 (run 36212107939) probo la causa del bootloop (LOS20 = Android 13, fork lineage-17.1):
+          #   [15.98] bpfloader: Failed to create directory /sys/fs/bpf/..., No such file (x6)
+          #   [15.99] LibBpfLoader: Failed to create maps: (ret=-38) / Function not implemented
+          #   [40.99] Restarting system with command 'bpfloader-failed'
+          # -> kernel 3.10 SIN eBPF (bpf()=ENOSYS -38, sin CONFIG_BPF_SYSCALL ni /sys/fs/bpf).
+          # Android 13 bpfloader falla -> init reboots -> bootloop. Neutralizado:
+          # main() devuelve 0 y deja bpf.progs_loaded=1 para no colgar netd/system_server.
+          if not ("cstdio" in src or "stdio.h" in src):
+              src = "#include <cstdio>  // diag_bpfloader: fopen/fprintf en main\n" + src
+          m = re.search(r'int main\s*\([^)]*\)\s*\{', src)
+          if not m:
+              print("::error::int main no encontrado en", p); sys.exit(2)
+          has_base = "android::base::SetProperty" in src
+          has_prop = "property_set" in src
+          block = ('\n\t/* diag_bpfloader: kernel 3.10 sin eBPF (bpf()=-38 ENOSYS). '
+                   'Neutralizado para evitar reboot bpfloader-failed y seguir el boot. */\n'
+                   '\tif (FILE *diag_fk = fopen("/dev/kmsg", "w")) {\n'
+                   '\t\tfprintf(diag_fk, "diag_bpfloader: neutralizado, kernel 3.10 sin eBPF (bpf()=-38 ENOSYS)\\n");\n'
+                   '\t\tfclose(diag_fk);\n'
+                   '\t}\n')
+          if has_base:
+              block += '\tandroid::base::SetProperty("bpf.progs_loaded", "1");\n'
+          elif has_prop:
+              block += '\tproperty_set("bpf.progs_loaded", "1");\n'
+          else:
+              block += '\textern int property_set(const char*, const char*);\n'
+              block += '\tproperty_set("bpf.progs_loaded", "1");\n'
+          block += '\treturn 0;\n'
+          src = src[:m.end()] + block + src[m.end():]
+          open(p, "w", encoding="utf-8").write(src)
+          print("OK: bpfloader neutralizado (main -> return 0) en", p)
+          PYEOF
+          grep -n "diag_bpfloader" "$TGT"
+          echo "OK: bpfloader neutralizado en builds diag (bootloop bpfloader-failed)"
+
+      - name: 'Diag decon: step-markers en decon_probe (localizar deadlock)'
+        if: ${{ inputs.pstore_diag == true }}
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          KDIR=kernel/samsung/exynos3475
+          DCORE="$KDIR/drivers/video/exynos/decon_3475/decon_core.c"
+          test -f "$DCORE" || { echo "::error::$DCORE no existe"; exit 2; }
+          python3 - "$DCORE" <<'PYEOF'
+          import sys, re
+          p = sys.argv[1]
+          src = open(p, encoding="utf-8", errors="replace").read()
+          if "diag_decon" in src:
+              print("decon_core.c ya instrumentado (diag_decon presente), sin cambios")
+              sys.exit(0)
+
+          # 1) includes para current->pid/comm y smp_processor_id()
+          m = re.search(r'#include <linux/bug\.h>\n', src)
+          if not m:
+              print("::error::anchor include <linux/bug.h> no encontrado en", p); sys.exit(2)
+          src = src[:m.end()] + '#include <linux/smp.h>\n#include <linux/sched.h>\n' + src[m.end():]
+
+          def inject(after, block):
+              global src
+              i = src.find(after)
+              if i < 0:
+                  print("::error::anchor no encontrado (diag_decon):\n---\n%s\n---" % after)
+                  sys.exit(2)
+              src = src[:i+len(after)] + block + src[i+len(after):]
+
+          # A) entrada del probe (tras el dev_info "decon_probe start")
+          inject(
+              '\tdev_info(dev, "%s start\\n", __func__);\n',
+              '\tpr_info("diag_decon probe_begin pid=%d cpu=%d comm=%s\\n",\n'
+              '\t\tcurrent->pid, smp_processor_id(), current->comm);\n')
+
+          # B) tras register_framebuffer (el paso colgado en diag8)
+          inject(
+              '\tret = register_framebuffer(fbinfo);\n'
+              '\tif (ret < 0) {\n'
+              '\t\tdecon_err("failed to register framebuffer\\n");\n'
+              '\t\tgoto fail_iovmm;\n'
+              '\t}\n',
+              '\tpr_info("diag_decon step=post_fb pid=%d cpu=%d\\n",\n'
+              '\t\tcurrent->pid, smp_processor_id());\n')
+
+          # C) tras crear el hilo de update_regs
+          inject(
+              '\tinit_kthread_work(&decon->update_regs_work, decon_update_regs_handler);\n',
+              '\tpr_info("diag_decon step=post_kthread pid=%d cpu=%d\\n",\n'
+              '\t\tcurrent->pid, smp_processor_id());\n')
+
+          # D) tras decon_int_set_lcd_config + pm_runtime_enable
+          inject(
+              '\tplatform_set_drvdata(pdev, decon);\n'
+              '\tpm_runtime_enable(dev);\n',
+              '\tpr_info("diag_decon step=post_setlcd pid=%d cpu=%d\\n",\n'
+              '\t\tcurrent->pid, smp_processor_id());\n')
+
+          # E) tras pm_runtime_get_sync (bloque CONFIG_PM_RUNTIME del probe;
+          #    anchor largo para no pisar la copia de decon_runtime_resume)
+          inject(
+              '\tdecon->max_win_bw = decon_calc_bandwidth(decon->lcd_info->xres,\n'
+              '\t\t\tdecon->lcd_info->yres, 4,\n'
+              '\t\t\tdecon->lcd_info->fps);\n'
+              '\n'
+              '#if defined(CONFIG_PM_RUNTIME)\n'
+              '\tpm_runtime_get_sync(decon->dev);\n'
+              '#else\n'
+              '\tdecon_runtime_resume(decon->dev);\n'
+              '#endif\n',
+              '\tpr_info("diag_decon step=post_pm pid=%d cpu=%d\\n",\n'
+              '\t\tcurrent->pid, smp_processor_id());\n')
+
+          # F) camino full_init completado: tras call_panel_ops(displayon),
+          #    antes de entrar al label done
+          inject(
+              '\tcall_panel_ops(dsim, displayon, dsim);\n',
+              '\tpr_info("diag_decon step=full_init pid=%d cpu=%d\\n",\n'
+              '\t\tcurrent->pid, smp_processor_id());\n')
+
+          # G) entrada al label done (tambien por el camino bootloader_fb)
+          inject(
+              'decon_init_done:\n',
+              '\tpr_info("diag_decon step=done_label pid=%d cpu=%d\\n",\n'
+              '\t\tcurrent->pid, smp_processor_id());\n')
+
+          open(p, "w", encoding="utf-8").write(src)
+          print("OK: decon_probe instrumentado con marcadores diag_decon en", p)
+          print("marcadores: probe_begin / post_fb / post_kthread / post_setlcd / post_pm / full_init / done_label")
+          PYEOF
+          grep -n "diag_decon" "$DCORE"
+          echo "OK: step-markers diag_decon inyectados (probe_begin post_fb post_kthread post_setlcd post_pm full_init done_label)"
 
       - name: source envsetup.sh + lunch lineage_j2lte-userdebug
         working-directory: /home/runner/los20
@@ -1572,7 +2023,7 @@ jobs:
 
           echo "== mka bacon =="
 
-          time mka --skip-soong-tests bacon -j"$(nproc)" 2>&1 | tee /tmp/bacon.log
+          time mka --skip-soong-tests bacon -j"${MKA_JOBS:-$(nproc)}" 2>&1 | tee /tmp/bacon.log
           RC=${PIPESTATUS[0]}
           echo "BACON_RC=$RC"
           exit "$RC"
@@ -1620,6 +2071,30 @@ jobs:
           du -sh out 2>/dev/null || true
           echo "=== Directorios más grandes en out/ ==="
           du -sh out/* 2>/dev/null | sort -h | tail -20 || true
+
+      - name: Build modulo bpfloader (diag) y guardar en artefactos
+        if: ${{ always() && inputs.bpfloader_module == true }}
+        working-directory: /home/runner/los20
+        run: |
+          set +e
+          source build/envsetup.sh >/dev/null 2>&1
+          lunch lineage_j2lte-userdebug >/dev/null 2>&1
+          echo "== mka bpfloader (binary neutralizado va al /system del device) =="
+          mka bpfloader 2>&1 | tail -15
+          RC=${PIPESTATUS[0]}
+          echo "BPFLOader RC=$RC"
+          BIN=out/target/product/j2lte/system/bin/bpfloader
+          if [ -f "$BIN" ]; then
+            mkdir -p "$GITHUB_WORKSPACE/artifacts/bpfloader-diag"
+            cp "$BIN" "$GITHUB_WORKSPACE/artifacts/bpfloader-diag/bpfloader"
+            md5sum "$BIN"
+            md5sum "$BIN" > "$GITHUB_WORKSPACE/artifacts/bpfloader-diag/bpfloader.md5"
+            echo "::notice::bpfloader diag: $(md5sum "$BIN")"
+            strings "$BIN" | grep -m1 "diag_bpfloader" && echo "MARKER_IN_BINARY=OK" \
+              || echo "MARKER_IN_BINARY=MISSING (revisar inyeccion)"
+          else
+            echo "::warning::no se genero $BIN"
+          fi
 
       # ============================================================
       # RESULTADOS

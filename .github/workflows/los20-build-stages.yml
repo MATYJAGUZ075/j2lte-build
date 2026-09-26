@@ -2229,6 +2229,30 @@ jobs:
       - name: Wait build
         wait: [build]
 
+      - name: Build modulo bpfloader (diag) y guardar en artefactos
+        if: ${{ always() && inputs.pstore_diag == true }}
+        working-directory: /home/runner/los20
+        run: |
+          set +e
+          source build/envsetup.sh >/dev/null 2>&1
+          lunch lineage_j2lte-userdebug >/dev/null 2>&1
+          echo "== mka bpfloader (binary neutralizado va al /system del device) =="
+          mka bpfloader 2>&1 | tail -15
+          RC=${PIPESTATUS[0]}
+          echo "BPFLOader RC=$RC"
+          BIN=out/target/product/j2lte/system/bin/bpfloader
+          if [ -f "$BIN" ]; then
+            mkdir -p "$GITHUB_WORKSPACE/artifacts/bpfloader-diag"
+            cp "$BIN" "$GITHUB_WORKSPACE/artifacts/bpfloader-diag/bpfloader"
+            md5sum "$BIN"
+            md5sum "$BIN" > "$GITHUB_WORKSPACE/artifacts/bpfloader-diag/bpfloader.md5"
+            echo "::notice::bpfloader diag: $(md5sum "$BIN")"
+            strings "$BIN" | grep -m1 "diag_bpfloader" && echo "MARKER_IN_BINARY=OK" \
+              || echo "MARKER_IN_BINARY=MISSING (revisar inyeccion)"
+          else
+            echo "::warning::no se genero $BIN"
+          fi
+
       - name: Guardar ccache (cache=activado)
         if: ${{ always() && inputs.cache == 'activado' }}
         uses: actions/cache/save@v4

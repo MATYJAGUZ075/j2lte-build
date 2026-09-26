@@ -64,6 +64,12 @@ on:
         default: false
         type: boolean
 
+      apply_fixes:
+        description: 'FIXES: (1) hardware/samsung_slsi/exynos libhwcutils -> android::sp owner antes de Thread::run() (abort incStrongRequireStrong del HWC, tombstone_46) ; (2) defconfig -> CONFIG_USB_FUNCTIONFS=y (adbd A13 necesita /dev/usb-ffs/adb; el device ya trae init.universal3475.usb.rc en /system/etc/init/, auto-importado en A13).'
+        required: false
+        default: true
+        type: boolean
+
       cache:
         description: 'Caché de compilación (ccache). activado: restaura y GUARDA la ccache entre runs; desactivado: no la usa y BORRA la caché guardada. La clave es fija por toolchain (clang/gcc), tamaño máx 2G (límite de caché del repo de GitHub).'
         required: false
@@ -1724,6 +1730,84 @@ jobs:
           fi
           grep -nE "^#? ?CONFIG_FRAMEBUFFER_CONSOLE" "$CFG"
           echo "OK: fbcon apagado en la defconfig diag (test register_framebuffer)"
+
+      - name: 'Fix USB: CONFIG_USB_FUNCTIONFS=y (adbd A13 /dev/usb-ffs/adb)'
+        if: ${{ inputs.apply_fixes }}
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          KDIR=kernel/samsung/exynos3475
+          CFG=""
+          for c in arch/arm/configs/lineage_j2lte_defconfig arch/arm/configs/lineage-j2lte_defconfig; do
+            if [ -f "$KDIR/$c" ]; then
+              CFG="$KDIR/$c"
+              break
+            fi
+          done
+          test -n "$CFG" || { echo "::error::defconfig no encontrado (lineage_j2lte_defconfig/lineage-j2lte_defconfig) en $KDIR"; exit 2; }
+          if grep -q '^CONFIG_USB_FUNCTIONFS=y' "$CFG"; then
+            echo "CONFIG_USB_FUNCTIONFS ya activo, sin cambios"
+          elif grep -q '^# CONFIG_USB_FUNCTIONFS is not set' "$CFG"; then
+            sed -i 's|^# CONFIG_USB_FUNCTIONFS is not set$|# fix_usb_functionfs toggle\nCONFIG_USB_FUNCTIONFS=y|' "$CFG"
+            echo "CONFIG_USB_FUNCTIONFS activado (flip is-not-set -> y)"
+          else
+            printf '\n# fix_usb_functionfs\nCONFIG_USB_FUNCTIONFS=y\n' >> "$CFG"
+            echo "CONFIG_USB_FUNCTIONFS anadido"
+          fi
+          grep -nE '^#? ?CONFIG_USB_FUNCTIONFS' "$CFG"
+          # el composite samsung (android.c) incluye la funcion ffs (f_ffs/aliases)
+          # que init.universal3475.usb.rc monta en /dev/usb-ffs/adb (on fs).
+          echo "OK: functionfs en la kernel (adbd A13 -> /dev/usb-ffs/adb/ep0)"
+
+      - name: 'Fix HWC: thread owner ExynosMPP antes de run() (abort incStrongRequireStrong)'
+        if: ${{ inputs.apply_fixes }}
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          HAL=hardware/samsung_slsi/exynos
+          test -f "$HAL/libhwcutils/ExynosMPPv2.cpp" || { echo "::error::$HAL/libhwcutils/ExynosMPPv2.cpp no existe"; exit 2; }
+          python3 - "$HAL/libhwcutils/ExynosMPPv2.cpp" "$HAL/libhwcutils/ExynosMPP.cpp" <<'PYEOF'
+          import sys, re
+          for p in sys.argv[1:]:
+              src = open(p, encoding="utf-8", errors="replace").read()
+              if "diag_hwc_thread" in src:
+                  print("ya parcheado (diag_hwc_thread):", p)
+                  continue
+              if "#include <utils/StrongPointer.h>" not in src:
+                  anchor = '#include "ExynosHWCUtils.h"'
+                  if anchor not in src:
+                      print("::error::anchor include ExynosHWCUtils.h no encontrado en", p)
+                      sys.exit(2)
+                  src = src.replace(
+                      anchor,
+                      anchor + '\n#include <utils/StrongPointer.h>  /* diag_hwc_thread */',
+                      1)
+              # tombstone_46: libhwcutils ExynosMPP::setAllocDevice -> Thread::run()
+              #   -> RefBase::incStrongRequireStrong assert (objeto "no owned").
+              #   A13: sp ctor = incStrong normal (INITIAL->1); run() = 
+              #   incStrongRequireStrong (necesita c>=1). sp<> local = ownership
+              #   durante run(); clear() = vuelve al patron legacy (count 1,
+              #   el destructor hace delete sobre el raw pointer).
+              old = re.compile(
+                  r'(?P<ind>\s*)mBufferFreeThread = new BufferFreeThread\(this\);\n'
+                  r'(?P=ind)mBufferFreeThread->mRunning = true;\n'
+                  r'(?P=ind)mBufferFreeThread->run\("MPPThread"\);\n')
+              new = (
+                  r'\g<ind>/* diag_hwc_thread: A13 Thread::run pide objeto ya owned */\n'
+                  r'\g<ind>android::sp<BufferFreeThread> mppOwner(new BufferFreeThread(this));\n'
+                  r'\g<ind>mBufferFreeThread = mppOwner.get();\n'
+                  r'\g<ind>mBufferFreeThread->mRunning = true;\n'
+                  r'\g<ind>mBufferFreeThread->run("MPPThread");\n'
+                  r'\g<ind>mppOwner.clear();\n')
+              src2, n = old.subn(new, src)
+              if not n:
+                  print("::error::bloque mBufferFreeThread/run no encontrado en", p)
+                  sys.exit(2)
+              open(p, "w", encoding="utf-8").write(src2)
+              print("OK: %d bloque(s) con owner sp<> en %s" % (n, p))
+          PYEOF
+          grep -n "diag_hwc_thread" "$HAL/libhwcutils/ExynosMPPv2.cpp" "$HAL/libhwcutils/ExynosMPP.cpp"
+          echo "OK: libhwcutils con owner sp<> antes de Thread::run (HWC sin abort)"
 
       - name: 'Diag userspace: neutralizar bpfloader (bootloop bpfloader-failed)'
         if: ${{ inputs.pstore_diag == true }}

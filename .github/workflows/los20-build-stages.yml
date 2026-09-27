@@ -89,6 +89,12 @@ on:
         required: false
         default: ''
 
+      boot_diag:
+        description: 'DIAGNÓSTICO: instala en la imagen los scripts de captura de arranque (logcat continuo + stdout/stderr de zygote) escribiendo en /data/local/tmp. Útil porque el device aún no completa el boot y sin pstore no hay logs de kernel. DESACTIVADO por defecto: nunca activarlo en builds de entrega.'
+        required: false
+        type: boolean
+        default: false
+
 concurrency:
   group: los20-stages
   cancel-in-progress: false
@@ -143,6 +149,7 @@ jobs:
       STAGE: ${{ github.event.inputs.stage }}
       MIN_FREE_GB: ${{ github.event.inputs.min_free_gb }}
       EXTRA: ${{ github.event.inputs.extra_targets }}
+      LOS20_BOOT_DIAG: ${{ github.event.inputs.boot_diag && 'true' || 'false' }}
       TELEM_FREE_GB: ${{ github.event.inputs.telemetry_free_gb }}
       # ATENCIÓN: el nombre NO puede ser KERNEL_TOOLCHAIN. make importa las
       # variables de entorno y BoardConfigKernel.mk:129 la usa con `?=`:
@@ -2266,7 +2273,7 @@ jobs:
             # Prueba MINIMIZE (override por línea de comandos, pisa el `:=`
             # por ser asignación de línea de comandos; no toca device tree):
             # recorta tablas de variables locales java (-g:source,lines).
-            time mka --skip-soong-tests PRODUCT_MINIMIZE_JAVA_DEBUG_INFO=true "$target" -j"${MKA_JOBS:-$(nproc)}" \
+            time mka --skip-soong-tests PRODUCT_MINIMIZE_JAVA_DEBUG_INFO=true LOS20_BOOT_DIAG="${LOS20_BOOT_DIAG:-false}" "$target" -j"${MKA_JOBS:-$(nproc)}" \
               2>&1 | tee /tmp/stage.log
 
             RC=${PIPESTATUS[0]}

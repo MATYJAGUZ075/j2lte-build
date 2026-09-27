@@ -147,6 +147,12 @@ on:
         required: false
         default: ''
 
+      boot_diag:
+        description: 'DIAGNÓSTICO: instala en la imagen los scripts de captura de arranque (logcat continuo + stdout/stderr de zygote) escribiendo en /data/local/tmp. Útil porque el device aún no completa el boot y sin pstore no hay logs de kernel. DESACTIVADO por defecto: nunca activarlo en builds de entrega.'
+        required: false
+        type: boolean
+        default: false
+
 concurrency:
   group: los20-full-build
   cancel-in-progress: false
@@ -361,6 +367,8 @@ jobs:
           df -h /
           echo "BUILD_JOBS=${{ inputs.build_jobs }}" >> "$GITHUB_ENV"
           echo "MKA_JOBS=${{ inputs.mka_jobs }}" >> "$GITHUB_ENV"
+          # Diagnóstico opt-in de arranque -> variable de make para device-common.mk
+          echo "LOS20_BOOT_DIAG=${{ inputs.boot_diag && 'true' || 'false' }}" >> "$GITHUB_ENV"
 
           time repo sync -c --no-tags --fail-fast -j"${BUILD_JOBS:-16}"
           echo "=== DISCO POST-SYNC ==="
@@ -2106,8 +2114,9 @@ jobs:
           lunch lineage_j2lte-userdebug >/dev/null
 
           echo "== mka bacon =="
+          echo "   LOS20_BOOT_DIAG=${LOS20_BOOT_DIAG:-false}"
 
-          time mka --skip-soong-tests bacon -j"${MKA_JOBS:-$(nproc)}" 2>&1 | tee /tmp/bacon.log
+          time mka --skip-soong-tests bacon LOS20_BOOT_DIAG="${LOS20_BOOT_DIAG:-false}" -j"${MKA_JOBS:-$(nproc)}" 2>&1 | tee /tmp/bacon.log
           RC=${PIPESTATUS[0]}
           echo "BACON_RC=$RC"
           exit "$RC"

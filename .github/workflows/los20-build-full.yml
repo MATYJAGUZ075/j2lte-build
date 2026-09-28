@@ -374,6 +374,32 @@ jobs:
           echo "=== DISCO POST-SYNC ==="
           df -h /
 
+      - name: "Parches de framework (system/netd)"
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -e
+          cd "$HOME/los20"
+          echo "=== parches de framework ==="
+          shopt -s nullglob
+          APPLIED=0
+          for P in "$GITHUB_WORKSPACE"/patches/*/*.patch; do
+            NAME="$(basename "$(dirname "$P")")"
+            echo "  aplicando $(basename "$P") -> $NAME"
+            if git -C "$NAME" apply --check "$P" 2>/dev/null; then
+              git -C "$NAME" apply "$P"
+              echo "    OK"
+            elif git -C "$NAME" apply --reverse --check "$P" 2>/dev/null; then
+              echo "    ya aplicado, se omite"
+            else
+              echo "::error::el parche $P no aplica sobre $NAME"
+              exit 1
+            fi
+            APPLIED=$((APPLIED+1))
+          done
+          echo "=== parches aplicados: $APPLIED ==="
+          git -C system/netd --no-pager diff --stat || true
+
+
       # ============================================================
       # PODAS POST-SYNC (sincronizadas desde los20-build-stages.yml)
       # ============================================================

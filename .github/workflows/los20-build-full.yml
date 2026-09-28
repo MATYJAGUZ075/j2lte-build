@@ -102,6 +102,10 @@ on:
         options:
           - lunch-only
           - full-bacon
+      min_root_gb:
+        description: 'GB que exige el guard temprano de disco en / (aborta antes de repo sync si el runner es mas chico). Default 100 (hosted 72-75G aborta). En self-hosted con disco grande dejalo 100 o subilo'
+        required: false
+        default: '100'
       min_free_gb:
         description: 'GB libres mínimos post-sync para permitir bacon'
         required: false
@@ -143,7 +147,7 @@ on:
         default: '16'
 
       mka_jobs:
-        description: 'Jobs paralelos (-j) para mka. Vacío = automático (nproc). En runner hosted (4 vCPU) un -j mayor satura: no suele acelerar y puede petar de RAM'
+        description: 'Jobs paralelos (-j) para mka. Vacío = automático (nproc). En runner hosted (4 vCPU) un -j mayor satura: no suele acelerar y puede petar de RAM. EN SELF-HOSTED con poca RAM (4-8GB) usar 1 o 2'
         required: false
         default: ''
 
@@ -284,7 +288,7 @@ jobs:
           # runners de 72G/75G (logs: 36425568225, 36430067751). El checkout de
           # LineageOS ~70-105G + out/ no caben con tan poco espacio, así que
           # abortamos temprano en vez de gastar ~9 min hasta el ENOSPC en sync.
-          MIN_ROOT_GB=100
+          MIN_ROOT_GB="${{ github.event.inputs.min_root_gb || '100' }}"
           ROOT_GB=$(df -BG --output=size / | tail -1 | tr -dc '0-9')
           echo "Tamano de /: ${ROOT_GB}G (minimo exigido: ${MIN_ROOT_GB}G)"
           if [ "${ROOT_GB:-0}" -lt "$MIN_ROOT_GB" ]; then

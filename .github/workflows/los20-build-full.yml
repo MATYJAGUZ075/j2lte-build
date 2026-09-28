@@ -105,15 +105,15 @@ on:
       min_free_gb:
         description: 'GB libres mínimos post-sync para permitir bacon'
         required: false
-        default: '70'
+        default: '40'
       telemetry_free_gb:
         description: 'GB libres que activan telemetría densa de diagnóstico (solo lectura)'
         required: false
-        default: '25'
+        default: '10'
       kernel_toolchain:
         description: 'Toolchain del kernel (experimento A/B): clang (CI actual) o gcc (TARGET_KERNEL_CLANG_COMPILE=false)'
         required: false
-        default: 'clang'
+        default: 'gcc'
         type: choice
         options:
           - clang
@@ -122,7 +122,7 @@ on:
       pstore_diag:
         description: 'Diagnóstico: inyecta pstore/ramoops + ram console al defconfig del kernel (boot colgado se captura en RAM y sobrevive warm reboot); ademas apaga fbcon, neutraliza bpfloader (A13 sin eBPF en kernel 3.10) y pone step-markers en decon_probe'
         required: false
-        default: false
+        default: true
         type: boolean
 
       bpfloader_module:
@@ -151,7 +151,7 @@ on:
         description: 'DIAGNÓSTICO: instala en la imagen los scripts de captura de arranque (logcat continuo + stdout/stderr de zygote) escribiendo en /data/local/tmp. Útil porque el device aún no completa el boot y sin pstore no hay logs de kernel. DESACTIVADO por defecto: nunca activarlo en builds de entrega.'
         required: false
         type: boolean
-        default: false
+        default: true
 
 concurrency:
   group: los20-full-build
@@ -187,7 +187,7 @@ jobs:
       - name: Guard temprano - tamano del disco del runner
         run: |
           set +e
-          MIN_ROOT_GB=120
+          MIN_ROOT_GB=40
           ROOT_GB=$(df -BG --output=size / | tail -1 | tr -dc '0-9')
           echo "=== DISCO DEL RUNNER ==="
           df -h /

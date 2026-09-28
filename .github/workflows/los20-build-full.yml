@@ -307,11 +307,11 @@ jobs:
 
           echo
           echo "=== LSBLK ==="
-          lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS
+          lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS || true
 
           echo
           echo "=== FINDMNT ==="
-          findmnt
+          findmnt || true
 
           echo
           echo "=== /mnt ==="

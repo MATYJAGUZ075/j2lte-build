@@ -105,15 +105,15 @@ on:
       min_free_gb:
         description: 'GB libres mínimos post-sync para permitir bacon'
         required: false
-        default: '40'
+        default: '70'
       telemetry_free_gb:
         description: 'GB libres que activan telemetría densa de diagnóstico (solo lectura)'
         required: false
-        default: '10'
+        default: '25'
       kernel_toolchain:
         description: 'Toolchain del kernel (experimento A/B): clang (CI actual) o gcc (TARGET_KERNEL_CLANG_COMPILE=false)'
         required: false
-        default: 'gcc'
+        default: 'clang'
         type: choice
         options:
           - clang
@@ -122,7 +122,7 @@ on:
       pstore_diag:
         description: 'Diagnóstico: inyecta pstore/ramoops + ram console al defconfig del kernel (boot colgado se captura en RAM y sobrevive warm reboot); ademas apaga fbcon, neutraliza bpfloader (A13 sin eBPF en kernel 3.10) y pone step-markers en decon_probe'
         required: false
-        default: true
+        default: false
         type: boolean
 
       bpfloader_module:
@@ -151,7 +151,7 @@ on:
         description: 'DIAGNÓSTICO: instala en la imagen los scripts de captura de arranque (logcat continuo + stdout/stderr de zygote) escribiendo en /data/local/tmp. Útil porque el device aún no completa el boot y sin pstore no hay logs de kernel. DESACTIVADO por defecto: nunca activarlo en builds de entrega.'
         required: false
         type: boolean
-        default: true
+        default: false
 
 concurrency:
   group: los20-full-build
@@ -183,19 +183,6 @@ jobs:
 
       - name: Checkout infra repo (manifests)
         uses: actions/checkout@v4
-
-      - name: Guard temprano - tamano del disco del runner
-        run: |
-          set +e
-          MIN_ROOT_GB=40
-          ROOT_GB=$(df -BG --output=size / | tail -1 | tr -dc '0-9')
-          echo "=== DISCO DEL RUNNER ==="
-          df -h /
-          echo "Tamano de /: ${ROOT_GB}G (minimo exigido: ${MIN_ROOT_GB}G)"
-          if [ "${ROOT_GB:-0}" -lt "$MIN_ROOT_GB" ]; then
-            echo "::error::Este runner tiene solo ${ROOT_GB}G en / (minimo ${MIN_ROOT_GB}G). repo sync necesita ~100G y no cabe: se aborta ahora para no gastar ~9 min hasta el ENOSPC. Reintenta la run o cambia de runner (repo publico / runner grande / self-hosted)."
-            exit 1
-          fi
 
       - name: Liberar espacio en disco
         uses: jlumbroso/free-disk-space@main
@@ -288,6 +275,22 @@ jobs:
 
       - name: Disco antes
         run: df -h /
+
+      - name: Guard temprano - tamano del disco del runner
+        run: |
+          set -e
+          # Los runners hosted de GitHub ahora vienen con ~72-75G (antes 145G).
+          # Las últimas runs de full-bacon cayeron ENOSPC durante repo sync en
+          # runners de 72G/75G (logs: 36425568225, 36430067751). El checkout de
+          # LineageOS ~70-105G + out/ no caben con tan poco espacio, así que
+          # abortamos temprano en vez de gastar ~9 min hasta el ENOSPC en sync.
+          MIN_ROOT_GB=100
+          ROOT_GB=$(df -BG --output=size / | tail -1 | tr -dc '0-9')
+          echo "Tamano de /: ${ROOT_GB}G (minimo exigido: ${MIN_ROOT_GB}G)"
+          if [ "${ROOT_GB:-0}" -lt "$MIN_ROOT_GB" ]; then
+            echo "::error::Este runner tiene solo ${ROOT_GB}G en / (minimo ${MIN_ROOT_GB}G). repo sync necesita ~100G y no cabe. Relanza la run (los runners hosted varian 72-145G) o usa un runner self-hosted/grande (input runner_label)."
+            exit 1
+          fi
 
       # ============================================================
       # Storage diag (traído de build-stages)
@@ -412,21 +415,17 @@ jobs:
             # El dirname del parche (p.ej. "system-netd") no coincide con la
             # ruta del repo (p.ej. "system/netd"): se mapea aqui.
             CASE="$(basename "$(dirname "$P")")"
+            NAME="$CASE"
             case "$CASE" in
               system-netd) NAME="system/netd" ;;
               *) NAME="$(echo "$CASE" | tr '-' '/')" ;;
             esac
             echo "  aplicando $(basename "$P") -> $NAME"
-            if [ ! -d "$HOME/los20/$NAME" ]; then
-              echo "::error::repo destino no existe: $NAME (parche $P)"
-              exit 1
-            fi
-
             # "build" NO es un repo git en LineageOS 20: los repos reales son
-            # build/make, build/soong y build/blueprint. El parche
-            # "jit-optional-in-runtime_libart" apunta a build/make
+            # build/make, build/soong y build/blueprint. Un parche con nombre
+            # "jit-optional-in-runtime_libart" apunta en realidad a build/make
             # (target/product/runtime_libart.mk). Se prueban esos candidatos
-            # ademas de $NAME.
+            # además de $NAME (originalmente: git -C build -> "no aplica").
             CANDS="$NAME"
             if [ "$NAME" = "build" ]; then
               CANDS="build/make build/soong build/blueprint"
@@ -434,8 +433,8 @@ jobs:
 
             DONE=0
             for T in $CANDS; do
-              if [ ! -e "$T/.git" ]; then
-                echo "    (omitido: $T no es un repo git)"
+              if [ ! -d "$HOME/los20/$T" ]; then
+                echo "    (omitido: $T no es un repo)"
                 continue
               fi
               if git -C "$T" apply --check "$P" 2>/tmp/apply-err.txt; then
@@ -454,8 +453,6 @@ jobs:
             done
 
             if [ "$DONE" != "1" ]; then
-              echo "--- archivos que toca el parche ---"
-              grep -E '^(diff --git|\+\+\+ )' "$P" | head -10 || true
               echo "::error::el parche $P no aplica sobre ninguno de: $CANDS"
               exit 1
             fi

@@ -399,7 +399,6 @@ jobs:
             # El dirname del parche (p.ej. "system-netd") no coincide con la
             # ruta del repo (p.ej. "system/netd"): se mapea aqui.
             CASE="$(basename "$(dirname "$P")")"
-            NAME="$CASE"
             case "$CASE" in
               system-netd) NAME="system/netd" ;;
               *) NAME="$(echo "$CASE" | tr '-' '/')" ;;
@@ -409,13 +408,42 @@ jobs:
               echo "::error::repo destino no existe: $NAME (parche $P)"
               exit 1
             fi
-            if git -C "$NAME" apply --check "$P" 2>/dev/null; then
-              git -C "$NAME" apply "$P"
-              echo "    OK"
-            elif git -C "$NAME" apply --reverse --check "$P" 2>/dev/null; then
-              echo "    ya aplicado, se omite"
-            else
-              echo "::error::el parche $P no aplica sobre $NAME"
+
+            # "build" NO es un repo git en LineageOS 20: los repos reales son
+            # build/make, build/soong y build/blueprint. El parche
+            # "jit-optional-in-runtime_libart" apunta a build/make
+            # (target/product/runtime_libart.mk). Se prueban esos candidatos
+            # ademas de $NAME.
+            CANDS="$NAME"
+            if [ "$NAME" = "build" ]; then
+              CANDS="build/make build/soong build/blueprint"
+            fi
+
+            DONE=0
+            for T in $CANDS; do
+              if [ ! -e "$T/.git" ]; then
+                echo "    (omitido: $T no es un repo git)"
+                continue
+              fi
+              if git -C "$T" apply --check "$P" 2>/tmp/apply-err.txt; then
+                git -C "$T" apply "$P"
+                echo "    OK -> $T"
+                DONE=1
+                break
+              elif git -C "$T" apply --reverse --check "$P" 2>/dev/null; then
+                echo "    ya aplicado en $T, se omite"
+                DONE=1
+                break
+              else
+                echo "    no aplica en $T:"
+                sed 's/^/      /' /tmp/apply-err.txt | head -15
+              fi
+            done
+
+            if [ "$DONE" != "1" ]; then
+              echo "--- archivos que toca el parche ---"
+              grep -E '^(diff --git|\+\+\+ )' "$P" | head -10 || true
+              echo "::error::el parche $P no aplica sobre ninguno de: $CANDS"
               exit 1
             fi
             APPLIED=$((APPLIED+1))

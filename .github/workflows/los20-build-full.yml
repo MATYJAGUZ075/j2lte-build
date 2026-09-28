@@ -307,6 +307,19 @@ jobs:
           set -e
           sudo apt-get update
           sudo apt-get install -y git-lfs python3 curl
+
+          # Shim passthrough de ccache. Varios Android.bp de los common de
+          # Samsung (device/samsung/universal3475-common/libsecnativefeature)
+          # fijan cc_wrapper.cpath/cpppath a /usr/bin/ccache en absoluto, sin
+          # comprobar que exista. Con la cache desactivada no se instala y el
+          # clang falla con '/usr/bin/ccache: No such file or directory'.
+          # Este shim no ocupa nada y solo hace exec de lo que se le pase.
+          if [ ! -x /usr/bin/ccache ]; then
+            printf '#!/bin/sh\nexec "$@"\n' | sudo tee /usr/bin/ccache >/dev/null
+            sudo chmod 0755 /usr/bin/ccache
+            echo "shim ccache passthrough: OK"
+          fi
+
           mkdir -p "$HOME/bin"
           curl -s https://storage.googleapis.com/git-repo-downloads/repo > "$HOME/bin/repo"
           chmod a+x "$HOME/bin/repo"

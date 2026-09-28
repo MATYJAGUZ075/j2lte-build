@@ -184,6 +184,19 @@ jobs:
       - name: Checkout infra repo (manifests)
         uses: actions/checkout@v4
 
+      - name: Guard temprano - tamano del disco del runner
+        run: |
+          set +e
+          MIN_ROOT_GB=120
+          ROOT_GB=$(df -BG --output=size / | tail -1 | tr -dc '0-9')
+          echo "=== DISCO DEL RUNNER ==="
+          df -h /
+          echo "Tamano de /: ${ROOT_GB}G (minimo exigido: ${MIN_ROOT_GB}G)"
+          if [ "${ROOT_GB:-0}" -lt "$MIN_ROOT_GB" ]; then
+            echo "::error::Este runner tiene solo ${ROOT_GB}G en / (minimo ${MIN_ROOT_GB}G). repo sync necesita ~100G y no cabe: se aborta ahora para no gastar ~9 min hasta el ENOSPC. Reintenta la run o cambia de runner (repo publico / runner grande / self-hosted)."
+            exit 1
+          fi
+
       - name: Liberar espacio en disco
         uses: jlumbroso/free-disk-space@main
         with:

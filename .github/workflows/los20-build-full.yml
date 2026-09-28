@@ -2156,9 +2156,10 @@ jobs:
           trap 'kill "$MON_PID" 2>/dev/null; wait "$MON_PID" 2>/dev/null || true; cat "$LOG" >&2' EXIT
           # --- FIN MONITOR ---
 
-          export WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY=true
+          export WITH_DEXPREOPT=true
+          unset WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY
 
-          echo "=== WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY=$WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY ==="
+          echo "=== WITH_DEXPREOPT=$WITH_DEXPREOPT ==="
 
           source build/envsetup.sh
           lunch lineage_j2lte-userdebug >/dev/null

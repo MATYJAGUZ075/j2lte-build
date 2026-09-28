@@ -396,8 +396,19 @@ jobs:
           shopt -s nullglob
           APPLIED=0
           for P in "$GITHUB_WORKSPACE"/patches/*/*.patch; do
-            NAME="$(basename "$(dirname "$P")")"
+            # El dirname del parche (p.ej. "system-netd") no coincide con la
+            # ruta del repo (p.ej. "system/netd"): se mapea aqui.
+            CASE="$(basename "$(dirname "$P")")"
+            NAME="$CASE"
+            case "$CASE" in
+              system-netd) NAME="system/netd" ;;
+              *) NAME="$(echo "$CASE" | tr '-' '/')" ;;
+            esac
             echo "  aplicando $(basename "$P") -> $NAME"
+            if [ ! -d "$HOME/los20/$NAME" ]; then
+              echo "::error::repo destino no existe: $NAME (parche $P)"
+              exit 1
+            fi
             if git -C "$NAME" apply --check "$P" 2>/dev/null; then
               git -C "$NAME" apply "$P"
               echo "    OK"

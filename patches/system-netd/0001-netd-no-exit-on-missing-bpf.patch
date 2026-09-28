@@ -1,47 +1,5 @@
-netd: no abortar si el kernel no tiene eBPF
-
-En el Exynos 3475 (kernel 3.10) netd muere en el arranque:
-
-  E BpfHandler: Failed to get program from /sys/fs/bpf/netd_shared/
-      prog_netd_cgroupskb_egress_stats: Function not implemented
-  E NetdUpdatable: libnetd_updatable_init: BPF handler init failed
-  E Netd: libnetd_updatable_init failed
-
-y main.cpp hace exit(1) justo despues. 'Function not implemented' es ENOSYS:
-eBPF llego al kernel en 4.x y este es un 3.10 de 2015, asi que
-libnetd_updatable no puede funcionar aqui.
-
-Eso bloquea el arranque de dos formas distintas, y por eso no basta con
-deshabilitar netd desde el device tree:
-
-1) Con el rc de netd original, su 'onrestart restart zygote' hace que init
-   mande SIGKILL a zygote cada vez que netd muere, en un bucle cerrado con el
-   onrestart de zygote que reinicia netd. system_server nunca llega a existir.
-
-2) Con netd deshabilitado (netd_no_zygote_restart.rc) el arranque avanza mucho
-   mas: system_server llega a 'Entered the Android system server!' y completa
-   el escaneo de las 109 apps. Pero se atasca en StartNetworkManagementService:
-
-     at android.net.util.NetdService.get(NetdService.java:96)   <- Thread.sleep()
-     at com.android.server.NetworkManagementService.connectNativeNetdService
-     at com.android.server.SystemServer.startOtherServices(SystemServer.java:1907)
-
-   porque NetdService.get() hace polling con sleep esperando a un netd que no
-   existe, y el boot nunca completa.
-
-Con este parche netd arranca sin eBPF y los dos casos se resuelven: existe
-INetd, no hay bucle de zygote, y NetworkManagementService no se queda
-esperando.
-
-Lo que se pierde: contabilidad de trafico y reglas de firewall basadas en eBPF.
-Lo que sigue funcionando: DNS, gestion de interfaces y conectividad basica.
-
-Se mantiene el 'exit(1)' de NetlinkManager::Instance() porque ese si es un
-fallo real de netd y no una limitacion del kernel.
-
----
---- a/system/netd/server/main.cpp
-+++ b/system/netd/server/main.cpp
+--- a/server/main.cpp
++++ b/server/main.cpp
 @@ -127,16 +127,23 @@
      }
  

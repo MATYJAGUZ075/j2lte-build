@@ -423,7 +423,7 @@ jobs:
 
             # "build" NO es un repo git en LineageOS 20: los repos reales son
             # build/make, build/soong y build/blueprint. Un parche con nombre
-            # "jit-optional-in-runtime_libart" apunta en realidad a art/.
+            # "jit-optional-in-runtime_libart" apunta a build/make (target/product).
             # Se prueban esos candidatos ademas de $NAME.
             CANDS="$NAME"
             if [ "$NAME" = "build" ]; then

@@ -2298,7 +2298,7 @@ jobs:
           trap 'touch /tmp/BUILD_DONE 2>/dev/null || true; kill "$MON_PID" 2>/dev/null; wait "$MON_PID" 2>/dev/null || true; cat "$LOG" >&2' EXIT
           # --- FIN MONITOR ---
 
-          export WITH_DEXPREOPT=true
+          export WITH_DEXPREOPT=false
 
           echo "=== WITH_DEXPREOPT=$WITH_DEXPREOPT ==="
 

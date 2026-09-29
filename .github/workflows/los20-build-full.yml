@@ -159,6 +159,20 @@ on:
         type: boolean
         default: false
 
+      ccache:
+        description: 'Habilita ccache (actions/cache) para acelerar builds sucesivos. desactivado = NO restaura ni guarda cache; activado = restaura al inicio y guarda al final.'
+        required: false
+        default: 'desactivado'
+        type: choice
+        options:
+          - desactivado
+          - activado
+
+      cache_size_gb:
+        description: 'Tamaño máximo de la cache ccache en GB (máx 50GB por límite de GitHub Actions cache). Solo aplica si ccache=activado.'
+        required: false
+        default: '20'
+
 concurrency:
   group: los20-full-build
   cancel-in-progress: false
@@ -169,17 +183,19 @@ jobs:
     timeout-minutes: 350
 
     env:
-      # ccache ELIMINADO por completo (ver FIX-033). NO re-agregar
-      # USE_CCACHE, CCACHE_EXEC, CCACHE_DIR, restore/save de actions/cache,
-      # instalación del binario, ni stats/mediciones de ccache sin
-      # autorización explícita.
-      # Salta la generación de ABI dumps (.sdump/.lsdump) que bacon no
-      # necesita (solo los usa el goal debug findlsdumps). Reduce el pico de
-      # out/soong. Leído por Soong vía IsEnvTrue en cc/sabi.go.
+      # ccache: controlado por input 'ccache' (activado/desactivado).
+      # Cuando activado: restaura cache al inicio, guarda al final (actions/cache).
+      # Tamaño configurable via 'cache_size_gb' (máx 50GB límite GitHub).
+      # Cuando desactivado: NO restaura ni guarda; shim passthrough evita errores de clang.
       SKIP_ABI_CHECKS: "true"
       TELEM_FREE_GB: ${{ github.event.inputs.telemetry_free_gb }}
       # ATENCIÓN: el nombre NO puede ser KERNEL_TOOLCHAIN (ver los20-build-stages.yml).
       AB_KERNEL_TC: ${{ github.event.inputs.kernel_toolchain }}
+
+      # ccache config (condicional via steps)
+      USE_CCACHE: ${{ github.event.inputs.ccache == 'activado' && '1' || '0' }}
+      CCACHE_DIR: /home/runner/.ccache
+      CCACHE_MAXSIZE: ${{ github.event.inputs.cache_size_gb || '20' }}G
 
     steps:
 
@@ -322,16 +338,16 @@ jobs:
           set -e
           sudo apt-get update
           sudo apt-get install -y git-lfs python3 curl
-          # Shim passthrough de ccache. Varios Android.bp de los common de
-          # Samsung (device/samsung/universal3475-common/libsecnativefeature)
-          # fijan cc_wrapper.cpath/cpppath a /usr/bin/ccache en absoluto, sin
-          # comprobar que exista. Con la cache desactivada no se instala y el
-          # clang falla con '/usr/bin/ccache: No such file or directory'.
-          # Este shim no ocupa nada y solo hace exec de lo que se le pase.
-          if [ ! -x /usr/bin/ccache ]; then
-            printf '#!/bin/sh\nexec "$@"\n' | sudo tee /usr/bin/ccache >/dev/null
+          # Shim passthrough de ccache (SOLO cuando cache desactivado).
+          # Varios Android.bp fijan cc_wrapper.cpath/cpppath a /usr/bin/ccache.
+          # Si cache=activado, ccache real ya está instalado por actions/cache.
+          # Si cache=desactivado, este shim evita errores de clang.
+          if [ "${{ inputs.ccache }}" = "desactivado" ] && [ ! -x /usr/bin/ccache ]; then
+            printf '#!\/bin\/sh\nexec "$@"\n' | sudo tee /usr/bin/ccache >/dev/null
             sudo chmod 0755 /usr/bin/ccache
-            echo "shim ccache passthrough: OK"
+            echo "shim ccache passthrough (cache desactivado): OK"
+          elif [ "${{ inputs.ccache }}" = "activado" ]; then
+            echo "ccache real activo (actions/cache) -> no se crea shim"
           fi
           mkdir -p "$HOME/bin"
           curl -s https://storage.googleapis.com/git-repo-downloads/repo > "$HOME/bin/repo"
@@ -351,6 +367,18 @@ jobs:
             sudo ln -sf \
               /usr/lib/x86_64-linux-gnu/libc++.so.1 \
               /usr/lib/x86_64-linux-gnu/libc++.so || true
+      # ============================================================
+      # CCACHE RESTORE (condicional)
+      # ============================================================
+      - name: ccache restore (si activado)
+        if: ${{ inputs.ccache == 'activado' }}
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.ccache
+          key: ccache-${{ runner.os }}-${{ hashFiles('**/Android.bp', '**/Android.mk', '**/*.bp') }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-
+
       # ============================================================
       # SOURCE
       # ============================================================
@@ -2006,6 +2034,16 @@ jobs:
           RC=${PIPESTATUS[0]}
           echo "BACON_RC=$RC"
           exit "$RC"
+      # ============================================================
+      # CCACHE SAVE (condicional)
+      # ============================================================
+      - name: ccache save (si activado)
+        if: ${{ inputs.ccache == 'activado' }}
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.ccache
+          key: ccache-${{ runner.os }}-${{ hashFiles('**/Android.bp', '**/Android.mk', '**/*.bp') }}-${{ github.sha }}
+
       - name: Rescate de telemetría ante fallo/ENOSPC/kill
         if: always()
         run: |

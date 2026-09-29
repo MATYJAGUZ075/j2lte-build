@@ -69,6 +69,31 @@ activas). Sin definicion de service, cualquier `start/restart
 vendor.audio-hal` que ejecute init es un no-op ("no such service"): no hay
 proceso que crashee, no hay tombstones, el boot continua.
 
+### Hallazgo posterior: eliminar el rc NO basto (tombstones siguieron)
+Tras FIX-034f (rc 100% comentado, 0 lineas activas, y comprobado con grep
+sobre TODOS los `*.rc` de la particion, incluidos ramdisk/root de system-as-root),
+el HAL SIGUIO crasheando (tombstones nuevos post-fix 16:19-16:21, pids
+2414->3429). Conclusión: el binario es ejecutado por un mecanismo que NO
+pasa por la definicion del service en init (probablemente un arranque
+directo del binario desde otro servicio/proceso, o init leyendo el rc desde
+una copia en el ramdisk del boot de system-as-root que convive con la
+particion de solo-leido).
+
+### Solucion definitiva stopgap (FIX-034g): reemplazar el BINARIO por shim
+Se sustituye `/system_root/system/vendor/bin/hw/android.hardware.audio.service`
+por un script no-op:
+
+```
+#!/system/bin/sh
+# FIX-034g: audio HAL AIDL deshabilitado (crash-loop Binder threadpool).
+exit 0
+```
+
+Backup del binario original: `android.hardware.audio.service.bak-fix034g`
+(10740 B, mismo dir). Cualquier intento de lanzar el HAL ahora termina con
+`exit 0` (o SELinux deniega el exec): no hay SIGABRT, no hay tombstone, no
+hay crash-loop, sea cual sea el mecanismo que lo lance.
+
 Defensa en profundidad (se mantiene):
 - `/system_root/system/etc/init/audioserver.rc` (system image): los 3 triggers
   `on property:...` tenian `start vendor.audio-hal`; se comentaron esas lineas
@@ -83,8 +108,9 @@ intacto, 517 B), `audioserver.rc.bak-fix034c2`,
 `android.hardware.audio.service.rc.bak-fix034c`.
 
 Resultado medido: antes del fix 11-16+ tombstones de audio por boot (loop con
-pids crecientes). Con el service eliminado NO puede haber ningun tombstone del
-HAL: el service no existe.
+pids crecientes). Con FIX-034f el rc quedo sin definicion, pero el binario
+seguia crasheando (por eso FIX-034g reemplaza el binario). Con el shim, el
+HAL no puede abortar: nunca ejecuta el codigo del crash.
 
 ## Efecto en el boot (a confirmar)
 Con el crash-loop cortado, el sistema avanza a system_server
@@ -93,6 +119,8 @@ Con el crash-loop cortado, el sistema avanza a system_server
 ## Reversión del stopgap (cuando llegue el rebuild con el patch de raíz)
 - Restaurar `android.hardware.audio.service.rc` desde
   `android.hardware.audio.service.rc.bak-fix034f`
+- Restaurar el binario `android.hardware.audio.service` desde
+  `android.hardware.audio.service.bak-fix034g`
 - Borrar `zzz-vendor-audio-hal.disabled.rc.off`
 - Restaurar `audioserver.rc` desde `audioserver.rc.bak-fix034c2`
 - Borrar `audioserver_no_hal.rc`

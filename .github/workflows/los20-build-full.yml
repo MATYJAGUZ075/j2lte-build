@@ -103,7 +103,7 @@ on:
       mode:
         description: 'modo del run'
         required: false
-        default: 'lunch-only'
+        default: 'full-bacon'
         type: choice
         options:
           - lunch-only
@@ -111,15 +111,15 @@ on:
       min_free_gb:
         description: 'GB libres mínimos post-sync para permitir bacon'
         required: false
-        default: '70'
+        default: '20'
       telemetry_free_gb:
         description: 'GB libres que activan telemetría densa de diagnóstico (solo lectura)'
         required: false
-        default: '25'
+        default: '10'
       kernel_toolchain:
         description: 'Toolchain del kernel (experimento A/B): clang (CI actual) o gcc (TARGET_KERNEL_CLANG_COMPILE=false)'
         required: false
-        default: 'clang'
+        default: 'gcc'
         type: choice
         options:
           - clang
@@ -162,7 +162,7 @@ on:
       ccache:
         description: 'Habilita ccache (actions/cache) para acelerar builds sucesivos. desactivado = NO restaura ni guarda cache; activado = restaura al inicio y guarda al final.'
         required: false
-        default: 'desactivado'
+        default: 'activado'
         type: choice
         options:
           - desactivado
@@ -171,7 +171,7 @@ on:
       cache_size_gb:
         description: 'Tamaño máximo de la cache ccache en GB (máx 50GB por límite de GitHub Actions cache). Solo aplica si ccache=activado.'
         required: false
-        default: '20'
+        default: '35'
 
 concurrency:
   group: los20-full-build

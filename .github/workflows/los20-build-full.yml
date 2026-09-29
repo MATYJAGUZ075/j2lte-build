@@ -102,11 +102,6 @@ on:
         options:
           - lunch-only
           - full-bacon
-      min_root_gb:
-        description: 'GB que exige el guard temprano de disco en / (aborta antes de repo sync si el runner es mas chico). Default 100 (hosted 72-75G aborta). En self-hosted con disco grande dejalo 100 o subilo'
-        required: false
-        default: '100'
-      min_free_gb:
         description: 'GB libres mínimos post-sync para permitir bacon'
         required: false
         default: '70'
@@ -280,21 +275,6 @@ jobs:
       - name: Disco antes
         run: df -h /
 
-      - name: Guard temprano - tamano del disco del runner
-        run: |
-          set -e
-          # Los runners hosted de GitHub ahora vienen con ~72-75G (antes 145G).
-          # Las últimas runs de full-bacon cayeron ENOSPC durante repo sync en
-          # runners de 72G/75G (logs: 36425568225, 36430067751). El checkout de
-          # LineageOS ~70-105G + out/ no caben con tan poco espacio, así que
-          # abortamos temprano en vez de gastar ~9 min hasta el ENOSPC en sync.
-          MIN_ROOT_GB="${{ github.event.inputs.min_root_gb || '100' }}"
-          ROOT_GB=$(df -BG --output=size / | tail -1 | tr -dc '0-9')
-          echo "Tamano de /: ${ROOT_GB}G (minimo exigido: ${MIN_ROOT_GB}G)"
-          if [ "${ROOT_GB:-0}" -lt "$MIN_ROOT_GB" ]; then
-            echo "::error::Este runner tiene solo ${ROOT_GB}G en / (minimo ${MIN_ROOT_GB}G). repo sync necesita ~100G y no cabe. Relanza la run (los runners hosted varian 72-145G) o usa un runner self-hosted/grande (input runner_label)."
-            exit 1
-          fi
 
       # ============================================================
       # Storage diag (traído de build-stages)

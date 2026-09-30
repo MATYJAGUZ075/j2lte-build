@@ -111,7 +111,7 @@ on:
       min_free_gb:
         description: 'GB libres mínimos post-sync para permitir bacon'
         required: false
-        default: '20'
+        default: '5'
       telemetry_free_gb:
         description: 'GB libres que activan telemetría densa de diagnóstico (solo lectura)'
         required: false
@@ -128,7 +128,7 @@ on:
       pstore_diag:
         description: 'Diagnóstico: inyecta pstore/ramoops + ram console al defconfig del kernel (boot colgado se captura en RAM y sobrevive warm reboot); ademas apaga fbcon, neutraliza bpfloader (A13 sin eBPF en kernel 3.10) y pone step-markers en decon_probe'
         required: false
-        default: false
+        default: true
         type: boolean
 
       bpfloader_module:
@@ -157,7 +157,7 @@ on:
         description: 'DIAGNÓSTICO: instala en la imagen los scripts de captura de arranque (logcat continuo + stdout/stderr de zygote) escribiendo en /data/local/tmp. Útil porque el device aún no completa el boot y sin pstore no hay logs de kernel. DESACTIVADO por defecto: nunca activarlo en builds de entrega.'
         required: false
         type: boolean
-        default: false
+        default: true
 
       ccache:
         description: 'Habilita ccache (actions/cache) para acelerar builds sucesivos. desactivado = NO restaura ni guarda cache; activado = restaura al inicio y guarda al final.'

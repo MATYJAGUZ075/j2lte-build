@@ -3,6 +3,14 @@
 #
 # FIX-028: kernel genera zImage-dtb con DTB incorporado.
 # FIX-029: adaptación Clang del kernel 3.10.
+# FIX-036 (2026-09-30): sincronizado desde los20-build-full.yml:
+#   - Quitado "Guardia emergency checkpoint" + "Wait build" (sintaxis wait: inválida,
+#     FIX-034 en full ya lo revertió; ver run 35294355736).
+#   - Unificado CCACHE_DIR a /home/runner/.ccache (igual que full).
+#   - Agregado input cache_size_gb (configurable, default 20G, máx 50G).
+#   - Agregado "Guard temprano" (MIN_ROOT_GB=100) + "GUARD espacio post-sync"
+#     (FIX-014, igual que full).
+#   - Agregado rescue de bacon.log en telemetría (igual que full).
 #
 # Estrategia:
 # repo sync → liberar espacio opcional → lunch → guard → build
@@ -71,13 +79,18 @@ on:
         type: boolean
 
       cache:
-        description: 'Caché de compilación (ccache). activado: restaura y GUARDA la ccache entre runs; desactivado: no la usa y BORRA la caché guardada. La clave es fija por toolchain (clang/gcc), tamaño máx 2G (límite de caché del repo de GitHub).'
+        description: 'Caché de compilación (ccache). activado: restaura y GUARDA la ccache entre runs; desactivado: no la usa y BORRA la caché guardada. La clave es fija por toolchain (clang/gcc).'
         required: false
         default: 'desactivado'
         type: choice
         options:
           - desactivado
           - activado
+
+      cache_size_gb:
+        description: 'Tamaño máximo de ccache en GB (máx 50GB, límite de GitHub Actions cache).'
+        required: false
+        default: '20'
 
       build_jobs:
         description: 'Cantidad de jobs paralelos (-j) para repo sync. Sube el número para más velocidad; default 16'
@@ -133,9 +146,9 @@ jobs:
       # El experimento "sin cache" por defecto se preserva: la caché solo
       # existe si el usuario la pide al lanzar la run.
       USE_CCACHE: ${{ inputs.cache == 'activado' && '1' || '0' }}
-      CCACHE_DIR: /home/runner/.cache/ccache
+      CCACHE_DIR: /home/runner/.ccache
       CCACHE_EXEC: /usr/bin/ccache
-      CCACHE_MAXSIZE: 2G
+      CCACHE_MAXSIZE: ${{ github.event.inputs.cache_size_gb || '20' }}G
       CCACHE_COMPRESS: '1'
       CCACHE_COMPRESSLEVEL: '6'
       # Salta la generación de ABI dumps (.sdump/.lsdump) que systemimage no
@@ -257,6 +270,21 @@ jobs:
 
       - name: Disco antes
         run: df -h /
+
+      # ============================================================
+      # Guard temprano - tamaño del disco del runner (FIX-014)
+      # ============================================================
+      - name: Guard temprano - tamaño del disco del runner
+        env:
+          MIN_ROOT_GB: 100
+        run: |
+          set -e
+          ROOT_GB=$(df -BG / | awk 'NR==2 {gsub(/G/,"",$4); print $4}')
+          echo "Tamano de /: ${ROOT_GB}G (minimo exigido: ${MIN_ROOT_GB}G)"
+          if [ "${ROOT_GB:-0}" -lt "$MIN_ROOT_GB" ]; then
+            echo "::error::Este runner tiene solo ${ROOT_GB}G en / (minimo ${MIN_ROOT_GB}G). repo sync necesita ~100G y no cabe. Relanza la run (los runners hosted varian 72-145G) o usa un runner self-hosted/grande (input runner_label)."
+            exit 1
+          fi
 
       # ============================================================
       # Storage diag
@@ -398,6 +426,21 @@ jobs:
 
           echo "=== DISCO POST-SYNC ==="
           df -h /
+
+      # ============================================================
+      # GUARD espacio post-sync (FIX-014)
+      # ============================================================
+      - name: GUARD espacio post-sync (FIX-014)
+        env:
+          MIN_FREE_GB: ${{ github.event.inputs.min_free_gb || 40 }}
+        run: |
+          set -e
+          FREE_GB=$(df -BG / | awk 'NR==2 {gsub(/G/,"",$4); print $4}')
+          echo "Espacio libre post-sync: ${FREE_GB}G (minimo exigido: ${MIN_FREE_GB}G)"
+          if [ "${FREE_GB:-0}" -lt "${MIN_FREE_GB}" ]; then
+            echo "::error::Espacio libre insuficiente post-sync: ${FREE_GB}G < ${MIN_FREE_GB}G. El build no cabra. Cancela o relanza con runner mas grande."
+            exit 1
+          fi
 
       - name: "Parches de framework (system/netd)"
         working-directory: ${{ github.workspace }}
@@ -2043,7 +2086,7 @@ jobs:
         if: ${{ inputs.cache == 'activado' }}
         uses: actions/cache/restore@v4
         with:
-          path: /home/runner/.cache/ccache
+          path: /home/runner/.ccache
           key: ccache-j2lte-${{ inputs.kernel_toolchain }}-${{ github.run_id }}
           restore-keys: ccache-j2lte-${{ inputs.kernel_toolchain }}
 
@@ -2362,43 +2405,6 @@ jobs:
 
           IFS="$OLD_IFS"
 
-      - name: Guardia emergency checkpoint
-        id: guardia
-        run: |
-          set +e
-          # Espera flag de emergencia o fin del build (con deadline propio para
-          # no colgar el job). Solo prepara snapshots si hubo emergencia.
-          EMERG=/tmp/EMERGENCY
-          DONE=/tmp/BUILD_DONE
-          OUT="$GITHUB_WORKSPACE/artifacts-emergency"
-          END=$(( $(date +%s) + 19800 ))
-          while [ ! -e "$EMERG" ] && [ ! -e "$DONE" ] && [ $(date +%s) -lt $END ]; do
-            sleep 30
-          done
-          if [ -e "$EMERG" ]; then
-            mkdir -p "$OUT" 2>/dev/null || true
-            df -h / > "$OUT/df-final.txt" 2>&1 || true
-            du -sh /home/runner/los20/out 2>/dev/null > "$OUT/du-final.txt" || true
-            gzip -c /tmp/disk-monitor.log > "$OUT/disk-monitor.log.gz" 2>/dev/null || true
-            gzip -c /tmp/stage.log > "$OUT/stage.log.gz" 2>/dev/null || true
-            echo "emergency=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "emergency=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Upload emergency checkpoint
-        if: steps.guardia.outputs.emergency == 'true'
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
-        with:
-          name: emergency-telemetry-${{ github.run_id }}
-          path: ${{ github.workspace }}/artifacts-emergency/
-          if-no-files-found: warn
-          retention-days: 3
-
-      - name: Wait build
-        wait: [build]
-
       - name: Build modulo bpfloader (diag) y guardar en artefactos
         if: ${{ always() && inputs.bpfloader_module == true }}
         working-directory: /home/runner/los20
@@ -2427,7 +2433,7 @@ jobs:
         if: ${{ always() && inputs.cache == 'activado' }}
         uses: actions/cache/save@v4
         with:
-          path: /home/runner/.cache/ccache
+          path: /home/runner/.ccache
           key: ccache-j2lte-${{ inputs.kernel_toolchain }}-${{ github.run_id }}
 
       - name: Limpiar cachés ccache viejas (cache=activado)
@@ -2482,6 +2488,17 @@ jobs:
               echo "dmesg: no disponible" > "$GITHUB_WORKSPACE/artifacts/dmesg-final.txt"
             fi
           fi
+
+          # bacon.log rescue (full style)
+          for BL in \
+            /home/runner/los20/out/target/product/j2lte/bacon.log \
+            /home/runner/los20/out/bacon.log; do
+            if [ -f "$BL" ]; then
+              gzip -c "$BL" > "$GITHUB_WORKSPACE/artifacts/bacon.log.gz" 2>/dev/null || \
+                cp "$BL" "$GITHUB_WORKSPACE/artifacts/bacon.log" 2>/dev/null
+              break
+            fi
+          done
 
           echo "--- contenido de artifacts/ ---"
           ls -la "$GITHUB_WORKSPACE/artifacts/" 2>&1

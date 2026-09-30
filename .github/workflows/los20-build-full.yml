@@ -338,16 +338,14 @@ jobs:
           set -e
           sudo apt-get update
           sudo apt-get install -y git-lfs python3 curl
-          # Shim passthrough de ccache (SOLO cuando cache desactivado).
-          # Varios Android.bp fijan cc_wrapper.cpath/cpppath a /usr/bin/ccache.
-          # Si cache=activado, ccache real ya está instalado por actions/cache.
-          # Si cache=desactivado, este shim evita errores de clang.
-          if [ "${{ inputs.ccache }}" = "desactivado" ] && [ ! -x /usr/bin/ccache ]; then
-            printf '#!\/bin\/sh\nexec "$@"\n' | sudo tee /usr/bin/ccache >/dev/null
+          # ccache: instalar si activado, sino shim passthrough
+          if [ "${{ inputs.ccache }}" = "activado" ]; then
+            sudo apt-get install -y ccache
+            echo "ccache instalado para cache activado"
+          elif [ "${{ inputs.ccache }}" = "desactivado" ] && [ ! -x /usr/bin/ccache ]; then
+            printf '#!/bin/sh\nexec "$@"\n' | sudo tee /usr/bin/ccache >/dev/null
             sudo chmod 0755 /usr/bin/ccache
             echo "shim ccache passthrough (cache desactivado): OK"
-          elif [ "${{ inputs.ccache }}" = "activado" ]; then
-            echo "ccache real activo (actions/cache) -> no se crea shim"
           fi
           mkdir -p "$HOME/bin"
           curl -s https://storage.googleapis.com/git-repo-downloads/repo > "$HOME/bin/repo"

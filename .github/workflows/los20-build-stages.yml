@@ -23,7 +23,7 @@ on:
       stage:
         description: 'Target principal'
         required: true
-        default: 'systemimage-guard'
+        default: 'bootimage'
         type: choice
         options:
           - systemimage-guard
@@ -33,12 +33,12 @@ on:
       min_free_gb:
         description: 'GB libres mínimos para systemimage'
         required: false
-        default: '40'
+        default: '5'
 
       telemetry_free_gb:
         description: 'GB libres que activan telemetría densa de diagnóstico (solo lectura)'
         required: false
-        default: '25'
+        default: '10'
 
       extra_targets:
         description: 'Targets extra secuenciales: bootimage,recoveryimage'
@@ -63,7 +63,7 @@ on:
       pstore_diag:
         description: 'Diagnóstico: inyecta pstore/ramoops + ram console al defconfig del kernel (boot colgado se captura en RAM y sobrevive warm reboot)'
         required: false
-        default: false
+        default: true
         type: boolean
 
       bpfloader_module:
@@ -81,7 +81,7 @@ on:
       cache:
         description: 'Caché de compilación (ccache). activado: restaura y GUARDA la ccache entre runs; desactivado: no la usa y BORRA la caché guardada. La clave es fija por toolchain (clang/gcc).'
         required: false
-        default: 'desactivado'
+        default: 'activado'
         type: choice
         options:
           - desactivado
@@ -90,7 +90,7 @@ on:
       cache_size_gb:
         description: 'Tamaño máximo de ccache en GB (máx 50GB, límite de GitHub Actions cache).'
         required: false
-        default: '20'
+        default: '35'
 
       build_jobs:
         description: 'Cantidad de jobs paralelos (-j) para repo sync. Sube el número para más velocidad; default 16'
@@ -106,7 +106,7 @@ on:
         description: 'DIAGNÓSTICO: instala en la imagen los scripts de captura de arranque (logcat continuo + stdout/stderr de zygote) escribiendo en /data/local/tmp. Útil porque el device aún no completa el boot y sin pstore no hay logs de kernel. DESACTIVADO por defecto: nunca activarlo en builds de entrega.'
         required: false
         type: boolean
-        default: false
+        default: true
 
 concurrency:
   group: los20-stages

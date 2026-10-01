@@ -2465,9 +2465,18 @@ jobs:
           # paso moría en silencio y nunca borraba nada).
           gh cache list --key "$PREFIX" --limit 100 --json id,key --jq '.[] | "\(.id) \(.key)"' 2>/dev/null | while read -r id key; do
             if [ "$key" != "$NEW_KEY" ]; then
-              gh cache delete "$id" >/dev/null 2>&1 && echo "caché vieja borrada: $key"
+              # OJO: con "set -e", un delete fallido (permisos, caché ya
+              # borrada) abortaba el job y marcaba el build como fallido
+              # aunque la build estuviese bien. Este step es limpieza: nunca
+              # debe fallar.
+              if gh cache delete "$id" >/dev/null 2>&1; then
+                echo "caché vieja borrada: $key"
+              else
+                echo "::warning::no se pudo borrar la caché $key (se ignora)"
+              fi
             fi
           done
+          exit 0
 
       - name: Ccache stats (cache=activado)
         if: ${{ always() && inputs.cache == 'activado' }}

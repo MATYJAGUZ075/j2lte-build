@@ -370,12 +370,12 @@ jobs:
       # ============================================================
       - name: ccache restore (si activado)
         if: ${{ inputs.ccache == 'activado' }}
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: /home/runner/.ccache
-          key: ccache-${{ runner.os }}-${{ hashFiles('**/Android.bp', '**/Android.mk', '**/*.bp') }}-${{ github.sha }}
+          key: ccache-j2lte-${{ inputs.kernel_toolchain }}-${{ github.run_id }}
           restore-keys: |
-            ccache-${{ runner.os }}-
+            ccache-j2lte-${{ inputs.kernel_toolchain }}
 
       # ============================================================
       # SOURCE
@@ -2043,11 +2043,39 @@ jobs:
       # CCACHE SAVE (condicional)
       # ============================================================
       - name: ccache save (si activado)
-        if: ${{ inputs.ccache == 'activado' }}
-        uses: actions/cache@v4
+        if: ${{ always() && inputs.ccache == 'activado' }}
+        uses: actions/cache/save@v4
         with:
           path: /home/runner/.ccache
-          key: ccache-${{ runner.os }}-${{ hashFiles('**/Android.bp', '**/Android.mk', '**/*.bp') }}-${{ github.sha }}
+          key: ccache-j2lte-${{ inputs.kernel_toolchain }}-${{ github.run_id }}
+
+      - name: Limpiar cachés ccache viejas (si activado)
+        if: ${{ always() && inputs.ccache == 'activado' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          NEW_KEY="ccache-j2lte-${{ inputs.kernel_toolchain }}-${{ github.run_id }}"
+          # Conserva solo la caché recién guardada por run_id; borra las viejas
+          # del mismo toolchain. Se barren dos prefijos:
+          #   1) "ccache-j2lte-<toolchain>"  (formato actual, igual que stages)
+          #   2) "ccache-Linux"              (formato legacy de full, con
+          #      github.sha en la clave: nunca re-acertaba y llenaba la cuota)
+          # `--key` es substring, así que el prefijo sin guion final cubre
+          # ambas variantes de cada familia.
+          # OJO: gh cache list exige --json para poder usar --jq (sin él el
+          # paso moría en silencio y nunca borraba nada).
+          for PREFIX in "ccache-j2lte-${{ inputs.kernel_toolchain }}" "ccache-${{ runner.os }}"; do
+            gh cache list --key "$PREFIX" --limit 100 --json id,key --jq '.[] | "\(.id) \(.key)"' 2>/dev/null | while read -r id key; do
+              if [ "$key" != "$NEW_KEY" ]; then
+                gh cache delete "$id" >/dev/null 2>&1 && echo "caché vieja borrada: $key"
+              fi
+            done
+          done
+
+      - name: Ccache stats (si activado)
+        if: ${{ always() && inputs.ccache == 'activado' }}
+        run: ccache -s || true
 
       - name: Rescate de telemetría ante fallo/ENOSPC/kill
         if: always()

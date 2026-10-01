@@ -437,6 +437,8 @@ jobs:
               # Sin este mapeo, tr '-' '/' daria "system/server" (inexistente)
               # y el parche haria fallar el build.
               system-server) NAME="frameworks/base" ;;
+              # adb es un modulo: la ruta real es packages/modules/adb.
+              adb) NAME="packages/modules/adb" ;;
               *) NAME="$(echo "$CASE" | tr '-' '/')" ;;
             esac
             echo "  aplicando $(basename "$P") -> $NAME"

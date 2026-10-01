@@ -2240,7 +2240,16 @@ jobs:
 
       - name: Build targets
         id: build
-        background: true
+        # NOTA: este step NO debe llevar `background: true`.
+        # Con background, Actions no espera: el job sigue al siguiente step
+        # mientras mka corre, asi que Guardar ccache / Recopilar artefactos /
+        # Upload artefactos executes ~13 min ANTES de que termine el build
+        # (medido en la run 36791982783) y subian un ZIP vacio. Ademas
+        # actions/cache/save fallaba con "Path Validation Error" porque
+        # /home/runner/.ccache todavia no existia.
+        # El watchdog de "Limpieza tardia symbols" SI lleva background a
+        # proposito: tiene que correr durante la compilacion, y se cierra solo
+        # con /tmp/BUILD_DONE (trap EXIT del monitor de disco).
         working-directory: /home/runner/los20
         run: |
           set -o pipefail

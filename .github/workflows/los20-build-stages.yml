@@ -456,6 +456,10 @@ jobs:
             CASE="$(basename "$(dirname "$P")")"
             case "$CASE" in
               system-netd) NAME="system/netd" ;;
+              # SystemServer.java vive en frameworks/base, no en system/server.
+              # Sin este mapeo, tr '-' '/' daria "system/server" (inexistente)
+              # y el parche haria fallar el build.
+              system-server) NAME="frameworks/base" ;;
               *) NAME="$(echo "$CASE" | tr '-' '/')" ;;
             esac
             echo "  aplicando $(basename "$P") -> $NAME"
@@ -504,6 +508,7 @@ jobs:
           done
           echo "=== parches aplicados: $APPLIED ==="
           git -C system/netd --no-pager diff --stat || true
+          git -C frameworks/base --no-pager diff --stat || true
 
 
           du -sh .repo 2>/dev/null || true

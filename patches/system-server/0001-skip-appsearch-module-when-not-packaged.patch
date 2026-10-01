@@ -1,0 +1,58 @@
+From: MATYJAGUZ075 <155926881+MATYJAGUZ075@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 00:00:00 -0300
+Subject: [PATCH] system_server: no arrancar AppSearchModule si el modulo no esta en el build
+
+El J2 no empaqueta el modulo AppSearch. El APEX com.android.appsearch esta
+en /system/apex pero su javalib/service-appsearch.jar no llega al classloader
+de system_server, por lo que AppSearchModule$Lifecycle no se puede cargar.
+AOSP 13 llama a startService sin verificar y system_server muere con
+RuntimeException (ClassNotFoundException) en cada arranque -> bootloop.
+
+Se comprueba la disponibilidad de la clase con Class.forName antes de
+arrancarla, siguiendo el criterio de otros servicios opcionales del mismo
+archivo. En dispositivos que si empaquetan AppSearch no cambia nada.
+---
+ services/java/com/android/server/SystemServer.java | 26 +++++++++++++++++++-
+ 1 file changed, 25 insertions(+), 1 deletion(-)
+
+--- a/services/java/com/android/server/SystemServer.java	2026-10-01 14:51:09.407712200 -0300
++++ b/services/java/com/android/server/SystemServer.java	2026-10-01 14:51:09.424250900 -0300
+@@ -2776,9 +2776,35 @@
+         mSystemServiceManager.startService(SAFETY_CENTER_SERVICE_CLASS);
+         t.traceEnd();
+ 
+-        t.traceBegin("AppSearchModule");
+-        mSystemServiceManager.startService(APPSEARCH_MODULE_LIFECYCLE_CLASS);
+-        t.traceEnd();
++        // J2 (FIX-APPSEARCH): el modulo AppSearch no se empaqueta en el producto
++        // del J2. El APEX com.android.appsearch esta presente en /system/apex, pero
++        // su javalib/service-appsearch.jar no llega al classloader de system_server
++        // en este build, por lo que AppSearchModule$Lifecycle no se puede cargar.
++        // AOSP 13 llama a este startService sin verificar; sin la clase,
++        // SystemServiceManager.loadClassFromLoader() lanza RuntimeException
++        // ("Failed to create service ... ClassNotFoundException"), system_server
++        // muere y el dispositivo entra en bootloop.
++        //
++        // Se verifica la disponibilidad de la clase antes de arrancarla, con el
++        // mismo criterio que usan otros servicios opcionales de este archivo
++        // (FEATURE_LOWPAN mas arriba, ro.config.isolated_compilation_enabled mas
++        // abajo). En un dispositivo que si empaquete AppSearch la clase esta
++        // presente y el servicio arranca igual que en AOSP, sin cambio de
++        // comportamiento.
++        boolean appSearchModuleAvailable = false;
++        try {
++            Class.forName(APPSEARCH_MODULE_LIFECYCLE_CLASS, false,
++                    getClass().getClassLoader());
++            appSearchModuleAvailable = true;
++        } catch (ClassNotFoundException e) {
++            Slog.i(TAG, "AppSearchModule not packaged in this build, skipping: " + e);
++        }
++        if (appSearchModuleAvailable) {
++            t.traceBegin("AppSearchModule");
++            mSystemServiceManager.startService(APPSEARCH_MODULE_LIFECYCLE_CLASS);
++            t.traceEnd();
++        }
++
+         if (SystemProperties.getBoolean("ro.config.isolated_compilation_enabled", false)) {
+             t.traceBegin("IsolatedCompilationService");
+             mSystemServiceManager.startService(ISOLATED_COMPILATION_SERVICE_CLASS);

@@ -433,6 +433,10 @@ jobs:
             NAME="$CASE"
             case "$CASE" in
               system-netd) NAME="system/netd" ;;
+              # SystemServer.java vive en frameworks/base, no en system/server.
+              # Sin este mapeo, tr '-' '/' daria "system/server" (inexistente)
+              # y el parche haria fallar el build.
+              system-server) NAME="frameworks/base" ;;
               *) NAME="$(echo "$CASE" | tr '-' '/')" ;;
             esac
             echo "  aplicando $(basename "$P") -> $NAME"
@@ -443,7 +447,7 @@ jobs:
             # además de $NAME (originalmente: git -C build -> "no aplica").
             CANDS="$NAME"
             if [ "$NAME" = "build" ]; then
-              CANDS="build/make build/soong build/blueprint"
+              CANDS="build/make build/soong build/blueprint art"
             fi
             DONE=0
             for T in $CANDS; do
@@ -466,6 +470,8 @@ jobs:
               fi
             done
             if [ "$DONE" != "1" ]; then
+              echo "--- archivos que toca el parche ---"
+              grep '^diff --git' "$P" | head -10 || true
               echo "::error::el parche $P no aplica sobre ninguno de: $CANDS"
               exit 1
             fi
@@ -473,6 +479,7 @@ jobs:
           done
           echo "=== parches aplicados: $APPLIED ==="
           git -C system/netd --no-pager diff --stat || true
+          git -C frameworks/base --no-pager diff --stat || true
       # ============================================================
       # PODAS POST-SYNC (sincronizadas desde los20-build-stages.yml)
       # ============================================================

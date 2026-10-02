@@ -1,0 +1,62 @@
+From: MATYJAGUZ075 <155926881+MATYJAGUZ075@users.noreply.github.com>
+Date: Thu, 2 Oct 2026 00:00:00 -0300
+Subject: [PATCH] bpfloader: no cargar programas BPF si el kernel no soporta eBPF
+
+El Exynos 3475 corre un kernel 3.10, que no tiene eBPF (llego en 4.x). El
+loader no puede hacer nada util ahi, pero lo intentaba igual: fallaba con
+"CRITICAL FAILURE LOADING BPF PROGRAMS", esperaba 20 s y salia con codigo 2
+sin poner la propiedad bpf.progs_loaded.
+
+Esa propiedad es la que netd y system_server esperan, asi que el fallo se
+manifestaba como 24 BpfInterfaceMapUpdater "Fail to start: Null bpf map" en
+cada arranque.
+
+El fix consulta ro.kernel.ebpf.supported y se salta la carga cuando el kernel
+no declara soporte, dejando bpf.progs_loaded=1 como antes para que nadie se
+quede esperando. En un kernel con eBPF el comportamiento es identico al de
+AOSP.
+
+Adaptado al main() de android13, que ya separa la creacion de los pin
+subdirs del bucle de carga y usa loadAllElfObjects(location) con un solo
+argumento.
+diff --git a/bpfloader/BpfLoader.cpp b/bpfloader/BpfLoader.cpp
+index bc72811..b88c900 100644
+--- a/bpfloader/BpfLoader.cpp
++++ b/bpfloader/BpfLoader.cpp
+@@ -186,16 +186,26 @@ int main(int argc, char** argv) {
+         createSysFsBpfSubDir(location.prefix);
+     }
+ 
+-    // Load all ELF objects, create programs and maps, and pin them
+-    for (const auto& location : locations) {
+-        if (loadAllElfObjects(location) != 0) {
+-            ALOGE("=== CRITICAL FAILURE LOADING BPF PROGRAMS FROM %s ===", location.dir);
+-            ALOGE("If this triggers reliably, you're probably missing kernel options or patches.");
+-            ALOGE("If this triggers randomly, you might be hitting some memory allocation "
+-                  "problems or startup script race.");
+-            ALOGE("--- DO NOT EXPECT SYSTEM TO BOOT SUCCESSFULLY ---");
+-            sleep(20);
+-            return 2;
++    // El Exynos 3475 corre un kernel 3.10, que no tiene eBPF (llego en 4.x).
++    // El loader no puede hacer nada util ahi, y antes de este cambio fallaba
++    // con retardo y dejaba bpf.progs_loaded sin poner, lo que hacia que netd y
++    // system_server se quedaran esperando.
++    bool ebpf_supported = android::base::GetBoolProperty("ro.kernel.ebpf.supported", false);
++    if (!ebpf_supported) {
++        ALOGI("Kernel without eBPF support (ro.kernel.ebpf.supported=false): "
++              "skipping BPF program loading");
++    } else {
++        // Load all ELF objects, create programs and maps, and pin them
++        for (const auto& location : locations) {
++            if (loadAllElfObjects(location) != 0) {
++                ALOGE("=== CRITICAL FAILURE LOADING BPF PROGRAMS FROM %s ===", location.dir);
++                ALOGE("If this triggers reliably, you're probably missing kernel options or patches.");
++                ALOGE("If this triggers randomly, you might be hitting some memory allocation "
++                      "problems or startup script race.");
++                ALOGE("--- DO NOT EXPECT SYSTEM TO BOOT SUCCESSFULLY ---");
++                sleep(20);
++                return 2;
++            }
+         }
+     }
+ 

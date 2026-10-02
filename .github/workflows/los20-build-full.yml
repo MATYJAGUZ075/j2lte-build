@@ -180,7 +180,14 @@ concurrency:
 jobs:
   build:
     runs-on: ${{ github.event.inputs.runner_label || 'ubuntu-24.04' }}
-    timeout-minutes: 350
+    # Run 36917044053: el full-bacon murio con "The job has exceeded the
+    # maximum execution time of 5h50m0s" estando al 99% (93893/93922, le
+    # quedaban 29 targets). Este repo es PUBLIC, asi que el tope duro de
+    # GitHub es 360 min (6 h) para un job: 350 no daba margen y 360 es lo
+    # maximo permitido. Subirlo mas no es una opcion; la velocidad hay que
+    # sacarla de otro lado (mas nucleos, o ccache para el kernel, que son
+    # 20133 .c que hoy se compilan de cero en cada build).
+    timeout-minutes: 360
 
     env:
       # ccache: controlado por input 'ccache' (activado/desactivado).

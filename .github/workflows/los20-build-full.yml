@@ -203,6 +203,10 @@ jobs:
       USE_CCACHE: ${{ github.event.inputs.ccache == 'activado' && '1' || '0' }}
       CCACHE_DIR: /home/runner/.ccache
       CCACHE_MAXSIZE: ${{ github.event.inputs.cache_size_gb || '20' }}G
+      # ccache SOLO se usa si ccache=activado. Con 'desactivado' el binario es
+      # un shim passthrough (ver step de dependencias) y ademas se borra la
+      # cache guardada, asi que CC_WRAPPER no llega a activarse.
+      CCACHE_EXEC: /usr/bin/ccache
 
     steps:
 

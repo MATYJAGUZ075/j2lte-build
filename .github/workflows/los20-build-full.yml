@@ -426,7 +426,35 @@ jobs:
           echo "MKA_JOBS=${{ inputs.mka_jobs }}" >> "$GITHUB_ENV"
           # Diagnóstico opt-in de arranque -> variable de make para device-common.mk
           echo "LOS20_BOOT_DIAG=${{ inputs.boot_diag && 'true' || 'false' }}" >> "$GITHUB_ENV"
-          time repo sync -c --no-tags --fail-fast -j"${BUILD_JOBS:-16}"
+          # repo sync con reintentos. Sin esto, un solo repo que reciba HTTP 429
+          # (rate limit de git) tumba el sync COMPLETO por --fail-fast y se
+          # pierden 6 h de runner. Es lo que paso en la run 37046447647:
+          # platform/prebuilts/vndk/v32 devolvio 429 y el build murio a los 9 min.
+          #
+          # - Se quitan --fail-fast para que un 429 aislado no cancele los ~600
+          #   repos que van bien; repo sigue con el resto.
+          # - Se reintenta hasta SYNC_MAX_RETRIES veces con espera creciente.
+          #   El 429 del rate limit de git es transitorio y se recupera en
+          #   ~1 min, asi que 4 intentos con backoff cubren de sobra.
+          SYNC_JOBS="${BUILD_JOBS:-16}"
+          SYNC_MAX_RETRIES=4
+          SYNC_OK=0
+          for ATTEMPT in $(seq 1 "$SYNC_MAX_RETRIES"); do
+            echo "=== repo sync: intento ${ATTEMPT}/${SYNC_MAX_RETRIES} (-j${SYNC_JOBS}) ==="
+            if repo sync -c --no-tags -j"$SYNC_JOBS"; then
+              SYNC_OK=1
+              break
+            fi
+            if [ "$ATTEMPT" -lt "$SYNC_MAX_RETRIES" ]; then
+              WAIT=$((ATTEMPT * 45))
+              echo "::warning::repo sync fallo (HTTP 429 / rate limit). Reintento en ${WAIT}s"
+              sleep "$WAIT"
+            fi
+          done
+          if [ "$SYNC_OK" -ne 1 ]; then
+            echo "::error::repo sync fallo tras ${SYNC_MAX_RETRIES} intentos. Suele ser rate limit de GitHub (HTTP 429); relanza la run en unos minutos."
+            exit 1
+          fi
           echo "=== DISCO POST-SYNC ==="
           df -h /
       - name: "Parches de framework (system/netd)"

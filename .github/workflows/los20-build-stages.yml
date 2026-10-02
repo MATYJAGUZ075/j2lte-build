@@ -418,11 +418,28 @@ jobs:
           echo "=== DISCO PRE-SYNC ==="
           df -h /
 
-          time repo sync \
-            -c \
-            --no-tags \
-            --fail-fast \
-            -j"${BUILD_JOBS:-16}"
+          # repo sync con reintentos. Sin esto, un solo repo que reciba HTTP 429
+          # (rate limit de git) tumba el sync COMPLETO por --fail-fast.
+          # Mismo fix que en los20-build-full.yml, run 37046447647.
+          SYNC_JOBS="${BUILD_JOBS:-16}"
+          SYNC_MAX_RETRIES=4
+          SYNC_OK=0
+          for ATTEMPT in $(seq 1 "$SYNC_MAX_RETRIES"); do
+            echo "=== repo sync: intento ${ATTEMPT}/${SYNC_MAX_RETRIES} (-j${SYNC_JOBS}) ==="
+            if repo sync -c --no-tags -j"$SYNC_JOBS"; then
+              SYNC_OK=1
+              break
+            fi
+            if [ "$ATTEMPT" -lt "$SYNC_MAX_RETRIES" ]; then
+              WAIT=$((ATTEMPT * 45))
+              echo "::warning::repo sync fallo (HTTP 429 / rate limit). Reintento en ${WAIT}s"
+              sleep "$WAIT"
+            fi
+          done
+          if [ "$SYNC_OK" -ne 1 ]; then
+            echo "::error::repo sync fallo tras ${SYNC_MAX_RETRIES} intentos. Suele ser rate limit de GitHub (HTTP 429); relanza la run en unos minutos."
+            exit 1
+          fi
 
           echo "=== DISCO POST-SYNC ==="
           df -h /

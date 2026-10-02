@@ -1,0 +1,113 @@
+From: MATYJAGUZ075 <155926881+MATYJAGUZ075@users.noreply.github.com>
+Date: Thu, 2 Oct 2026 00:00:00 -0300
+Subject: [PATCH] netd:_lookup a la tabla 'main' para rutas directamente conectadas
+
+El kernel crea las rutas directamente conectadas de forma implicita en la
+tabla 'main' cuando se anade una direccion a una interfaz. Para poder anadir
+despues una ruta a traves de una pasarela directamente conectada hace falta
+que exista una ruta que cubra esa pasarela, y sin una regla que consulte
+'table main' no la hay.
+
+Consecuencia en el J2: el RIL legacy (tss310) deja el IPv4 movil sin ruta por
+defecto, con un error de este tipo:
+
+  Error adding route 0.0.0.0/0 -> xxx.xxx.xxx.xxx rmnet0 to table 1002:
+  Network is unreachable
+
+netd en A13 ya no trae este lookup, y la variable de build
+TARGET_NEEDS_NETD_DIRECT_CONNECT_RULE que el BoardConfig declaraba ya no
+existe en el arbol (solo aparece en BoardConfig*.mk de los devices), asi que
+quedaba como opcion sin efecto. Este parche lo reactiva por codigo, con la
+misma forma que el guard por feature usan otros servicios opcionales.
+
+- RouteController.h: nueva RULE_PRIORITY_DIRECTLY_CONNECTED = 31500, entre
+  DEFAULT_NETWORK (31000) y UNREACHABLE (32000).
+- RouteController.cpp: addDirectlyConnectedRule() y su llamada en Init(),
+  entre addLocalNetworkRules() y addUnreachableRule().
+- Android.bp: cflag -DNEEDS_NETD_DIRECT_CONNECT_RULE en libnetd_server, que
+  es lo que habilita el codigo.
+
+El cflag va directo en el modulo en vez de usar un cc_defaults aparte, para no
+depender de un defaults que el arbol actual no define.
+
+Adaptado a android13: el main() de RouteController no cambio, pero si la
+tabla de prioridades, que en A13 tiene DEFAULT_NETWORK=31000 (no 29000), por
+lo que 30000 ya estaba ocupado y la nueva regla va en 31500.
+diff --git a/server/Android.bp b/server/Android.bp
+index 06ea0ba..b010892 100644
+--- a/server/Android.bp
++++ b/server/Android.bp
+@@ -41,6 +41,13 @@ cc_library_static {
+         "netd_aidl_interface_lateststable_cpp_shared",
+         "netd_defaults",
+     ],
++    // Habilita addDirectlyConnectedRule() en RouteController: sin el lookup a
++    // la tabla 'main', el RIL legacy del J2 no logra poner la ruta por defecto
++    // del IPv4 movil ("Error adding route 0.0.0.0/0 ... Network is
++    // unreachable"). La guarda del codigo depende de este define.
++    cflags: [
++        "-DNEEDS_NETD_DIRECT_CONNECT_RULE",
++    ],
+     include_dirs: [
+         "system/netd/include",
+         "system/netd/server/binder",
+diff --git a/server/RouteController.cpp b/server/RouteController.cpp
+index 9b6a7ca..793e817 100644
+--- a/server/RouteController.cpp
++++ b/server/RouteController.cpp
+@@ -766,6 +766,25 @@ int RouteController::configureDummyNetwork() {
+     return 0;
+ }
+ 
++#ifdef NEEDS_NETD_DIRECT_CONNECT_RULE
++// Look up the 'main' table with the same selectors as the default-network
++// rule but at a lower priority. We never create routes in the main table; it
++// is only there for the directly-connected routes the kernel creates
++// implicitly when an address is added. Without this, adding a route through
++// a directly-connected gateway fails because there is no route covering that
++// gateway yet.
++[[nodiscard]] int addDirectlyConnectedRule() {
++    Fwmark fwmark;
++    Fwmark mask;
++
++    fwmark.netId = NETID_UNSET;
++    mask.netId = FWMARK_NET_ID_MASK;
++
++    return modifyIpRule(RTM_NEWRULE, RULE_PRIORITY_DIRECTLY_CONNECTED, RT_TABLE_MAIN,
++                        fwmark.intValue, mask.intValue, IIF_NONE, OIF_NONE, UID_ROOT, UID_ROOT);
++}
++#endif
++
+ // Add an explicit unreachable rule close to the end of the prioriy list to make it clear that
+ // relying on the kernel-default "from all lookup main" rule at priority 32766 is not intended
+ // behaviour. We do flush the kernel-default rules at startup, but having an explicit unreachable
+@@ -1233,6 +1252,11 @@ int RouteController::Init(unsigned localNetId) {
+     if (int ret = addLocalNetworkRules(localNetId)) {
+         return ret;
+     }
++#ifdef NEEDS_NETD_DIRECT_CONNECT_RULE
++    if (int ret = addDirectlyConnectedRule()) {
++        return ret;
++    }
++#endif
+     if (int ret = addUnreachableRule()) {
+         return ret;
+     }
+diff --git a/server/RouteController.h b/server/RouteController.h
+index 1b3a093..0d89de4 100644
+--- a/server/RouteController.h
++++ b/server/RouteController.h
+@@ -82,6 +82,13 @@ constexpr int32_t RULE_PRIORITY_UID_DEFAULT_NETWORK               = 29000;
+ // the network, it will not work. That will potentially cause a user-visible error.
+ constexpr int32_t RULE_PRIORITY_UID_DEFAULT_UNREACHABLE           = 30000;
+ constexpr int32_t RULE_PRIORITY_DEFAULT_NETWORK                   = 31000;
++#ifdef NEEDS_NETD_DIRECT_CONNECT_RULE
++// Lower priority than RULE_PRIORITY_DEFAULT_NETWORK (31000) and higher than
++// RULE_PRIORITY_UNREACHABLE (32000): the kernel creates directly-connected
++// routes implicitly in the main table when an address is added, and looking
++// them up here lets a route be added through a directly-connected gateway.
++constexpr int32_t RULE_PRIORITY_DIRECTLY_CONNECTED           = 31500;
++#endif
+ constexpr int32_t RULE_PRIORITY_UNREACHABLE                       = 32000;
+ // clang-format on
+ 

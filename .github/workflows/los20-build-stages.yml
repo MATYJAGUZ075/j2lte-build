@@ -112,6 +112,10 @@ concurrency:
   group: los20-stages
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   probe-mnt:
     if: inputs.probe_mnt == true

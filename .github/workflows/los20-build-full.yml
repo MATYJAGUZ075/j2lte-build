@@ -177,6 +177,10 @@ concurrency:
   group: los20-full-build
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   build:
     runs-on: ${{ github.event.inputs.runner_label || 'ubuntu-24.04' }}

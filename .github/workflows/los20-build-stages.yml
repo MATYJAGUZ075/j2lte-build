@@ -374,9 +374,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -e
+          NS="ccache-j2lte-${{ inputs.stage }}-${{ inputs.kernel_toolchain }}"
           FOUND=0
-          for id in $(gh cache list --key ccache-j2lte- --limit 100 --jq '.[].id' 2>/dev/null); do
+          for id in $(gh cache list --key "${NS}-" --limit 100 --json id --jq '.[].id' 2>/dev/null); do
             gh cache delete "$id" >/dev/null 2>&1 || true
             echo "caché eliminada: $id"
             FOUND=1
@@ -2115,8 +2115,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: /home/runner/.ccache
-          key: ccache-j2lte-${{ inputs.kernel_toolchain }}-${{ github.run_id }}
-          restore-keys: ccache-j2lte-${{ inputs.kernel_toolchain }}
+          key: ccache-j2lte-${{ inputs.stage }}-${{ inputs.kernel_toolchain }}-${{ github.run_id }}
+          restore-keys: ccache-j2lte-${{ inputs.stage }}-${{ inputs.kernel_toolchain }}-
 
       - name: Configurar lunch
         working-directory: /home/runner/los20
@@ -2471,27 +2471,26 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: /home/runner/.ccache
-          key: ccache-j2lte-${{ inputs.kernel_toolchain }}-${{ github.run_id }}
+          key: ccache-j2lte-${{ inputs.stage }}-${{ inputs.kernel_toolchain }}-${{ github.run_id }}
 
       - name: Limpiar cachés ccache viejas (cache=activado)
         if: ${{ always() && inputs.cache == 'activado' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -e
-          PREFIX="ccache-j2lte-${{ inputs.kernel_toolchain }}"
-          NEW_KEY="ccache-j2lte-${{ inputs.kernel_toolchain }}-${{ github.run_id }}"
-          # Conserva solo la caché recién guardada por run_id; borra las viejas
-          # del mismo toolchain (incluye la legada sin -runid). `--key` es
-          # substring, asi que "$PREFIX" sin guion final cubre ambas variantes.
-          # OJO: gh cache list exige --json para poder usar --jq (sin él el
-          # paso moría en silencio y nunca borraba nada).
-          gh cache list --key "$PREFIX" --limit 100 --json id,key --jq '.[] | "\(.id) \(.key)"' 2>/dev/null | while read -r id key; do
+          NS="ccache-j2lte-${{ inputs.stage }}-${{ inputs.kernel_toolchain }}"
+          NEW_KEY="${NS}-${{ github.run_id }}"
+          # SEGURIDAD: solo limpiar si la caché nueva se guardó de verdad.
+          # Si el save falló (p.ej. /home/runner/.ccache ausente) NEW_KEY no
+          # existe y NO se borra nada. Antes se borraba la única caché que
+          # hubiese y se perdía todo el ccache.
+          if [ "$(gh cache list --key "$NEW_KEY" --json key --jq 'length' 2>/dev/null || echo 0)" != "1" ]; then
+            echo "::warning::la caché nueva no se guardó; no se borra ninguna caché"
+            exit 0
+          fi
+          # Borra solo las del MISMO namespace, conservando la nueva.
+          gh cache list --key "${NS}-" --limit 100 --json id,key --jq '.[] | "\(.id) \(.key)"' 2>/dev/null | while read -r id key; do
             if [ "$key" != "$NEW_KEY" ]; then
-              # OJO: con "set -e", un delete fallido (permisos, caché ya
-              # borrada) abortaba el job y marcaba el build como fallido
-              # aunque la build estuviese bien. Este step es limpieza: nunca
-              # debe fallar.
               if gh cache delete "$id" >/dev/null 2>&1; then
                 echo "caché vieja borrada: $key"
               else

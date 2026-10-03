@@ -388,9 +388,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: /home/runner/.ccache
-          key: ccache-j2lte-${{ inputs.kernel_toolchain }}-${{ github.run_id }}
+          key: ccache-j2lte-full-${{ inputs.kernel_toolchain }}-${{ github.run_id }}
           restore-keys: |
-            ccache-j2lte-${{ inputs.kernel_toolchain }}
+            ccache-j2lte-full-${{ inputs.kernel_toolchain }}-
 
       # ============================================================
       # SOURCE
@@ -2092,38 +2092,33 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: /home/runner/.ccache
-          key: ccache-j2lte-${{ inputs.kernel_toolchain }}-${{ github.run_id }}
+          key: ccache-j2lte-full-${{ inputs.kernel_toolchain }}-${{ github.run_id }}
 
       - name: Limpiar cachés ccache viejas (si activado)
         if: ${{ always() && inputs.ccache == 'activado' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -e
-          NEW_KEY="ccache-j2lte-${{ inputs.kernel_toolchain }}-${{ github.run_id }}"
-          # Conserva solo la caché recién guardada por run_id; borra las viejas
-          # del mismo toolchain. Se barren dos prefijos:
-          #   1) "ccache-j2lte-<toolchain>"  (formato actual, igual que stages)
-          #   2) "ccache-Linux"              (formato legacy de full, con
-          #      github.sha en la clave: nunca re-acertaba y llenaba la cuota)
-          # `--key` es substring, así que el prefijo sin guion final cubre
-          # ambas variantes de cada familia.
-          # OJO: gh cache list exige --json para poder usar --jq (sin él el
-          # paso moría en silencio y nunca borraba nada).
-          for PREFIX in "ccache-j2lte-${{ inputs.kernel_toolchain }}" "ccache-${{ runner.os }}"; do
-            gh cache list --key "$PREFIX" --limit 100 --json id,key --jq '.[] | "\(.id) \(.key)"' 2>/dev/null | while read -r id key; do
-              if [ "$key" != "$NEW_KEY" ]; then
-                # OJO: con "set -e", un delete fallido (permisos, caché ya
-                # borrada) abortaba el job y marcaba el build como fallido
-                # aunque la build estuviese bien. Este step es limpieza: nunca
-                # debe fallar.
-                if gh cache delete "$id" >/dev/null 2>&1; then
-                  echo "caché vieja borrada: $key"
-                else
-                  echo "::warning::no se pudo borrar la caché $key (se ignora)"
-                fi
+          NS="ccache-j2lte-full-${{ inputs.kernel_toolchain }}"
+          NEW_KEY="${NS}-${{ github.run_id }}"
+          # SEGURIDAD: solo limpiar si la caché nueva se guardó de verdad.
+          # Si el save falló (p.ej. /home/runner/.ccache ausente) NEW_KEY no
+          # existe y NO se borra nada. Antes se borraba la única caché que
+          # hubiese y se perdía todo el ccache (esto borró la caché de full).
+          if [ "$(gh cache list --key "$NEW_KEY" --json key --jq 'length' 2>/dev/null || echo 0)" != "1" ]; then
+            echo "::warning::la caché nueva no se guardó; no se borra ninguna caché"
+            exit 0
+          fi
+          # Borra solo las del MISMO namespace de full, conservando la nueva.
+          # Ya no toca el namespace de stages ni el legacy ccache-Linux.
+          gh cache list --key "${NS}-" --limit 100 --json id,key --jq '.[] | "\(.id) \(.key)"' 2>/dev/null | while read -r id key; do
+            if [ "$key" != "$NEW_KEY" ]; then
+              if gh cache delete "$id" >/dev/null 2>&1; then
+                echo "caché vieja borrada: $key"
+              else
+                echo "::warning::no se pudo borrar la caché $key (se ignora)"
               fi
-            done
+            fi
           done
           exit 0
 

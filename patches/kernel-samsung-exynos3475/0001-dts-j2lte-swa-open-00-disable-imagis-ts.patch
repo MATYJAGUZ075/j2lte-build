@@ -1,0 +1,12 @@
+diff --git a/arch/arm/boot/dts/exynos3475-j2lte_swa_open_00.dts b/arch/arm/boot/dts/exynos3475-j2lte_swa_open_00.dts
+index b96cb1fd..0b8136e6 100755
+--- a/arch/arm/boot/dts/exynos3475-j2lte_swa_open_00.dts
++++ b/arch/arm/boot/dts/exynos3475-j2lte_swa_open_00.dts
+@@ -129,6 +129,7 @@
+ 		status = "okay";
+ 		touchscreen@50 {
+ 			compatible = "imagis,ist30xx-ts";
++			status = "disabled";
+ 			reg = <0x50>;
+ 			pinctrl-names = "on_state", "off_state";
+ 			pinctrl-0 = <&attn_irq>;

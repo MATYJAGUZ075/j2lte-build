@@ -8,7 +8,13 @@
 #   WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY=true, diagnóstico de
 #   almacenamiento, stats de ccache y medición de out/ antes y después del
 #   build. No se agrega selector de stage (systemimage/boot/recovery): este
-#   workflow sigue siendo específicamente para mka bacon.
+#   workflow sigue siendo específicamente para el build completo del ROM.
+# FIX-015 (2026-10-03, run 37124830075): el goal "bacon" sólo vive en el ninja
+#   de packaging (vendor/lineage/build/tasks/bacon.mk) donde
+#   INTERNAL_OTA_PACKAGE_TARGET está vacío, así que nunca compilaba el producto
+#   y fallaba con "ln: cannot create hard link ... No such file or directory".
+#   El build ahora usa los goals reales del grafo principal: "droid otapackage",
+#   más un gate duro que exige un ZIP >= 1MB antes de declarar éxito.
 # FIX-031 (2026-09-12): sincronizado el resto de las podas post-sync que
 #   ya estaban probadas en los20-build-stages.yml (rust linux-x86 versiones
 #   inactivas, module_sdk/art snapshot @3, runtime/mainline, Ronda 2, Tier 1
@@ -1984,7 +1990,7 @@ jobs:
           ls -d /usr/share/gradle-9.7.1 2>/dev/null || echo "/usr/share/gradle-9.7.1 no existe"
           echo "=== KOTLINC (candidata registrada 94M, NO borrar) ==="
           du -sh /usr/share/kotlinc 2>/dev/null || true
-      - name: mka bacon (build completo)
+      - name: mka droid otapackage (build completo, FIX-015)
         if: ${{ github.event.inputs.mode == 'full-bacon' }}
         working-directory: /home/runner/los20
         run: |
@@ -2078,11 +2084,43 @@ jobs:
           echo "=== WITH_DEXPREOPT=$WITH_DEXPREOPT ==="
           source build/envsetup.sh
           lunch lineage_j2lte-userdebug >/dev/null
-          echo "== mka bacon =="
+          echo "== mka droid otapackage (FIX-015) =="
           echo "   LOS20_BOOT_DIAG=${LOS20_BOOT_DIAG:-false}"
-          time mka --skip-soong-tests bacon LOS20_BOOT_DIAG="${LOS20_BOOT_DIAG:-false}" -j"${MKA_JOBS:-$(nproc)}" 2>&1 | tee /tmp/bacon.log
+          # FIX-015 (run 37124830075): el goal "bacon" esta definido en
+          # vendor/lineage/build/tasks/bacon.mk, que solo se incluye en el
+          # ninja de PACKAGING. Ahi INTERNAL_OTA_PACKAGE_TARGET no esta
+          # definido (lo define core/Makefile), por lo que la receta queda
+          # "ln -f <vacio> $(PRODUCT_OUT)/lineage-<version>.zip" y NUNCA se
+          # compila el producto. Evidencia de la run: ninja ejecuto 1 solo
+          # edge ("build bacon") sobre 290 y fallo con
+          #   ln: cannot create hard link from 'out/.../lineage-*.zip'
+          #       to './lineage-*.zip': No such file or directory
+          # Por eso ahora se compila con los goals reales del grafo principal:
+          #   droid      -> build completo del producto (core/main.mk:1507)
+          #   otapackage -> $(INTERNAL_OTA_PACKAGE_TARGET) (core/Makefile:6286)
+          time mka --skip-soong-tests droid otapackage LOS20_BOOT_DIAG="${LOS20_BOOT_DIAG:-false}" -j"${MKA_JOBS:-$(nproc)}" 2>&1 | tee /tmp/bacon.log
           RC=${PIPESTATUS[0]}
           echo "BACON_RC=$RC"
+          # Gate duro: sin ZIP real y con tamano razonable, el job es FAIL.
+          # Asi un fallo de compilacion nunca se disfraza de "bacon ok".
+          ZIP=""
+          for f in out/target/product/j2lte/lineage-*.zip; do
+            [ -f "$f" ] && ZIP="$f" && break
+          done
+          if [ -z "$ZIP" ]; then
+            echo "::error::FIX-015: no se genero ningun ZIP en out/target/product/j2lte/"
+            ls -la out/target/product/j2lte/ 2>&1 || true
+            exit 1
+          fi
+          ZIP_SZ=$(stat -c %s "$ZIP" 2>/dev/null || echo 0)
+          echo "ZIP_OK=$ZIP size=${ZIP_SZ}B"
+          if [ "$ZIP_SZ" -lt 1000000 ]; then
+            echo "::error::FIX-015: ZIP sospechosamente pequeno (${ZIP_SZ}B), build incompleto"
+            exit 1
+          fi
+          # Replica el .sha256sum que generaba bacon.mk, sin el ln fragil.
+          sha256sum "$ZIP" | sed "s|out/target/product/j2lte/||" > "$ZIP.sha256sum"
+          cat "$ZIP.sha256sum"
           exit "$RC"
       # ============================================================
       # CCACHE SAVE (condicional)

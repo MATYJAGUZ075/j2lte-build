@@ -1,0 +1,88 @@
+From 02e1aef781a3f3495c27be30635ae5b61279ef17 Mon Sep 17 00:00:00 2001
+From: t <t@t>
+Date: Sun, 4 Oct 2026 11:38:56 -0300
+Subject: [PATCH] frameworks/base: no consultar memoria de GPU via BPF en el J2
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+FIX-020. En el J2 (Exynos 3475, kernel 3.10) no hay eBPF: la llamada bpf()
+devuelve ENOSYS. El reporte de memoria de GPU de AppProfiler entra a
+libmeminfo, construye un android::bpf::BpfMap, y ese constructor llama
+abort() en vez de devolver error. Eso mataba system_server y con él todo
+el userspace:
+
+  #01 android::bpf::BpfMap<u64,u64>::BpfMap(char const*, unsigned int)
+  #02 android::meminfo::ReadProcessGpuUsageKb(uint, uint, u64*)
+  #03 android::android_os_Debug_getGpuTotalUsageKb
+  #05 com.android.server.am.AppProfiler.reportMemUsage
+
+Cadena observada el 04/10/2026 en el build 20.0-20261003-UNOFFICIAL-j2lte
+(/data/tombstones/tombstone_44, Process uptime 24s):
+
+  system_server SIGABRT -> "Zygote: Exit zygote because system server has
+  terminated" -> init ejecuta los onrestart de zygote y mata audioserver,
+  cameraserver, media, netd y wificond -> pantalla negra, adb muerto,
+  reinicio forzado.
+
+Sin eBPF ese reporte no puede existir, asi que se saltea el bloque. El resto
+del reporte de memoria (PSS, kernel used, lost RAM) sigue igual.
+
+El flag es NO final a proposito: si fuera constante javac podria marcar el
+bloque como dead code y services se compila con -Werror.
+---
+ .../com/android/server/am/AppProfiler.java    | 24 +++++++++++++++++++
+ 1 file changed, 24 insertions(+)
+
+diff --git a/services/core/java/com/android/server/am/AppProfiler.java b/services/core/java/com/android/server/am/AppProfiler.java
+index 61d8568..a4c46d1 100644
+--- a/services/core/java/com/android/server/am/AppProfiler.java
++++ b/services/core/java/com/android/server/am/AppProfiler.java
+@@ -119,6 +119,12 @@ import java.util.function.Predicate;
+ public class AppProfiler {
+     private static final String TAG = TAG_WITH_CLASS_NAME ? "ProcessList" : TAG_AM;
+ 
++    // FIX-020: en este device el reporte de memoria de GPU va por BPF y el
++    // kernel no tiene eBPF. false = se saltea el bloque (ver el uso mas abajo).
++    // NO es final a proposito: si fuera constante, javac podria reportar
++    // dead code y el build de services usa -Werror.
++    private static boolean sGpuMemUsageViaBpf = false;
++
+     static final String TAG_PSS = TAG + POSTFIX_PSS;
+ 
+     static final String TAG_OOM_ADJ = ActivityManagerService.TAG_OOM_ADJ;
+@@ -1562,6 +1568,23 @@ public class AppProfiler {
+             }
+         }
+ 
++        // FIX-020 (J2 / Exynos 3475, kernel 3.10): no tocar BPF desde aca.
++        //
++        // Debug.getGpuTotalUsageKb() entra a libmeminfo y construye un
++        // android::bpf::BpfMap. Este kernel no tiene eBPF (bpf() -> ENOSYS) y
++        // el constructor de BpfMap llama abort() en vez de devolver error.
++        // Eso mataba system_server:
++        //   #01 android::bpf::BpfMap<u64,u64>::BpfMap(char const*, unsigned int)
++        //   #02 android::meminfo::ReadProcessGpuUsageKb(uint, uint, u64*)
++        //   #03 android::android_os_Debug_getGpuTotalUsageKb
++        //   #05 com.android.server.am.AppProfiler.reportMemUsage
++        // De ahi el crash en cadena: system_server SIGABRT -> zygote sale ->
++        // init mata audioserver/cameraserver/media/netd/wificond -> pantalla
++        // negra, sin adb, reinicio forzado.
++        // Medido 04/10/2026, build 20.0-20261003-UNOFFICIAL-j2lte,
++        // /data/tombstones/tombstone_44.
++        // Sin eBPF el reporte de memoria de GPU no existe: se saltea el bloque.
++        if (sGpuMemUsageViaBpf) {
+         final long gpuUsage = Debug.getGpuTotalUsageKb();
+         if (gpuUsage >= 0) {
+             final long gpuPrivateUsage = Debug.getGpuPrivateMemoryKb();
+@@ -1585,6 +1608,7 @@ public class AppProfiler {
+             }
+ 
+         }
++        } // FIN guarda FIX-020 (reporte de memoria de GPU via BPF)
+         memInfoBuilder.append("  Used RAM: ");
+         memInfoBuilder.append(stringifyKBSize(
+                                   totalPss - cachedPss + kernelUsed));
+-- 
+2.50.1
+

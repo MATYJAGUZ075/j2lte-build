@@ -1758,9 +1758,15 @@ jobs:
             echo "CONFIG_USB_FUNCTIONFS anadido"
           fi
           grep -nE '^#? ?CONFIG_USB_FUNCTIONFS' "$CFG"
-          # el composite samsung (android.c) incluye la funcion ffs (f_ffs/aliases)
-          # que init.universal3475.usb.rc monta en /dev/usb-ffs/adb (on fs).
-          echo "OK: functionfs en la kernel (adbd A13 -> /dev/usb-ffs/adb/ep0)"
+          # OJO: este symbolo YA estaba =y en el defconfig (linea 2909), asi que
+          # este step historically no hizo nada. El simbolo que hacia falta era
+          # CONFIG_USB_EXYNOS_SWITCH: con el, s3c_udc_start() imprime
+          # "usb: Skip udc_enable" y nunca llama a udc_enable(), el gadget queda
+          # bound pero no enumera y el host no ve ningun dispositivo USB.
+          # Corregido en el kernel (FIX-020, commit eb6cc019).
+          echo "OK: functionfs verificado en la defconfig (adbd A13 -> /dev/usb-ffs/adb/ep0)"
+          # Verificacion explicita del simbolo que realmente importaba:
+          grep -n 'USB_EXYNOS_SWITCH' "$CFG" || echo "(sin CONFIG_USB_EXYNOS_SWITCH: is_nonswitch() == true, udc_enable() se llama)"
       - name: 'Fix HWC: thread owner ExynosMPP antes de run() (abort incStrongRequireStrong)'
         if: ${{ inputs.apply_fixes }}
         working-directory: /home/runner/los20

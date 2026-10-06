@@ -1,0 +1,66 @@
+From: j2lte-ci <j2lte-ci@users.noreply.github.com>
+Date: Mon, 6 Oct 2026 16:30:00 -0300
+Subject: [PATCH] frameworks/libs/net: BpfMap no debe abort() sin eBPF
+
+El Exynos 3475 corre un kernel 3.10, que no tiene eBPF (llego en Linux 4.x).
+mapRetrieve() hace bpf(BPF_OBJ_GET, ...) y recibe ENOSYS, mMapFd queda en -1 y
+el constructor de BpfMapRo hacia abort(). Eso mataba al proceso que lo usaba.
+
+Medido en el telefono con el stack de WiFi andando, que es lo que dispara la
+ruta:
+
+    #01 android::bpf::BpfMap<unsigned int, StatsValue>::BpfMap(char const*, unsigned int)+360
+    #02 android::bpf::bpfGetIfaceStats(char const*, Stats*)
+    #03 android::getTotalStat(_JNIEnv*, _jclass*, int)
+    #05 com.android.server.net.NetworkStatsService.getTotalStats
+    #07 android.net.TrafficStats.getTotalTxBytes
+    #08 com.android.server.wifi.FrameworkFacade.getTotalTxBytes
+    #09 com.android.server.wifi.WifiMetrics.addStaEvent
+    #12 com.android.server.wifi.ClientModeImpl$ConnectableState.continueEnterSetup
+
+    Abort message: 'assertion failed' via __android_log_assert
+    -> art::Runtime::Abort -> libc abort -> SIGABRT
+
+El resultado era system_server muerto en loop, zygote reset, pantalla en la
+animacion de arranque, y adb sin autorizacion por el dialogo de depuracion que no
+se podia aceptar.
+
+El abort es redundante: la funcion que llama ya sabe manejar el caso. En
+bpfGetIfaceStats:
+
+    BpfMapRo<uint32_t, StatsValue> ifaceStatsMap(IFACE_STATS_MAP_PATH);
+    if (!ifaceStatsMap.isValid()) {
+        ret = -errno;
+        ALOGE("get ifaceStats map fd failed: %s", strerror(errno));
+        return ret;
+    }
+
+isValid() ya devuelve false con mMapFd == -1, y el log de ALOGE de arriba es
+precisamente la ruta que se queria ejecutar. Cambiar abort() por return deja que
+esa ruta ocurra.
+
+Solo se toca el constructor de BpfMapRo, que es el que usan los mapas fijados
+(pinned) y el que dispara el crash. Los otros abort() del archivo quedan como
+están: están en rutas de createMap y de comprobacion de tamaño, que solo se
+alcanzan cuando hay eBPF y el mapa se pudo crear.
+
+Sin este parche el WiFi no puede funcionar: sin WiFi no hay wlan0, y con wlan0
+el framework llama a TrafficStats en cada evento de la pila wifi. Con el parche
+TrafficStats devuelve -errno, se loguea y el proceso sigue.
+
+diff --git a/common/native/bpf_headers/include/bpf/BpfMap.h b/common/native/bpf_headers/include/bpf/BpfMap.h
+--- a/common/native/bpf_headers/include/bpf/BpfMap.h
++++ b/common/native/bpf_headers/include/bpf/BpfMap.h
+@@ -50,7 +50,11 @@
+     // flag must be within BPF_OBJ_FLAG_MASK, ie. 0, BPF_F_RDONLY, BPF_F_WRONLY
+     BpfMap<Key, Value>(const char* pathname, uint32_t flags) {
+         mMapFd.reset(mapRetrieve(pathname, flags));
+-        if (mMapFd < 0) abort();
++        // Do not abort when the pinned map cannot be retrieved. A kernel without
++        // eBPF returns ENOSYS here and abort() took the calling process down with
++        // it. Every user of this class already checks isValid() and handles the
++        // failure, so leaving mMapFd at -1 is enough.
++        if (mMapFd < 0) return;
+         if (isAtLeastKernelVersion(4, 14, 0)) {
+             if (bpfGetFdKeySize(mMapFd) != sizeof(Key)) abort();
+             if (bpfGetFdValueSize(mMapFd) != sizeof(Value)) abort();

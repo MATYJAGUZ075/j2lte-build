@@ -1,8 +1,8 @@
 # j2lte-build (One UI 5 experiment)
 
-LineageOS 20 disfrazado de One UI 5: experimento local para probar cambios cosméticos en forks de `frameworks/base` y `packages/apps/Settings`.
+LineageOS 20 disguised as One UI 5: a local experiment to test cosmetic changes in forks of `frameworks/base` and `packages/apps/Settings`.
 
-Este no es un producto Samsung. Es una ROM basada en LineageOS 20 / Android 13 para el Galaxy J2 (j2lte, Exynos 3475, ARM32, 1 GB RAM).
+This is not a Samsung product. It is a ROM based on LineageOS 20 / Android 13 for the Galaxy J2 (j2lte, Exynos 3475, ARM32, 1 GB RAM).
 
 ---
 
@@ -50,9 +50,9 @@ Individual modules can also be built through "los20-build-module.yml".
 
 # Current Status
 
-Este repo está en la rama experimental `experiment/oneui5`. Los cambios son mínimos y específicos de colores/es:
+This repo is on the experimental branch `experiment/oneui5`. Changes are minimal and mostly colors:
 
 - `frameworks/base` → `MATYJAGUZ075/android_frameworks_base-1`, branch `lineage-20.0`
 - `packages/apps/Settings` → `MATYJAGUZ075/android_packages_apps_Settings-1`, branch `lineage-20.0`
 
-No se subió aún esta rama de `j2lte-build` a GitHub. Solo se actualizaron los manifiestos localmente.
+The `experiment/oneui5` branch is local only and has not been pushed to GitHub.

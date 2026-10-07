@@ -52,17 +52,13 @@
   <project name="android_hardware_lineage_interfaces"
            path="hardware/lineage/interfaces"
            remote="maty" revision="lineage-20.0" />
-</manifest>
-
-  <!-- Repos para experimentar One UI 5: deben ser forks propios o repos nuevos.
-       Si no se modifican, J2 seguirá usando LineageOS/aosp. -->
-  <!-- pending: gh no permite crear repos con token actual -->
-  <!-- <remove-project name="LineageOS/android_frameworks_base" />
-  <project name="android_frameworks_base"
+  <remove-project name="LineageOS/android_frameworks_base" />
+  <project name="android_frameworks_base-1"
            path="frameworks/base"
-           remote="maty" revision="lineage-20.0" /> -->
-  <!-- <remove-project name="LineageOS/android_packages_apps_Settings" />
-  <project name="android_packages_apps_Settings"
+           remote="maty" revision="lineage-20.0" />
+
+  <remove-project name="LineageOS/android_packages_apps_Settings" />
+  <project name="android_packages_apps_Settings-1"
            path="packages/apps/Settings"
-           remote="maty" revision="lineage-20.0" /> -->
+           remote="maty" revision="lineage-20.0" />
 </manifest>

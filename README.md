@@ -1,8 +1,8 @@
-# j2lte-build
+# j2lte-build (One UI 5 experiment)
 
-GitHub Actions setup for building and testing the LineageOS 20 port for the Samsung Galaxy J2 (j2lte / Exynos3475).
+LineageOS 20 disfrazado de One UI 5: experimento local para probar cambios cosméticos en forks de `frameworks/base` y `packages/apps/Settings`.
 
-This repository contains the manifests and workflows used to sync the Android source tree, run diagnostics and build LineageOS 20 on GitHub Actions.
+Este no es un producto Samsung. Es una ROM basada en LineageOS 20 / Android 13 para el Galaxy J2 (j2lte, Exynos 3475, ARM32, 1 GB RAM).
 
 ---
 
@@ -15,10 +15,6 @@ This repository contains the manifests and workflows used to sync the Android so
 - "los20-build-stages.yml" — Staged build workflow using the reduced manifest to keep storage usage under control.
 - "los20-build-diag.yml" — Diagnostic workflow for investigating build issues.
 
-Most workflows can be started manually from:
-
-Actions → Select a workflow → Run workflow
-
 ---
 
 # Manifests
@@ -26,16 +22,18 @@ Actions → Select a workflow → Run workflow
 The main manifests are located in "manifests/".
 
 - "j2lte-slim.xml" — Reduced manifest currently used for CI builds where storage is limited.
-- "j2lte.xml" — Full J2 manifest.
+- "j2lte.xml" — Full J2 manifest, now pointing to local forks for frameworks/base and packages/apps/Settings.
 - "j2lte-slsi.xml" — Variant using the Samsung SLSI Exynos fork.
 
-The manifests point to the repositories used by the J2 port, including:
+The manifests point to:
 
 - Device tree
 - Universal3475 common device tree
 - Exynos3475 kernel
 - Samsung vendor tree
 - Samsung SLSI hardware components
+- Local fork of frameworks/base (One UI color accents)
+- Local fork of packages/apps/Settings (One UI blue accent)
 
 ---
 
@@ -46,14 +44,15 @@ The main build target is:
 lunch lineage_j2lte-userdebug
 mka bacon
 
-Individual modules can also be built through "los20-build-module.yml" when a full build is unnecessary.
+Individual modules can also be built through "los20-build-module.yml".
 
 ---
 
 # Current Status
 
-LineageOS 20 for the Samsung Galaxy J2 (SM-J200M / j2lte) is still under development.
+Este repo está en la rama experimental `experiment/oneui5`. Los cambios son mínimos y específicos de colores/es:
 
-The project is being built and debugged through GitHub Actions. The reduced manifest and staged workflows are used to keep the source tree within the storage limits of the CI runners.
+- `frameworks/base` → `MATYJAGUZ075/android_frameworks_base-1`, branch `lineage-20.0`
+- `packages/apps/Settings` → `MATYJAGUZ075/android_packages_apps_Settings-1`, branch `lineage-20.0`
 
-This repository is mainly for the build infrastructure; the actual device, kernel and vendor sources are kept in their respective repositories.
+No se subió aún esta rama de `j2lte-build` a GitHub. Solo se actualizaron los manifiestos localmente.

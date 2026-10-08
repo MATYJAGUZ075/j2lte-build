@@ -94,6 +94,15 @@
 #   "Guard temprano - tamano del disco del runner"; (3) WITH_DEXPREOPT vuelve
 #   a `true` (con unset de ..._BOOT_IMG_AND_SYSTEM_SERVER_ONLY), como en la
 #   versión que funcionaba.
+# FIX-037 (2026-10-08): estabilizar packaging OTA pese a deriva. El ENOSPC
+#   (zip temporal + brotli de system.new.dat) es una navaja de ~1G: el success
+#   37615011218 acabó con 76,6MB libres y los fails 37677119846/37705830237
+#   murieron con UMBRAL free 9.104/8.789MB (tareas 94.015 -> 94.018, ccache
+#   +101MB). Se agrega try_space_cleanup(): en el MISMO mka, cuando free<15GB,
+#   ninja>=97% y no hay compiladores/linkers activos, borra SOLO *.a/*.rlib de
+#   out/soong/.intermediates y out/target/product/j2lte/obj (con -mmin +2) y el
+#   dir out/target/product/j2lte/symbols. Nunca borra .so/.jar/.o/.repo ni
+#   KERNEL_OBJ. Log: LIBERADO_MB.
 #
 # IMPORTANTE / FIX-014 (INFRASTRUCTURE-BLOCKED):
 #   El runner hospedado ubuntu-24.04 (~145G disco, 4 vCPU, 16G RAM) NO alcanza
@@ -2035,6 +2044,7 @@ jobs:
             df -h /
             df -i /
             echo "procs: clang=$(pgrep -c -f clang 2>/dev/null||echo 0) cc1plus=$(pgrep -c cc1plus 2>/dev/null||echo 0) ninja=$(pgrep -c ninja 2>/dev/null||echo 0)"
+            echo "cleanup: $(test -f /tmp/space_freed.flag && echo SÍ || echo no)"
             grep -E 'Mem:|Swap:' /proc/meminfo
           }
           monitor_normal() {
@@ -2059,6 +2069,28 @@ jobs:
             echo "--- dmesg ---"
             dmesg_probe
           }
+          ninja_pct() {
+            grep -aoE '\[ *[0-9]+%+' /tmp/bacon.log 2>/dev/null | tail -1 \
+              | tr -dc '0-9' || echo 0
+          }
+          try_space_cleanup() {
+            case "$PWD" in */los20) ;; *) return 0;; esac
+            pgrep -c -f 'clang|cc1|ld\.gold|rustc' >/dev/null 2>&1 && return 0
+            pgrep -c ninja >/dev/null 2>&1 || return 0
+            local p free_mb
+            p="$(ninja_pct)"; [ "${p:-0}" -ge 97 ] || return 0
+            free_mb=$(df -B1 / | awk 'NR==2{print int($4/1048576)}')
+            [ "${free_mb:-0}" -lt $((15*1024)) ] || return 0
+            [ -f /tmp/space_freed.flag ] && return 0
+            local antes tras
+            antes=$(df -B1 / | awk 'NR==2{print int($4/1048576)}')
+            find out/soong/.intermediates out/target/product/j2lte/obj \
+              \( -name '*.a' -o -name '*.rlib' \) -mmin +2 -delete 2>/dev/null
+            rm -rf out/target/product/j2lte/symbols
+            touch /tmp/space_freed.flag
+            tras=$(df -B1 / | awk 'NR==2{print int($4/1048576)}')
+            echo "### FIX-037 LIBERADO_MB=$((tras-antes)) free=${tras} MB (ninja ${p}%) ###" | tee -a "$LOG"
+          }
           last_gasp() {
             echo "### BAJISMO free -> volcado final ###"
             df -h /
@@ -2078,6 +2110,7 @@ jobs:
                 echo "### UMBRAL ${TELEM_FREE_GB:-25}GB free=${free_mb}MB -> muestreo denso cada 5s ###" | tee -a "$LOG"
                 while :; do
                   monitor_dense | tee -a "$LOG"
+                  try_space_cleanup
                   f2=$(df -B1 / | awk 'NR==2{print $4/1048576}')
                   if [ "${f2%.*}" -lt 100 ]; then
                     last_gasp | tee -a "$LOG" 2>&1

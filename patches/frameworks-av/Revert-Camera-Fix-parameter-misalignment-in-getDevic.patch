@@ -1,0 +1,19 @@
+diff --git a/services/camera/libcameraservice/CameraService.cpp b/services/camera/libcameraservice/CameraService.cpp
+index f12498173c..4b6c63b2b1 100644
+--- a/services/camera/libcameraservice/CameraService.cpp
++++ b/services/camera/libcameraservice/CameraService.cpp
+@@ -335,9 +335,8 @@ void CameraService::filterSPerfClassCharacteristicsLocked() {
+         int facing = -1;
+         int orientation = 0;
+         String8 cameraId8(cameraId.c_str());
+-        int portraitRotation;
+-        getDeviceVersion(cameraId8, /*overrideToPortrait*/false, /*out*/&portraitRotation,
+-                /*out*/&facing, /*out*/&orientation);
++        getDeviceVersion(cameraId8, /*overrideToPortrait*/false, /*out*/&facing,
++                /*out*/&orientation);
+         if (facing == -1) {
+             ALOGE("%s: Unable to get camera device \"%s\" facing", __FUNCTION__, cameraId.c_str());
+             return;
+-- 
+2.43.0
+

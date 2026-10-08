@@ -1,0 +1,40 @@
+diff --git a/camera/Android.bp b/camera/Android.bp
+index 994df62e33..1a2d2a82af 100644
+--- a/camera/Android.bp
++++ b/camera/Android.bp
+@@ -49,6 +49,7 @@ cc_library_headers {
+ }
+ cc_library_shared {
+     name: "libcamera_client",
++    defaults: ["camera_parameter_library_defaults"],
+ 
+     aidl: {
+         export_aidl_headers: true,
+@@ -67,7 +68,6 @@ cc_library_shared {
+         // Source for camera interface parcelables, and manually-written interfaces
+         "Camera.cpp",
+         "CameraMetadata.cpp",
+-        "CameraParameters.cpp",
+         "CaptureResult.cpp",
+         "CameraParameters2.cpp",
+         "CameraSessionStats.cpp",
+@@ -137,6 +137,16 @@ cc_library_host_static {
+     ],
+ }
+ 
++cc_library_static {
++    name: "libcamera_parameters",
++
++    export_include_dirs: [
++        "include",
++    ],
++    srcs: ["CameraParameters.cpp"],
++
++}
++
+ // AIDL interface between camera clients and the camera service.
+ filegroup {
+     name: "libcamera_client_aidl",
+-- 
+2.43.0
+

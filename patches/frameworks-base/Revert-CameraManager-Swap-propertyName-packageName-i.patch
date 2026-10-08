@@ -1,0 +1,18 @@
+diff --git a/core/java/android/hardware/camera2/CameraManager.java b/core/java/android/hardware/camera2/CameraManager.java
+index 3e5fee84..6ee1c0ad 100644
+--- a/core/java/android/hardware/camera2/CameraManager.java
++++ b/core/java/android/hardware/camera2/CameraManager.java
+@@ -1190,8 +1190,8 @@ public final class CameraManager {
+             PackageManager packageManager = context.getPackageManager();
+ 
+             try {
+-                return packageManager.getProperty(PROPERTY_COMPAT_OVERRIDE_LANDSCAPE_TO_PORTRAIT,
+-                        context.getOpPackageName()).getBoolean();
++                return packageManager.getProperty(context.getOpPackageName(),
++                            PROPERTY_COMPAT_OVERRIDE_LANDSCAPE_TO_PORTRAIT).getBoolean();
+             } catch (PackageManager.NameNotFoundException e) {
+                 // No such property
+             }
+-- 
+2.43.0
+

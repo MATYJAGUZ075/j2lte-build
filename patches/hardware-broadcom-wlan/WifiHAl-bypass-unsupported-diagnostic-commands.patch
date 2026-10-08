@@ -1,0 +1,98 @@
+diff --git a/bcmdhd/wifi_hal/wifi_logger.cpp b/bcmdhd/wifi_hal/wifi_logger.cpp
+index 229dc2f..4c591c4 100755
+--- a/bcmdhd/wifi_hal/wifi_logger.cpp
++++ b/bcmdhd/wifi_hal/wifi_logger.cpp
+@@ -949,11 +949,9 @@ wifi_error wifi_get_firmware_version(wifi_interface_handle iface, char *buffer,
+         int buffer_size)
+ {
+     if (buffer && (buffer_size > 0)) {
+-        DebugCommand *cmd = new DebugCommand(iface, buffer, &buffer_size, GET_FW_VER);
+-        NULL_CHECK_RETURN(cmd, "memory allocation failure", WIFI_ERROR_OUT_OF_MEMORY);
+-        wifi_error result = (wifi_error)cmd->start();
+-        cmd->releaseRef();
+-        return result;
++        strncpy(buffer, "1.0", buffer_size - 1);
++        buffer[buffer_size - 1] = '\0';
++        return WIFI_SUCCESS;
+     } else {
+         ALOGE("FW version buffer NULL");
+         return  WIFI_ERROR_INVALID_ARGS;
+@@ -964,11 +962,9 @@ wifi_error wifi_get_firmware_version(wifi_interface_handle iface, char *buffer,
+ wifi_error wifi_get_driver_version(wifi_interface_handle iface, char *buffer, int buffer_size)
+ {
+     if (buffer && (buffer_size > 0)) {
+-        DebugCommand *cmd = new DebugCommand(iface, buffer, &buffer_size, GET_DRV_VER);
+-        NULL_CHECK_RETURN(cmd, "memory allocation failure", WIFI_ERROR_OUT_OF_MEMORY);
+-        wifi_error result = (wifi_error)cmd->start();
+-        cmd->releaseRef();
+-        return result;
++        strncpy(buffer, "1.0", buffer_size - 1);
++        buffer[buffer_size - 1] = '\0';
++        return WIFI_SUCCESS;
+     } else {
+         ALOGE("Driver version buffer NULL");
+         return  WIFI_ERROR_INVALID_ARGS;
+@@ -1949,44 +1945,14 @@ public:
+ 
+ wifi_error wifi_start_hal(wifi_interface_handle iface)
+ {
+-    wifi_handle handle = getWifiHandle(iface);
+-    ALOGV("HAL INIT start, handle = %p", handle);
+-
+-    HalInit *cmd = new HalInit(iface, HAL_START_REQUEST_ID);
+-    NULL_CHECK_RETURN(cmd, "memory allocation failure", WIFI_ERROR_OUT_OF_MEMORY);
+-    wifi_error result = wifi_register_cmd(handle, HAL_START_REQUEST_ID, cmd);
+-    if (result != WIFI_SUCCESS) {
+-        cmd->releaseRef();
+-        return result;
+-    }
+-    result = (wifi_error)cmd->start();
+-    if (result != WIFI_SUCCESS) {
+-        wifi_unregister_cmd(handle,HAL_START_REQUEST_ID);
+-        cmd->releaseRef();
+-        return result;
+-    }
+-    return result;
++    ALOGV("wifi_start_hal bypassed");
++    return WIFI_SUCCESS;
+ }
+ 
+ wifi_error wifi_hal_preInit(wifi_interface_handle iface)
+ {
+-    wifi_handle handle = getWifiHandle(iface);
+-    ALOGV("wifi_hal_preInit, handle = %p", handle);
+-
+-    HalInit *cmd = new HalInit(iface, HAL_START_REQUEST_ID);
+-    NULL_CHECK_RETURN(cmd, "memory allocation failure", WIFI_ERROR_OUT_OF_MEMORY);
+-    wifi_error result = wifi_register_cmd(handle, HAL_START_REQUEST_ID, cmd);
+-    if (result != WIFI_SUCCESS) {
+-        cmd->releaseRef();
+-        return result;
+-    }
+-    result = (wifi_error)cmd->preInit();
+-    if (result != WIFI_SUCCESS) {
+-        wifi_unregister_cmd(handle,HAL_START_REQUEST_ID);
+-        cmd->releaseRef();
+-        return result;
+-    }
+-    return result;
++    ALOGV("wifi_hal_preInit bypassed");
++    return WIFI_SUCCESS;
+ }
+ 
+ #ifdef RING_DUMP
+@@ -2036,10 +2002,7 @@ wifi_error wifi_stop_ring_dump(wifi_interface_handle iface)
+ 
+ wifi_error wifi_stop_hal(wifi_interface_handle iface)
+ {
+-    HalInit *cmd = new HalInit(iface, HAL_START_REQUEST_ID);
+-    NULL_CHECK_RETURN(cmd, "memory allocation failure", WIFI_ERROR_OUT_OF_MEMORY);
+-    cmd->cancel();
+-    cmd->releaseRef();
++    ALOGV("wifi_stop_hal bypassed");
+     return WIFI_SUCCESS;
+ }
+ 
+-- 
+2.43.0
+

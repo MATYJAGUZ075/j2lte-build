@@ -1,0 +1,25 @@
+diff --git a/camera/ndk/impl/ACameraManager.cpp b/camera/ndk/impl/ACameraManager.cpp
+index 02047ae506..23d90ccf4a 100644
+--- a/camera/ndk/impl/ACameraManager.cpp
++++ b/camera/ndk/impl/ACameraManager.cpp
+@@ -696,7 +696,7 @@ camera_status_t ACameraManager::getCameraCharacteristics(
+     CameraMetadata rawMetadata;
+     int targetSdkVersion = android_get_application_target_sdk_version();
+     binder::Status serviceRet = cs->getCameraCharacteristics(String16(cameraIdStr),
+-            targetSdkVersion, /*overrideToPortrait*/false, &rawMetadata);
++            targetSdkVersion, /*overrideToPortrait*/true, &rawMetadata);
+     if (!serviceRet.isOk()) {
+         switch(serviceRet.serviceSpecificErrorCode()) {
+             case hardware::ICameraService::ERROR_DISCONNECTED:
+@@ -748,7 +748,7 @@ ACameraManager::openCamera(
+     binder::Status serviceRet = cs->connectDevice(
+             callbacks, String16(cameraId), String16(""), {},
+             hardware::ICameraService::USE_CALLING_UID, /*oomScoreOffset*/0,
+-            targetSdkVersion, /*overrideToPortrait*/false, /*out*/&deviceRemote);
++            targetSdkVersion, /*overrideToPortrait*/true, /*out*/&deviceRemote);
+ 
+     if (!serviceRet.isOk()) {
+         ALOGE("%s: connect camera device failed: %s", __FUNCTION__, serviceRet.toString8().string());
+-- 
+2.43.0
+

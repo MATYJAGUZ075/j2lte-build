@@ -1,0 +1,16 @@
+diff --git a/camera/include/camera/CameraParameters2.h b/camera/include/camera/CameraParameters2.h
+index f691cd6ea0..5fae079376 100644
+--- a/camera/include/camera/CameraParameters2.h
++++ b/camera/include/camera/CameraParameters2.h
+@@ -19,7 +19,7 @@
+ 
+ #include <utils/Vector.h>
+ #include <utils/String8.h>
+-#include "CameraParameters.h"
++#include <camera/CameraParameters.h>
+ 
+ namespace android {
+ 
+-- 
+2.43.0
+

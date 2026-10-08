@@ -1,0 +1,15 @@
+diff --git a/wifi/1.0-legacy/hidl_struct_util.cpp b/wifi/1.0-legacy/hidl_struct_util.cpp
+index d6cf68e..d05a89f 100644
+--- a/wifi/1.0-legacy/hidl_struct_util.cpp
++++ b/wifi/1.0-legacy/hidl_struct_util.cpp
+@@ -2300,6 +2300,7 @@ WifiChannelWidthInMhz convertLegacyWifiChannelWidthToHidl(
+             return WifiChannelWidthInMhz::WIDTH_INVALID;
+     };
+     CHECK(false) << "Unknown legacy type: " << type;
++     return WifiChannelWidthInMhz::WIDTH_INVALID;
+ }
+ 
+ legacy_hal::wifi_rtt_preamble convertHidlRttPreambleToLegacy(RttPreamble type) {
+-- 
+2.43.0
+

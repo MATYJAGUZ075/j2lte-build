@@ -1,0 +1,35 @@
+diff --git a/services/camera/libcameraservice/common/CameraProviderManager.cpp b/services/camera/libcameraservice/common/CameraProviderManager.cpp
+index b617cdca75..a929a51a1b 100644
+--- a/services/camera/libcameraservice/common/CameraProviderManager.cpp
++++ b/services/camera/libcameraservice/common/CameraProviderManager.cpp
+@@ -2042,7 +2042,7 @@ status_t CameraProviderManager::ProviderInfo::dump(int fd, const Vector<String16
+         }
+         CameraMetadata info2;
+         res = device->getCameraCharacteristics(true /*overrideForPerfClass*/, &info2,
+-                /*overrideToPortrait*/false);
++                /*overrideToPortrait*/true);
+         if (res == INVALID_OPERATION) {
+             dprintf(fd, "  API2 not directly supported\n");
+         } else if (res != OK) {
+@@ -2398,8 +2398,8 @@ status_t CameraProviderManager::ProviderInfo::DeviceInfo3::getCameraCharacterist
+     if (overrideToPortrait) {
+         const auto &lensFacingEntry = characteristics->find(ANDROID_LENS_FACING);
+         const auto &sensorOrientationEntry = characteristics->find(ANDROID_SENSOR_ORIENTATION);
+-        uint8_t lensFacing = lensFacingEntry.data.u8[0];
+         if (lensFacingEntry.count > 0 && sensorOrientationEntry.count > 0) {
++            uint8_t lensFacing = lensFacingEntry.data.u8[0];
+             int32_t sensorOrientation = sensorOrientationEntry.data.i32[0];
+             int32_t newSensorOrientation = sensorOrientation;
+ 
+@@ -2420,8 +2420,6 @@ status_t CameraProviderManager::ProviderInfo::DeviceInfo3::getCameraCharacterist
+         }
+ 
+         if (characteristics->exists(ANDROID_INFO_DEVICE_STATE_ORIENTATIONS)) {
+-            ALOGV("%s: Erasing ANDROID_INFO_DEVICE_STATE_ORIENTATIONS for lens facing %d",
+-                    __FUNCTION__, lensFacing);
+             characteristics->erase(ANDROID_INFO_DEVICE_STATE_ORIENTATIONS);
+         }
+     }
+-- 
+2.43.0
+

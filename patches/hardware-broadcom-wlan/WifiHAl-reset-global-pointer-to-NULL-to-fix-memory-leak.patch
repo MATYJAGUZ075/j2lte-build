@@ -1,0 +1,77 @@
+diff --git a/bcmdhd/wifi_hal/wifi_hal.cpp b/bcmdhd/wifi_hal/wifi_hal.cpp
+index 9a5394c..6f3069d 100755
+--- a/bcmdhd/wifi_hal/wifi_hal.cpp
++++ b/bcmdhd/wifi_hal/wifi_hal.cpp
+@@ -408,6 +408,7 @@ wifi_error wifi_pre_initialize(void)
+     if (socketpair(AF_UNIX, SOCK_STREAM, 0, halInfo->cleanup_socks) == -1) {
+         ALOGE("Could not create cleanup sockets");
+         free(halInfo);
++        halInfo = NULL;
+         return WIFI_ERROR_UNKNOWN;
+     }
+ 
+@@ -415,6 +416,7 @@ wifi_error wifi_pre_initialize(void)
+     if (cmd_sock == NULL) {
+         ALOGE("Could not create handle");
+         free(halInfo);
++        halInfo = NULL;
+         return WIFI_ERROR_UNKNOWN;
+     }
+ 
+@@ -430,6 +432,7 @@ wifi_error wifi_pre_initialize(void)
+         ALOGE("Could not create handle");
+         nl_socket_free(cmd_sock);
+         free(halInfo);
++        halInfo = NULL;
+         return WIFI_ERROR_UNKNOWN;
+     }
+ 
+@@ -447,6 +450,7 @@ wifi_error wifi_pre_initialize(void)
+         nl_socket_free(cmd_sock);
+         nl_socket_free(event_sock);
+         free(halInfo);
++        halInfo = NULL;
+         return WIFI_ERROR_UNKNOWN;
+     }
+ 
+@@ -473,6 +477,7 @@ wifi_error wifi_pre_initialize(void)
+         nl_socket_free(cmd_sock);
+         nl_socket_free(event_sock);
+         free(halInfo);
++        halInfo = NULL;
+         return WIFI_ERROR_UNKNOWN;
+     }
+ 
+@@ -487,18 +492,19 @@ wifi_error wifi_pre_initialize(void)
+         nl_socket_free(event_sock);
+         pthread_mutex_destroy(&halInfo->cb_lock);
+         free(halInfo);
++        halInfo = NULL;
+         return WIFI_ERROR_NOT_AVAILABLE;
+     }
+ 
+     if ((wifi_add_membership(handle, "scan") < 0) ||
+             (wifi_add_membership(handle, "mlme")  < 0) ||
+-            (wifi_add_membership(handle, "regulatory") < 0) ||
+-            (wifi_add_membership(handle, "vendor") < 0)) {
++            (wifi_add_membership(handle, "regulatory") < 0)) {
+         ALOGE("Add membership failed");
+         nl_socket_free(cmd_sock);
+         nl_socket_free(event_sock);
+         pthread_mutex_destroy(&halInfo->cb_lock);
+         free(halInfo);
++        halInfo = NULL;
+         return WIFI_ERROR_NOT_AVAILABLE;
+     }
+ 
+@@ -625,6 +631,7 @@ static void internal_cleaned_up_handler(wifi_handle handle)
+     DestroyResponseLock();
+     pthread_mutex_destroy(&info->cb_lock);
+     free(info);
++    halInfo = NULL;
+ 
+     ALOGI("Internal cleanup completed");
+ }
+-- 
+2.43.0
+

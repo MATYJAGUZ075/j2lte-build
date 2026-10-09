@@ -6,7 +6,7 @@
 - Sin traza kernel (pstore/last_kmsg vacíos, INFORM3 ilegible, snapshot pisado por TWRP, sin UART).
 - Boot.img válido e idéntico a stock en estructura. DTB `_00` primero (revertido; `_04` probado sin cambio).
 - fbcon compilado pero sin texto: hang anterior al registro de fb0/DECON.
-- Referencia que bootea: `~/reference_universal3475_l19` (`lineage-19.1_ext4-backport`, `3192493d`, kernel 3.10.108) + device LOS19 (`~/reference_j2lte_l19`, `~/reference_universal3475-common_l19`).
+- Referencia que bootea: `~/reference_universal3475` (rama ext4-backport, `3192493d`, kernel 3.10.108) + device de referencia (`~/reference_j2lte`, `~/reference_universal3475-common`).
 
 ## Hipótesis DESCARTADAS (no re-investigar sin evidencia nueva)
 1. **DTB order** — `_04` primero probado físicamente, mismo síntoma. Revertido a `_00→_04` (= ref). FIX-0001 DESCARTADO.
@@ -58,8 +58,8 @@ CONCLUSIÓN DE RONDA: con PC+J2+USB y sin modificar nada, la evidencia del kerne
 ## Ronda — Investigación externa/histórica (web + comunidad)
 Fuentes revisadas: XDA (J2-17.1 cyanogen, J1-18.1/19.1 SluckWare: binder32→binder64 con boot siempre pasando logo), Codeberg kOtusin (3.10 arranca Android 12 sin reescribir kernel), 7420_patches LOS20 (fallos tardíos userspace, no logo), S21-Ultra LLVM=1 (**caso espejo**: logo estático + sin adb + TWRP OK + sensible a toolchain), Magisk boot.img (fallo pre-USB por empaquetado), ClangBuiltLinux (3.10+Clang sin LLVM=1 = binario que compila pero no arranca), MCT/DECON/Trustonic/binder priors.
 Conclusión: lo más parecido al caso (logo+sin USB+sin reboot+TWRP OK+sensible a kernel) es **toolchain/imagen (H10)**, DT j2 (H13/H14) y empaquetado (H11); binder/userspace (H16/H7) fallan TARDE (animación/adb/reboot), no encajan.
-## Ronda — Comparación kernels históricos (ref: 17.1 vs 19.1_ext4-backport)
-NO existe rama lineage-18.1. Delta 17.1→19.1 = 410 commits: ~403 ext4/jbd2 + 7 deps (vfs, buffer, KernelSU-32628). **defconfig j2 idéntico** (md5), **DT j2 idéntico**, cero cambios boot/display/toolchain/binder/ion/mali/SMP/timer. El backport (mount-checks estrictos, journal-checksum, reservation API, `panic` en abort) endurece montaje, no explica logo estático. Binder-64 y ZRAM+LZ4 viven en la línea 17.1, previos al fork.
+## Ronda — Comparación kernels históricos (ref: rama base vs ext4-backport)
+Delta base→backport = 410 commits: ~403 ext4/jbd2 + 7 deps (vfs, buffer, KernelSU-32628). **defconfig j2 idéntico** (md5), **DT j2 idéntico**, cero cambios boot/display/toolchain/binder/ion/mali/SMP/timer. El backport (mount-checks estrictos, journal-checksum, reservation API, `panic` en abort) endurece montaje, no explica logo estático. Binder-64 y ZRAM+LZ4 viven en la rama base, previos al fork.
 ## Ronda — Binario/boot (artefactos existentes, solo pipes)
 Stock: sin DTB anexado válido, gzip ramdisk 49 entradas (init Samsung), `SYSMAGIC000K`, second en 0x10f00000. Build 1: header idéntico salvo `name` vacío/second ausente/cmdline; kernel +20.6% con **5 DTB válidos verificados** (totalsize/ver 17); ramdisk XZ 13 entradas (first-stage Lineage); **decompressor stub distinto sin banner "Uncompressing Linux"** (toolchain distinta); sin IKCONFIG/Linux-version en crudo (comprimido).
 ## Ronda — Toolchain

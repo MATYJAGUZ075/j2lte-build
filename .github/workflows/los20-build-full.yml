@@ -2184,23 +2184,35 @@ jobs:
         if: ${{ always() && inputs.ccache == 'activado' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REF: refs/heads/${{ github.ref_name }}
         run: |
+          set -e
           NS="ccache-j2lte-full-${{ inputs.kernel_toolchain }}"
           NEW_KEY="${NS}-${{ github.run_id }}"
-          # SEGURIDAD: solo limpiar si la caché nueva se guardó de verdad.
-          # Si el save falló (p.ej. /home/runner/.ccache ausente) NEW_KEY no
-          # existe y NO se borra nada. Antes se borraba la única caché que
-          # hubiese y se perdía todo el ccache (esto borró la caché de full).
-          if [ "$(gh cache list --key "$NEW_KEY" --json key --jq 'length' 2>/dev/null || echo 0)" != "1" ]; then
-            echo "::warning::la caché nueva no se guardó; no se borra ninguna caché"
+          # SEGURIDAD: solo limpiar si la caché nueva se guardó DE VERDAD, con
+          # reintentos por eventual-consistency de la API. Si el save falló
+          # (p.ej. /home/runner/.ccache ausente) NEW_KEY no existe y NO se
+          # borra nada. Antes esto borraba la única caché que hubiese y se
+          # perdía el ccache completo.
+          FOUND=""
+          for i in 1 2 3 4 5; do
+            N=$(gh cache list --ref "$REF" --key "$NEW_KEY" --json id --jq 'length' 2>/dev/null || echo 0)
+            if [ "$N" = "1" ]; then FOUND=1; break; fi
+            sleep 5
+          done
+          if [ -z "$FOUND" ]; then
+            echo "::warning::la caché nueva no apareció tras reintentos; no se borra ninguna caché"
             exit 0
           fi
-          # Borra solo las del MISMO namespace de full, conservando la nueva.
-          # Ya no toca el namespace de stages ni el legacy ccache-Linux.
-          gh cache list --key "${NS}-" --limit 100 --json id,key --jq '.[] | "\(.id) \(.key)"' 2>/dev/null | while read -r id key; do
+          # IMPORTANTE: filtrar SIEMPRE por --ref. Las cachés de GitHub están
+          # scopeadas por branch; un build en una branch secundaria NO debe
+          # borrar la ccache de main ni al revés. (Esto borró la ccache de
+          # main desde experiment/oneui5 y las builds posteriores no hicieron
+          # cache restore -> builds de ~6h.)
+          gh cache list --ref "$REF" --key "${NS}-" --limit 100 --json id,key --jq '.[] | "\(.id) \(.key)"' 2>/dev/null | while read -r id key; do
             if [ "$key" != "$NEW_KEY" ]; then
               if gh cache delete "$id" >/dev/null 2>&1; then
-                echo "caché vieja borrada: $key"
+                echo "caché vieja borrada: $key (${REF})"
               else
                 echo "::warning::no se pudo borrar la caché $key (se ignora)"
               fi

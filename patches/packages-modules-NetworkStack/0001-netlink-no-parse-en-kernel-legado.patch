@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MATYJAGUZ075 <155926881+MATYJAGUZ075@users.noreply.github.com>
+Date: Wed, 15 Oct 2026 00:00:00 -0300
+Subject: [PATCH] NetworkStack: no parsear netlink events en kernel legado
+
+IpClient en A13 parsea los eventos de netlink (RTMGRP_LINK, RTMGRP_IPV4_IFADDR,
+RTMGRP_IPV6_IFADDR, RTMGRP_IPV6_ROUTE) para mantener el estado de la interfaz. Ese
+parseo se activa por defecto desde Android 12 (SdkLevel >= T).
+
+El kernel de este device (3.10) no emite esos mensajes con el formato que espera el
+parser, y el resultado medido en el telefono es que IpClient rechaza el estado real
+de la interfaz y se queda en bucle:
+
+    E IpClient.wlan0: [NetlinkTracker/wlan0] ERROR unparsable netlink msg:
+       500000001400000000000000E4EFFFFF021880000E00000008000100C0A8002008000200
+       C0A8002008000400C0A800FF0A000300776C616E30
+
+Decodificado, el mensaje trae los datos correctos (C0A80020 = 192.168.0.32,
+C0A800FF = 255.255.255.0, 776C616E30 = "wlan0"), o sea que la interfaz SI tiene
+IP asignada por DHCP; lo que falla es el parseo. El sintoma del usuario es que la
+conexion wifi muere al buscar la IP.
+
+Con el parseo desactivado IpClient deja de suscribirse a esos grupos de netlink y
+usa el estado de la interfaz, que en este kernel es correcto. Es el mismo criterio
+que usan otros HALs de este port cuando el kernel no soporta una funcionalidad.
+
+Se quita tambien el import de isAtLeastT(), que queda sin uso en el archivo.
+
+---
+ src/android/net/ip/IpClientLinkObserver.java | 7 ++-------
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+--- a/src/android/net/ip/IpClientLinkObserver.java
++++ b/src/android/net/ip/IpClientLinkObserver.java
+@@ -21,7 +21,6 @@ import static android.system.OsConstants.AF_INET6;
+ import static android.system.OsConstants.AF_UNSPEC;
+ import static android.system.OsConstants.IFF_LOOPBACK;
+ 
+-import static com.android.modules.utils.build.SdkLevel.isAtLeastT;
+ import static com.android.net.module.util.NetworkStackConstants.ICMPV6_ROUTER_ADVERTISEMENT;
+ import static com.android.net.module.util.netlink.NetlinkConstants.IFF_LOWER_UP;
+ import static com.android.net.module.util.netlink.NetlinkConstants.RTM_F_CLONED;
+@@ -216,7 +215,7 @@ public class IpClientLinkObserver implements NetworkObserver {
+     }
+ 
+     private boolean isNetlinkEventParsingEnabled() {
+-        return mDependencies.isFeatureEnabled(mContext, IPCLIENT_PARSE_NETLINK_EVENTS_VERSION,
+-                isAtLeastT() /* default value */);
++        return mDependencies.isFeatureEnabled(mContext, IPCLIENT_PARSE_NETLINK_EVENTS_VERSION,
++                false /* default value */);
+     }
+ 
+     private int getSocketReceiveBufferSize() {
+-- 
+2.43.0

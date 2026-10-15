@@ -1,0 +1,72 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MATYJAGUZ075 <155926881+MATYJAGUZ075@users.noreply.github.com>
+Date: Wed, 15 Oct 2026 00:00:00 -0300
+Subject: [PATCH] netd: crear la red fisica si el framework no la creo
+
+El framework asigna su propio netId y lo pasa directo a netd para registrar la
+interfaz, pero nunca pide que la red fisica exista. netd solo crea al arrancar
+LOCAL, DUMMY y UNREACHABLE, de modo que cualquier red real llega a
+addInterfaceToNetwork() con un netId que no esta en mNetworks y se rechaza.
+
+Medido en el telefono con este arbol (run 37876287662):
+
+  E Netd: no such netId 104
+  W ConnectivityService: Exception adding interface:
+      ServiceSpecificException: Machine is not on the network (code 64)
+  W ConnectivityService: Exception in networkAddRouteParcel for gateway:
+      ServiceSpecificException: Machine is not on the network (code 64)
+
+y el estado interno del controlador:
+
+  $ dumpsys netd
+    Networks:
+      51 DUMMY dummy0
+      52 UNREACHABLE
+      99 LOCAL
+
+La asociacion wifi y el DHCP funcionan (wlan0 queda con 192.168.0.32/24 y el
+gateway responde por ping), pero sin la red registrada netd rechaza tambien la
+ruta por defecto, asi que el telefono se queda sin internet:
+
+  $ ip route show table all | grep default
+  unreachable default dev lo proto kernel metric 4294967295 error -101
+  $ ping 8.8.8.8
+  connect: Network is unreachable
+
+El rango de netId no es el problema: MIN_NET_ID=100 y MAX_NET_ID=65535, asi que
+104 esta dentro del rango valido; lo que falta es la entrada en mNetworks.
+
+En lugar de devolver ENONET se crea la red fisica aqui, que es el punto donde el
+controller ya tiene el lock tomado. Se usa PERMISSION_SYSTEM porque es lo que
+corresponde a una red de sistema y no deja la red con menos permisos que la que
+tendria si el framework la hubiera creado. Si la creacion falla se devuelve su
+error, para no enmascarar un fallo real.
+
+---
+ server/NetworkController.cpp | 13 +++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+--- a/server/NetworkController.cpp
++++ b/server/NetworkController.cpp
+@@ -520,9 +520,20 @@ int NetworkController::addInterfaceToNetwork(unsigned netId, const char* interface) {
+     ScopedWLock lock(mRWLock);
+ 
+     if (!isValidNetworkLocked(netId)) {
+-        ALOGE("no such netId %u", netId);
+-        return -ENONET;
++        // El framework asigna el netId pero no pide crear la red fisica, asi
++        // que la interfaz llega aqui sin existir en mNetworks. Antes esto
++        // devolvia ENONET y el framework terminaba con "Machine is not on the
++        // network (code 64)", dejando al telefono con IP asignada pero sin ruta
++        // por defecto. Crearla en este punto: el lock ya esta tomado y es el
++        // unico sitio donde se puede sin tocar el framework.
++        // Medido: "no such netId 104"; dumpsys netd solo lista DUMMY,
++        // UNREACHABLE y LOCAL.
++        if (int ret = createPhysicalNetworkLocked(netId, PERMISSION_SYSTEM); ret != 0) {
++            ALOGE("failed to create physical network %u on demand: %d", netId, -ret);
++            return ret;
++        }
++        ALOGI("created physical network %u on demand", netId);
+     }
+ 
+     unsigned existingNetId = getNetworkForInterfaceLocked(interface);
+     if (existingNetId != NETID_UNSET && existingNetId != netId) {

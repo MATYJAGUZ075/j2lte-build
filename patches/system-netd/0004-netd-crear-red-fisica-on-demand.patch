@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: MATYJAGUZ075 <155926881+MATYJAGUZ075@users.noreply.github.com>
-Date: Wed, 15 Oct 2026 00:00:00 -0300
+From: MATYJAGUZ075 <155926881+MATYJAGUZ075@users.noreply.com>
+Date: Thu, 16 Oct 2026 00:00:00 -0300
 Subject: [PATCH] netd: crear la red fisica si el framework no la creo
 
 El framework asigna su propio netId y lo pasa directo a netd para registrar la
@@ -37,17 +37,29 @@ El rango de netId no es el problema: MIN_NET_ID=100 y MAX_NET_ID=65535, asi que
 104 esta dentro del rango valido; lo que falta es la entrada en mNetworks.
 
 En lugar de devolver ENONET se crea la red fisica aqui, que es el punto donde el
-controller ya tiene el lock tomado. Se usa PERMISSION_SYSTEM porque es lo que
-corresponde a una red de sistema y no deja la red con menos permisos que la que
-tendria si el framework la hubiera creado. Si la creacion falla se devuelve su
-error, para no enmascarar un fallo real.
+controlador ya tiene el lock tomado. Se usa PERMISSION_NONE porque es el
+permiso que el propio framework emplea para la red fisica por defecto del
+sistema: NetdNativeService::convertPermission() traduce a PERMISSION_NONE el
+0 que llega en el NativeNetworkConfig, y checkUserNetworkAccessLocked()
+documenta que "the permission of the system default network is
+PERMISSION_NONE(0x0)".
+
+Usar PERMISSION_SYSTEM aqui rompia el registro por completo: la red quedaba
+con un permiso que el framework no habia pedido, de modo que el create
+posterior del framework la rechazaba con EEXIST y el alta se abortaba antes
+de llegar a setDefaultNetwork(). Con PERMISSION_NONE el create redundante se
+reconoce y el registro continua.
+
+Si la creacion falla se devuelve su error, para no enmascarar un fallo real.
 
 ---
- server/NetworkController.cpp | 13 +++++++++++++-
+ server/NetworkController.cpp | 13 ++++++++++++++-
  1 file changed, 12 insertions(+), 1 deletion(-)
+diff --git a/server/NetworkController.cpp b/server/NetworkController.cpp
+index 5f0a40c..3760dfb 100644
 --- a/server/NetworkController.cpp
 +++ b/server/NetworkController.cpp
-@@ -520,9 +520,20 @@ int NetworkController::addInterfaceToNetwork(unsigned netId, const char* interface) {
+@@ -517,8 +517,29 @@ int NetworkController::addInterfaceToNetwork(unsigned netId, const char* interfa
      ScopedWLock lock(mRWLock);
  
      if (!isValidNetworkLocked(netId)) {
@@ -61,7 +73,17 @@ error, para no enmascarar un fallo real.
 +        // unico sitio donde se puede sin tocar el framework.
 +        // Medido: "no such netId 104"; dumpsys netd solo lista DUMMY,
 +        // UNREACHABLE y LOCAL.
-+        if (int ret = createPhysicalNetworkLocked(netId, PERMISSION_SYSTEM); ret != 0) {
++        //
++        // El permiso tiene que ser PERMISSION_NONE y no PERMISSION_SYSTEM: es
++        // el que el propio framework usa para la red fisica por defecto del
++        // sistema (NetdNativeService::convertPermission() traduce a
++        // PERMISSION_NONE el 0 que manda el framework, y
++        // checkUserNetworkAccessLocked() documenta que "the permission of the
++        // system default network is PERMISSION_NONE(0x0)"). Con un permiso
++        // distinto, el create de red fisica del framework no reconoce la red
++        // que se creo aqui y lo rechaza con EEXIST, con lo que el registro se
++        // aborta antes de llegar a setDefaultNetwork().
++        if (int ret = createPhysicalNetworkLocked(netId, PERMISSION_NONE); ret != 0) {
 +            ALOGE("failed to create physical network %u on demand: %d", netId, -ret);
 +            return ret;
 +        }
@@ -69,4 +91,3 @@ error, para no enmascarar un fallo real.
      }
  
      unsigned existingNetId = getNetworkForInterfaceLocked(interface);
-     if (existingNetId != NETID_UNSET && existingNetId != netId) {

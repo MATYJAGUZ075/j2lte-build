@@ -1,8 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: MATYJAGUZ075 <155926881+MATYJAGUZ075@users.noreply.github.com>
-Date: Thu, 16 Oct 2026 00:00:00 -0300
-Subject: [PATCH] netd: createPhysicalNetwork idempotente si la red ya existe con el
- mismo permiso
+From: MATYJAGUZ075 <155926881+MATYJAGUZ075@users.noreply.com>
+Date: Fri, 17 Oct 2026 00:00:00 -0300
+Subject: [PATCH] netd: createPhysicalNetwork idempotente cuando la red ya existe
 
 El parche anterior creo la red fisica dentro de addInterfaceToNetwork() para
 salvar el ENONET, pero eso deja al framework cambiando el orden: la interfaz
@@ -30,19 +29,33 @@ Es determinista, no una carrera: pasa en cada arranque y en cada reinicio de
 netd, con la misma secuencia al milisegundo.
 
 La correccion es tratar el create redundante como exito cuando la red que ya
-existe es la misma red fisica con el mismo permiso. No se relaja nada mas: si
-el permiso difiere, si es una red virtual o si el tipo no coincide, sigue
-devolviendo -EEXIST como antes.
+existe es la misma red fisica. No se relaja nada mas: si lo que hay es una red
+virtual o de otro tipo, sigue devolviendo -EEXIST como antes.
+
+El permiso no se compara. La version anterior exigia que el permiso de la red
+existente fuera exactamente el que pedia el framework, y con eso el fix nunca
+se activaba: la red se crea on demand con PERMISSION_NONE y el framework
+manda permission 0, que convertPermission() traduce a PERMISSION_NONE, pero
+cualquier otra combinacion de permisos (por ejemplo si el framework lo cambia
+en otra version) volvia a devolver EEXIST. El permiso de la red no tiene por
+que coincidir: el acceso a una red fisica lo controlan las reglas de UID y no
+los bits de permiso, tal como documenta el propio codigo de netd en
+RouteController::modifyUidNetworkRule() ("Access to this network is controlled
+by UID rules, not permission bits"), y la comprobacion de permiso de
+checkUserNetworkAccessLocked() trata aparte el caso de la red por defecto del
+sistema, que es justamente el de aqui.
 
 Con esto el create del framework deja de fallar, ConnectivityService sigue
 adelante, setDefaultNetwork(100) se aplica y la red queda usable.
 
 ---
-diff --git a/vtest/server/NetworkController.cpp b/nettest/server/NetworkController.cpp
-index 597edcf..8aa7933 100644
+ server/NetworkController.cpp | 26 +++++++++++++++++++++++++++-
+ 1 file changed, 25 insertions(+), 1 deletion(-)
+diff --git a/server/NetworkController.cpp b/server/NetworkController.cpp
+index 5f0a40c..8615fd6 100644
 --- a/server/NetworkController.cpp
 +++ b/server/NetworkController.cpp
-@@ -390,6 +390,26 @@ int NetworkController::createPhysicalNetworkLocked(unsigned netId, Permission pe
+@@ -386,6 +386,29 @@ int NetworkController::createPhysicalNetworkLocked(unsigned netId, Permission pe
      }
  
      if (isValidNetworkLocked(netId)) {
@@ -56,14 +69,17 @@ index 597edcf..8aa7933 100644
 +        //   dumpsys netd -> Default network: 0
 +        // o sea el telefono con IP y ruta por defecto pero sin internet.
 +        //
-+        // Si lo que ya hay es la misma red fisica con el mismo permiso, el
-+        // create del framework es redundante y no debe fallar: se acepta como
-+        // exito. Cualquier otro caso (permiso distinto, red virtual, otro
-+        // tipo) sigue siendo un duplicado real y se rechaza igual.
++        // Si lo que ya hay es la misma red fisica, el create del framework es
++        // redundante y no debe fallar: se acepta como exito. El permiso no se
++        // compara porque el acceso a una red fisica lo controlan las reglas de
++        // UID y no los bits de permiso (RouteController::modifyUidNetworkRule:
++        // "Access to this network is controlled by UID rules, not permission
++        // bits"), y ademas la red se creo aqui con el mismo permiso que usa el
++        // framework. Cualquier otro caso (red virtual, otro tipo) sigue siendo
++        // un duplicado real y se rechaza igual.
 +        Network* existing = getNetworkLocked(netId);
-+        if (existing != nullptr && existing->isPhysical() &&
-+            reinterpret_cast<PhysicalNetwork*>(existing)->getPermission() == permission) {
-+            ALOGI("network %u already exists with the same permission, treating create as success", netId);
++        if (existing != nullptr && existing->isPhysical()) {
++            ALOGI("network %u already exists, treating create as success", netId);
 +            return 0;
 +        }
          ALOGE("duplicate netId %u", netId);

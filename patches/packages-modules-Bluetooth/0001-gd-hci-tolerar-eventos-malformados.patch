@@ -1,0 +1,99 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MATYJAGUZ075 <155926881+MATYJAGUZ075@users.noreply.com>
+Date: Sat, 19 Oct 2026 00:00:00 -0300
+Subject: [PATCH] gd/hci: tolerar eventos HCI malformados sin abortar
+
+El firmware legacy del BCM43438 manda eventos HCI con opcodes que el stack de
+A13 no espera, y el stack GD los trata con ASSERT/ASSERT_LOG, que en este
+codigo usan LOG_ALWAYS_FATAL: el proceso com.android.bluetooth aborta y el
+telefono se queda sin bluetooth.
+
+Medido en el telefono con este arbol:
+
+  Abort message: 'assertion waiting_command_ == op_code failed:
+  Waiting for 0xc03 (RESET), got 0xfc6d (Unknown OpCode: 64621)'
+
+Y en el mismo arranque, con el stack vivo pero con respuestas HCI
+incompletas:
+
+  W btm_acl : change_connection_packet_types: Unable to include remote
+              supported packet types as read feature incomplete
+  W btm_acl : BTM_ReadRemoteVersion: Remote version information is invalid
+  I bt_gd   : on_role_change: Role change for 41:42:e2:88:4e:5a with no
+              matching connection (new role: CENTRAL)
+  I bt_gd   : drop: Dropping event MAX_SLOTS_CHANGE
+
+Hay tres puntos de fallo en handle_command_response:
+
+1. ASSERT(response_view.IsValid()) abortaba cuando TResponse::Create no
+   podia parsear el evento.
+2. ASSERT_LOG(!command_queue_.empty()) abortaba con la cola de comandos
+   vacia.
+3. ASSERT_LOG(waiting_command_ == op_code) abortaba con un opcode distinto.
+
+Los tres se degradan a LOG_WARN con return temprano: el evento se descarga y
+no se invoca el callback con una respuesta basura. El resto del stack sigue
+igual, y el firmware legacy del BCM43438 necesita esto para funcionar con el
+stack de A13.
+
+Nota: este archivo se aplica sobre packages/modules/Bluetooth, que es donde
+vive el codigo del controlador GD (system/gd/hci/hci_layer.cc). El build lo
+resuelve solo: el directorio del parche se convierte en la ruta del repo
+trocando guiones por barras.
+
+---
+ system/gd/hci/hci_layer.cc | 31 ++++++++++++++++++++++++++-----
+ 1 file changed, 26 insertions(+), 5 deletions(-)
+diff --git a/system/gd/hci/hci_layer.cc b/system/gd/hci/hci_layer.cc
+index 9c23529..4e341ba 100644
+--- a/system/gd/hci/hci_layer.cc
++++ b/system/gd/hci/hci_layer.cc
+@@ -165,7 +165,14 @@ struct HciLayer::impl {
+   template <typename TResponse>
+   void handle_command_response(EventView event, std::string logging_id) {
+     TResponse response_view = TResponse::Create(event);
+-    ASSERT(response_view.IsValid());
++    if (!response_view.IsValid()) {
++      // El firmware legacy del BCM43438 manda eventos HCI malformados que
++      // TResponse::Create no puede parsear. ASSERT() usa LOG_ALWAYS_FATAL y
++      // abortaba el proceso, dejando el telefono sin bluetooth. Se degrada a
++      // warning y el evento se descarta.
++      LOG_WARN("Invalid %s event, discarding", logging_id.c_str());
++      return;
++    }
+     command_credits_ = response_view.GetNumHciCommandPackets();
+     OpCode op_code = response_view.GetCommandOpCode();
+     if (op_code == OpCode::NONE) {
+@@ -174,14 +181,28 @@ struct HciLayer::impl {
+     }
+     bool is_status = logging_id == "status";
+ 
+-    ASSERT_LOG(!command_queue_.empty(), "Unexpected %s event with OpCode 0x%02hx (%s)", logging_id.c_str(), op_code,
+-               OpCodeText(op_code).c_str());
++    if (command_queue_.empty()) {
++      // ASSERT_LOG() usa LOG_ALWAYS_FATAL: con la cola de comandos vacia
++      // abortaba el proceso. Se degrada a warning y el evento se descarta.
++      LOG_WARN("Unexpected %s event with no command queued", logging_id.c_str());
++      return;
++    }
+     if (waiting_command_ == OpCode::CONTROLLER_DEBUG_INFO && op_code != OpCode::CONTROLLER_DEBUG_INFO) {
+       LOG_ERROR("Discarding event that came after timeout 0x%02hx (%s)", op_code, OpCodeText(op_code).c_str());
+       return;
+     }
+-    ASSERT_LOG(waiting_command_ == op_code, "Waiting for 0x%02hx (%s), got 0x%02hx (%s)", waiting_command_,
+-               OpCodeText(waiting_command_).c_str(), op_code, OpCodeText(op_code).c_str());
++    if (waiting_command_ != op_code) {
++      // El firmware legacy del BCM43438 manda eventos HCI con opcodes que el
++      // stack de A13 no espera. Medido en el telefono:
++      //   Abort message: 'assertion waiting_command_ == op_code failed:
++      //   Waiting for 0xc03 (RESET), got 0xfc6d (Unknown OpCode: 64621)'
++      // ASSERT_LOG() abortaba el proceso y el bluetooth quedaba muerto tras
++      // conectar auriculares. Se degrada a warning y el evento se descarta sin
++      // invocar el callback con la respuesta.
++      LOG_WARN("Waiting for %s, got %s", OpCodeText(waiting_command_).c_str(),
++               OpCodeText(op_code).c_str());
++      return;
++    }
+ 
+     bool is_vendor_specific = static_cast<int>(op_code) & (0x3f << 10);
+     CommandStatusView status_view = CommandStatusView::Create(event);

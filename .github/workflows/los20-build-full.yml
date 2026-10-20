@@ -1743,7 +1743,7 @@ jobs:
           fi
           grep -nE "^#? ?CONFIG_FRAMEBUFFER_CONSOLE" "$CFG"
           echo "OK: fbcon apagado en la defconfig diag (test register_framebuffer)"
-      - name: 'Fix USB: CONFIG_USB_FUNCTIONFS=y (adbd A13 /dev/usb-ffs/adb)'
+      - name: 'Fix USB: g_android debe ganar el UDC (CONFIG_USB_FUNCTIONFS=n)'
         if: ${{ inputs.apply_fixes }}
         working-directory: /home/runner/los20
         run: |
@@ -1757,23 +1757,59 @@ jobs:
             fi
           done
           test -n "$CFG" || { echo "::error::defconfig no encontrado (lineage_j2lte_defconfig/lineage-j2lte_defconfig) en $KDIR"; exit 2; }
+          # CONFIG_USB_FUNCTIONFS compila g_ffs.o, que es un driver de UDC
+          # competidor del g_android.o de Samsung (CONFIG_USB_G_ANDROID +
+          # CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE). Los dos compiten por el UDC
+          # 13580000.usb y solo uno puede engancharse.
+          #
+          # Gana g_ffs, y entonces NO existe /sys/class/android_usb, que es la
+          # unica interfaz por la que se puede cambiar la funcion USB. Medido:
+          #
+          #   $ ls /sys/class/android_usb/
+          #   No such file or directory
+          #   $ ls /sys/class/udc/13580000.usb/device/gadget/
+          #   power
+          #   uevent            (vacio: ni functions, ni enable, ni idVendor)
+          #   $ getprop | grep sys.usb
+          #   [sys.usb.config]: [adb]
+          #   [sys.usb.state]: [adb]
+          #
+          # Con eso el dispositivo queda como ADB puro: no hay MTP, ni PTP, ni
+          # RNDIS, y ademas el UsbService se queda sin UsbDeviceManager, con lo
+          # que Ajustes -> Preferencias USB cierra la app de Ajustes:
+          #
+          #   java.lang.IllegalStateException
+          #     at com.android.server.usb.UsbService.getCurrentFunctions(UsbService.java:628)
+          #
+          # Con g_android enganchado aparece /sys/class/android_usb/android0/
+          # con todas las funciones de Samsung (adb, f_ffs, mtp, rndis,
+          # mass_storage, accessory...) y el init.universal3475.usb.rc del
+          # ramdisk, que ya tiene los handlers de mtp, mtp,adb, ptp, ptp,adb,
+          # rndis, rndis,adb, mass_storage..., puede activarlas.
+          #
+          # El ADB por functionfs sigue funcionando con esta configuracion:
+          # android.c incluye f_fs.c (sin ifdef de CONFIG_USB_FUNCTIONFS) asi
+          # que la funcion f_ffs existe dentro de g_android, y el init rc hace
+          # justo lo que espera de ese camino:
+          #
+          #   mount functionfs adb /dev/usb-ffs/adb uid=2000,gid=2000
+          #   write /sys/class/android_usb/android0/f_ffs/aliases adb
           if grep -q '^CONFIG_USB_FUNCTIONFS=y' "$CFG"; then
-            echo "CONFIG_USB_FUNCTIONFS ya activo, sin cambios"
+            sed -i 's|^CONFIG_USB_FUNCTIONFS=y$|# CONFIG_USB_FUNCTIONFS is not set|' "$CFG"
+            echo "CONFIG_USB_FUNCTIONFS desactivado (g_android debe ganar el UDC)"
           elif grep -q '^# CONFIG_USB_FUNCTIONFS is not set' "$CFG"; then
-            sed -i 's|^# CONFIG_USB_FUNCTIONFS is not set$|# fix_usb_functionfs toggle\nCONFIG_USB_FUNCTIONFS=y|' "$CFG"
-            echo "CONFIG_USB_FUNCTIONFS activado (flip is-not-set -> y)"
+            echo "CONFIG_USB_FUNCTIONFS ya desactivado, sin cambios"
           else
-            printf '\n# fix_usb_functionfs\nCONFIG_USB_FUNCTIONFS=y\n' >> "$CFG"
-            echo "CONFIG_USB_FUNCTIONFS anadido"
+            printf '\n# CONFIG_USB_FUNCTIONFS is not set\n' >> "$CFG"
+            echo "CONFIG_USB_FUNCTIONFS desactivado (anadido)"
           fi
           grep -nE '^#? ?CONFIG_USB_FUNCTIONFS' "$CFG"
-          # OJO: este symbolo YA estaba =y en el defconfig (linea 2909), asi que
-          # este step historically no hizo nada. El simbolo que hacia falta era
+          # OJO: el simbolo que hacia falta para que el gadget enumere es
           # CONFIG_USB_EXYNOS_SWITCH: con el, s3c_udc_start() imprime
           # "usb: Skip udc_enable" y nunca llama a udc_enable(), el gadget queda
           # bound pero no enumera y el host no ve ningun dispositivo USB.
           # Corregido en el kernel (FIX-020, commit eb6cc019).
-          echo "OK: functionfs verificado en la defconfig (adbd A13 -> /dev/usb-ffs/adb/ep0)"
+          echo "OK: g_android tiene el UDC (sin CONFIG_USB_FUNCTIONFS)"
           # Verificacion explicita del simbolo que realmente importaba:
           grep -n 'USB_EXYNOS_SWITCH' "$CFG" || echo "(sin CONFIG_USB_EXYNOS_SWITCH: is_nonswitch() == true, udc_enable() se llama)"
       - name: 'Fix HWC: thread owner ExynosMPP antes de run() (abort incStrongRequireStrong)'

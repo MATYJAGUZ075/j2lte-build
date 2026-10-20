@@ -5,15 +5,22 @@
 #
 # Reproduce el MISMO entorno que el build real:
 #   repo init (lineage-20.0) + local_manifests (j2lte + slsi + slim)
-#   -> repo sync -c --no-tags -j4
+#   -> repo sync -c --no-tags -j16 (con reintentos ante HTTP 429)
+#   -> podas post-sync (las mismas que el build completo)
 #   -> lunch lineage_j2lte-userdebug
+#   -> parches de framework
 #   -> mka <modulo>
+#
+# Antes este workflow iba MUCHISIMO mas lento que el completo: sync con -j4 y
+# --fail-fast (un 429 tumba la run entera) y sin ninguna de las podas ni
+# guardas de disco. Ahora replica el pipeline del build completo.
 #
 # Reglas:
 #   - NO ejecuta bacon ni imágenes completas.
 #   - NO toca los workflows existentes (stages/full/diag/sync/lunch-check).
 #   - NO borra .repo, out/, fuentes, prebuilts ni proyectos Git.
-#   - NO cambia manifest, -j, memoria, device tree, kernel, FIX-028/029/063/064.
+#   - NO cambia manifest, memoria, device tree, kernel, FIX-028/029/063/064.
+#   - El sync usa -j16 (el completo tambien) y reintenta ante rate limit.
 #
 # Estructura pensada para escalar: cada módulo de diagnóstico es un valor del
 # input `module` (lista separada por comas). Para añadir otro módulo basta
@@ -54,11 +61,6 @@ jobs:
       MIN_FREE_GB: ${{ github.event.inputs.min_free_gb }}
 
     steps:
-
-      # ============================================================
-      # RUNNER / ENTORNO (idéntico al build principal)
-      # ============================================================
-
       - name: Checkout infra repo (manifests)
         uses: actions/checkout@v4
 
@@ -81,107 +83,940 @@ jobs:
           restore-keys: |
             ccache-j2lte-los20-
 
+      # ============================================================
+      # LIMPIEZA DE DISCO (las mismas podas que el build completo)
+      # ============================================================
+
+      - name: Limpieza controlada de Swift preinstalado
+        run: |
+          set -e
+          echo "=== SWIFT PRE-INSTALL ANTES ==="
+          df -h /
+          if [ ! -d /usr/share/swift ]; then
+            echo "skip: /usr/share/swift no existe -> nada que limpiar"
+            exit 0
+          fi
+          du -sh /usr/share/swift
+          sudo rm -rf -- /usr/share/swift
+          if [ -e /usr/share/swift ]; then
+            echo "::error::no se pudo eliminar /usr/share/swift"
+            exit 1
+          fi
+          echo "OK: /usr/share/swift eliminado"
+          echo "=== TOOLCHAINS ADICIONALES (miniconda/pipx/az/microsoft) ==="
+          for T in /usr/share/miniconda /opt/pipx /usr/share/az_15.6.1 /opt/microsoft; do
+            if [ ! -e "$T" ]; then
+              echo "skip: $T no existe -> nada que limpiar"
+              continue
+            fi
+            du -sh "$T"
+            sudo rm -rf -- "$T"
+            if [ -e "$T" ]; then
+              echo "::error::no se pudo eliminar $T"
+              exit 1
+            fi
+            echo "OK: $T eliminado"
+          done
+          echo "=== SWIFT PRE-INSTALL DESPUÉS ==="
+          df -h /
+
+      - name: Limpieza controlada off-out (kotlinc/gradle/runner-2.336.0/actions no usadas)
+        run: |
+          set -e
+          echo "=== OFF-OUT EXTRA ANTES ==="
+          df -h /
+          # Candidatos verificados como seguros (auditoría read-only):
+          # kotlinc 94M (build usa external/kotlinc), gradle 165M (sin uso),
+          # archivos 2.336.0 (agente en uso es 2.337.0, updates esperan fin
+          # del job), paquetes de actions no usadas por este workflow.
+          for T in \
+            /usr/share/kotlinc \
+            /usr/share/gradle-9.7.1 \
+            /opt/runner-cache/actions-runner-linux-x64-2.336.0.tar.gz \
+            /opt/runner-cache/actions-runner-linux-x64-2.336.0.tar.zst \
+            /opt/actionarchivecache/actions_setup-node \
+            /opt/actionarchivecache/actions_setup-python \
+            /opt/actionarchivecache/github_codeql-action \
+            /opt/actionarchivecache/github_gh-aw-actions; do
+            # Allowlist estática: SOLO estas 8 rutas exactas pueden borrarse.
+            # (No se verifica existencia de rutas protegidas aquí porque en
+            # esta fase los20 aún no existe: lo crea repo init después.
+            # Run 34792065347 demostró que exigir su existencia aborta el job.)
+            case "$T" in
+              /usr/share/kotlinc|/usr/share/gradle-9.7.1|/opt/runner-cache/actions-runner-linux-x64-2.336.0.tar.gz|/opt/runner-cache/actions-runner-linux-x64-2.336.0.tar.zst|/opt/actionarchivecache/actions_setup-node|/opt/actionarchivecache/actions_setup-python|/opt/actionarchivecache/github_codeql-action|/opt/actionarchivecache/github_gh-aw-actions)
+                ;;
+              *)
+                echo "::error::ruta no autorizada: $T"
+                exit 1
+                ;;
+            esac
+            if [ ! -e "$T" ]; then
+              echo "skip: $T no existe -> nada que limpiar"
+              continue
+            fi
+            du -sh "$T"
+            sudo rm -rf -- "$T"
+            if [ -e "$T" ]; then
+              echo "::error::no se pudo eliminar $T"
+              exit 1
+            fi
+            echo "OK: $T eliminado"
+          done
+          echo "=== OFF-OUT EXTRA DESPUÉS ==="
+          df -h /
+
+      - name: Disco antes
+        run: df -h /
+
+      # ============================================================
+      # GUARD TEMPRANO DE DISCO (falla pronto, no tras 15 min de sync)
+      # ============================================================
+
+      - name: Guard temprano - tamano del disco del runner
+        run: |
+          set -e
+          # Los runners hosted de GitHub ahora vienen con ~72-75G (antes 145G).
+          # Las últimas runs de full-bacon cayeron ENOSPC durante repo sync en
+          # runners de 72G/75G (logs: 36425568225, 36430067751). El checkout de
+          # LineageOS ~70-105G + out/ no caben con tan poco espacio, así que
+          # abortamos temprano en vez de gastar ~9 min hasta el ENOSPC en sync.
+          MIN_ROOT_GB=100
+          ROOT_GB=$(df -BG --output=size / | tail -1 | tr -dc '0-9')
+          echo "Tamano de /: ${ROOT_GB}G (minimo exigido: ${MIN_ROOT_GB}G)"
+          if [ "${ROOT_GB:-0}" -lt "$MIN_ROOT_GB" ]; then
+            echo "::error::Este runner tiene solo ${ROOT_GB}G en / (minimo ${MIN_ROOT_GB}G). repo sync necesita ~100G y no cabe. Relanza la run (los runners hosted varian 72-145G) o usa un runner self-hosted/grande (input runner_label)."
+            exit 1
+          fi
+      # ============================================================
+      # Storage diag (traído de build-stages)
+      # ============================================================
+
+      - name: Diagnosticar almacenamiento
+        run: |
+          echo "=== DF ==="
+          df -h
+          echo
+          echo "=== LSBLK ==="
+          lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS
+          echo
+          echo "=== FINDMNT ==="
+          findmnt
+          echo
+          echo "=== /mnt ==="
+          ls -lah /mnt 2>/dev/null || true
+          df -h /mnt 2>/dev/null || true
+      # ============================================================
+      # DEPENDENCIAS (ccache eliminado: ver env)
+      # ============================================================
+
       - name: Dependencias e install de repo
         run: |
           set -e
-
-          sudo apt-get update
-          sudo apt-get install -y git-lfs python3 curl ccache
-
-          mkdir -p "$HOME/bin"
-          curl -s \
-            https://storage.googleapis.com/git-repo-downloads/repo \
-            > "$HOME/bin/repo"
-          chmod a+x "$HOME/bin/repo"
-          echo "$HOME/bin" >> "$GITHUB_PATH"
-
-          git config --global user.name "j2lte-ci"
-          git config --global user.email "j2lte-ci@users.noreply.github.com"
-
-          git lfs install
-
-          sudo ln -sf \
-            /usr/lib/x86_64-linux-gnu/libncurses.so.6 \
-            /usr/lib/x86_64-linux-gnu/libncurses.so.5 || true
-
-          sudo ln -sf \
-            /usr/lib/x86_64-linux-gnu/libtinfo.so.6 \
-            /usr/lib/x86_64-linux-gnu/libtinfo.so.5 || true
-
-          sudo apt-get install -y libc++1 >/dev/null 2>&1 || \
-            sudo ln -sf \
-              /usr/lib/x86_64-linux-gnu/libc++.so.1 \
-              /usr/lib/x86_64-linux-gnu/libc++.so || true
-
-          ccache --version | head -1
-          ccache -M 8G >/dev/null
-          ccache -o compiler_check=content
-          ccache -o namespace=j2lte-los20
-
-      # ============================================================
-      # SOURCE (mismo repo sync que el build real, SIN podas)
-      # ============================================================
 
       - name: repo init
         run: |
           set -e
 
-          mkdir -p "$HOME/los20"
-          cd "$HOME/los20"
-
-          repo init \
-            --depth=1 \
-            -u https://github.com/LineageOS/android.git \
-            -b lineage-20.0 \
-            --git-lfs
-
       - name: Configurar local manifests
         run: |
           set -e
 
-          mkdir -p "$HOME/los20/.repo/local_manifests"
+      # ============================================================
+      # REPO SYNC (-j16 + reintentos ante 429)
+      # ============================================================
 
-          cp "$GITHUB_WORKSPACE/manifests/j2lte.xml" \
-             "$HOME/los20/.repo/local_manifests/j2lte.xml"
-
-          cp "$GITHUB_WORKSPACE/manifests/j2lte-slsi.xml" \
-             "$HOME/los20/.repo/local_manifests/j2lte-slsi.xml"
-
-          cp "$GITHUB_WORKSPACE/manifests/j2lte-slim.xml" \
-             "$HOME/los20/.repo/local_manifests/j2lte-slim.xml"
-
-      - name: repo sync
-        working-directory: /home/runner/los20
+      - name: repo sync (-c --no-tags)
+        working-directory: ${{ github.workspace }}
         run: |
           set -e
-
+          cd "$HOME/los20"
           echo "=== DISCO PRE-SYNC ==="
           df -h /
-
-          time repo sync \
-            -c \
-            --no-tags \
-            --fail-fast \
-            -j4
-
+          # repo sync con reintentos. Sin esto, un solo repo que reciba HTTP 429
+          # (rate limit de git) tumba el sync COMPLETO por --fail-fast y se
+          # pierde la run entera. Ademas -j16 en vez de -j4: el sync es el
+          # paso mas lento del workflow y va 4x mas rapido en paralelo.
+          SYNC_JOBS="${SYNC_JOBS:-16}"
+          SYNC_MAX_RETRIES=4
+          SYNC_OK=0
+          for ATTEMPT in $(seq 1 "$SYNC_MAX_RETRIES"); do
+            echo "=== repo sync: intento ${ATTEMPT}/${SYNC_MAX_RETRIES} (-j${SYNC_JOBS}) ==="
+            if repo sync -c --no-tags -j"$SYNC_JOBS"; then
+              SYNC_OK=1
+              break
+            fi
+            echo "::warning::repo sync fallo (HTTP 429?), reintento en $((ATTEMPT * 45))s"
+            sleep $((ATTEMPT * 45))
+          done
+          if [ "$SYNC_OK" != "1" ]; then
+            echo "::error::repo sync fallo tras ${SYNC_MAX_RETRIES} intentos. Suele ser rate limit de GitHub (HTTP 429): relanza la run en unos minutos."
+            exit 1
+          fi
           echo "=== DISCO POST-SYNC ==="
           df -h /
 
       # ============================================================
-      # LUNCH
+      # PODAS POST-SYNC (mismas que el build completo: menos disco y menos E/S)
       # ============================================================
+
+      - name: Poda post-sync (prebuilts/rust/darwin-x86)
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA RUST DARWIN ANTES ==="
+          df -h /
+          du -sh prebuilts/rust/darwin-x86 2>/dev/null || true
+          # Verificaciones de seguridad: debe existir como directorio
+          if [ ! -d "prebuilts/rust/darwin-x86" ]; then
+            echo "::error::Directorio esperado no existe: prebuilts/rust/darwin-x86 -> se aborta la poda"
+            exit 1
+          fi
+          # Verificar que resuelva exactamente dentro del árbol (no un enlace ambiguo)
+          PARENT="$(cd prebuilts/rust/darwin-x86 && pwd)"
+          EXPECTED="$(pwd)/prebuilts/rust/darwin-x86"
+          if [ "$PARENT" != "$EXPECTED" ]; then
+            echo "::error::Resolución inesperada para prebuilts/rust/darwin-x86 ($PARENT != $EXPECTED) -> abort"
+            exit 1
+          fi
+          # Verificar que la toolchain linux-x86 (única usada en runner Linux) SÍ existe
+          if [ ! -d "prebuilts/rust/linux-x86" ]; then
+            echo "::error::prebuilts/rust/linux-x86 no existe -> se aborta (se protege la toolchain activa)"
+            exit 1
+          fi
+          rm -rf prebuilts/rust/darwin-x86
+          echo "=== PODA RUST DARWIN DESPUÉS ==="
+          df -h /
+          ls -d prebuilts/rust/darwin-x86 2>/dev/null \
+            && echo "::error::la poda no eliminó por completo" \
+            || echo "OK: prebuilts/rust/darwin-x86 eliminado"
+
+      - name: Poda post-sync (prebuilts/rust/linux-x86 1.57.0/1.58.0/1.58.1)
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA RUST VERSIONES NO ACTIVAS ANTES ==="
+          df -h /
+          VERSIONS="prebuilts/rust/linux-x86/1.57.0 prebuilts/rust/linux-x86/1.58.0 prebuilts/rust/linux-x86/1.58.1"
+          du -sh $VERSIONS 2>/dev/null || true
+          # Verificar que la toolchain activa (RustDefaultVersion = 1.59.0) SÍ existe
+          if [ ! -d "prebuilts/rust/linux-x86/1.59.0" ]; then
+            echo "::error::prebuilts/rust/linux-x86/1.59.0 no existe -> se aborta (se protege la toolchain activa)"
+            exit 1
+          fi
+          for V in $VERSIONS; do
+            # Verificaciones de seguridad: debe existir como directorio
+            if [ ! -d "$V" ]; then
+              echo "::error::Directorio esperado no existe: $V -> se aborta la poda"
+              exit 1
+            fi
+            # Verificar que resuelva exactamente dentro del árbol (no un enlace ambiguo)
+            PARENT="$(cd "$V" && pwd)"
+            EXPECTED="$(pwd)/$V"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $V ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+            rm -rf "$V"
+            ls -d "$V" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $V" \
+              || echo "OK: $V eliminado"
+          done
+          echo "=== PODA RUST VERSIONES NO ACTIVAS DESPUÉS ==="
+          df -h /
+
+      - name: Poda post-sync (prebuilts/module_sdk/art snapshot inactivo @3)
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA MODULE_SDK ART/3 ANTES ==="
+          df -h /
+          TARGET=prebuilts/module_sdk/art/3
+          du -sh "$TARGET" 2>/dev/null || true
+          # Verificar que el snapshot activo (@1) del proyecto module_sdk/art SÍ existe
+          if [ ! -d "prebuilts/module_sdk/art/1" ]; then
+            echo "::error::prebuilts/module_sdk/art/1 no existe -> se aborta (se protege el snapshot activo @1)"
+            exit 1
+          fi
+          # Verificaciones de seguridad: debe existir como directorio
+          if [ ! -d "$TARGET" ]; then
+            echo "::error::Directorio esperado no existe: $TARGET -> se aborta la poda"
+            exit 1
+          fi
+          # Verificar que resuelva exactamente dentro del árbol (no un enlace ambiguo)
+          PARENT="$(cd "$TARGET" && pwd)"
+          EXPECTED="$(pwd)/$TARGET"
+          if [ "$PARENT" != "$EXPECTED" ]; then
+            echo "::error::Resolución inesperada para $TARGET ($PARENT != $EXPECTED) -> abort"
+            exit 1
+          fi
+          rm -rf "$TARGET"
+          echo "=== PODA MODULE_SDK ART/3 DESPUÉS ==="
+          df -h /
+          ls -d "$TARGET" 2>/dev/null \
+            && echo "::error::la poda no eliminó por completo" \
+            || echo "OK: $TARGET eliminado"
+
+      - name: Poda post-sync (prebuilts/android-emulator + remoteexecution-client)
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA ANDROID-EMULATOR + REMOTEEXECUTION ANTES ==="
+          df -h /
+          du -sh prebuilts/android-emulator prebuilts/remoteexecution-client 2>/dev/null || true
+          # Tolerante: el manifest j2lte-slim.xml ya puede haberlos excluido del
+          # repo sync via <remove-project>. Si no existen, se informa y se
+          # continúa (no abortar). Si existen, se podan.
+          MISSING=0
+          for d in android-emulator remoteexecution-client; do
+            if [ ! -d "prebuilts/$d" ]; then
+              echo "skip: prebuilts/$d no existe (ya excluido por j2lte-slim.xml en repo sync) -> nada que podar"
+              MISSING=1
+              continue
+            fi
+            PARENT="$(cd prebuilts/$d && pwd)"
+            EXPECTED="$(pwd)/prebuilts/$d"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada prebuilts/$d ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+          done
+          if [ "$MISSING" = "1" ]; then
+            echo "OK: sin poda post-sync necesaria (usa j2lte-slim.xml) -> continue"
+          else
+            rm -rf prebuilts/android-emulator prebuilts/remoteexecution-client
+          fi
+          echo "=== PODA ANDROID-EMULATOR + REMOTEEXECUTION DESPUÉS ==="
+          df -h /
+          for d in android-emulator remoteexecution-client; do
+            ls -d prebuilts/$d 2>/dev/null \
+              && echo "::error::la poda no eliminó $d" \
+              || echo "OK: prebuilts/$d eliminado"
+          done
+
+      - name: Poda post-sync (prebuilts/runtime/mainline)
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA RUNTIME/MAINLINE ANTES ==="
+          df -h /
+          # Tolerante: si no existe (posible exclusión vía manifest), se informa y continúa.
+          if [ ! -d "prebuilts/runtime/mainline" ]; then
+            echo "skip: prebuilts/runtime/mainline no existe -> nada que podar"
+            exit 0
+          fi
+          # Verificar que resuelva exactamente dentro del árbol (no un enlace ambiguo)
+          PARENT="$(cd prebuilts/runtime/mainline && pwd)"
+          EXPECTED="$(pwd)/prebuilts/runtime/mainline"
+          if [ "$PARENT" != "$EXPECTED" ]; then
+            echo "::error::Resolución inesperada para prebuilts/runtime/mainline ($PARENT != $EXPECTED) -> abort"
+            exit 1
+          fi
+          rm -rf prebuilts/runtime/mainline
+          echo "=== PODA RUNTIME/MAINLINE DESPUÉS ==="
+          df -h /
+          ls -d prebuilts/runtime/mainline 2>/dev/null \
+            && echo "::error::la poda no eliminó por completo" \
+            || echo "OK: prebuilts/runtime/mainline eliminado"
+
+      - name: Poda post-sync (Ronda 2 6 candidatas test/docs/clang)
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA RONDA 2 ANTES ==="
+          df -h /
+          TARGETS="
+            tools/dexter/testdata
+            external/libabigail/tests
+            prebuilts/clang/host/linux-x86/clang-stable
+            prebuilts/clang/host/linux-x86/profiles
+          "
+          du -sh $TARGETS 2>/dev/null || true
+          # Tolerante: si la ruta no existe se informa y se continúa (no abortar).
+          # Protección: nunca eliminar un proyecto Git completo (contiene .git),
+          # porque rompería repo manifest (patrón jdk/qemu documentado).
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git completo, no subdir podable) -> se aborta"
+              exit 1
+            fi
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+            rm -rf "$T"
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+          echo "=== PODA RONDA 2 DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (Tier 1: 9 candidatas SAFE)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA TIER 1 (9 SAFE) ANTES ==="
+          df -h /
+          TARGETS="
+            external/jackson-databind/docs
+            external/swiftshader/tests
+            prebuilts/clang-tools/darwin-x86
+            prebuilts/build-tools/linux_musl-x86
+            external/tensorflow/tensorflow/compiler
+            external/tensorflow/tensorflow/python
+            external/tensorflow/tensorflow/lite/testing
+            external/deqp/external/openglcts
+            prebuilts/build-tools/darwin-x86
+          "
+          du -sh $TARGETS 2>/dev/null || true
+          # Tolerante: si la ruta no existe se informa y se continúa (no abortar).
+          # Protección: nunca eliminar un proyecto Git completo (contiene .git),
+          # porque rompería repo manifest (patrón jdk/qemu documentado).
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git completo, no subdir podable) -> se aborta"
+              exit 1
+            fi
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+            rm -rf "$T"
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+          echo "=== PODA TIER 1 DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (autotest client+server)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA AUTOTEST ANTES ==="
+          df -h /
+          TARGETS="
+            external/autotest/client
+            external/autotest/server
+          "
+          du -sh $TARGETS 2>/dev/null || true
+          # Tolerante: si la ruta no existe se informa y se continúa (no abortar).
+          # Protección: nunca eliminar un proyecto Git completo (contiene .git),
+          # porque rompería repo manifest (patrón jdk/qemu documentado).
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git completo, no subdir podable) -> se aborta"
+              exit 1
+            fi
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+            rm -rf "$T"
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+          echo "=== PODA AUTOTEST DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (sdk/32)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA SDK/32 ANTES ==="
+          df -h /
+          TARGETS="
+            prebuilts/sdk/32
+          "
+          du -sh $TARGETS 2>/dev/null || true
+          # Tolerante: si la ruta no existe se informa y se continúa (no abortar).
+          # Protección: nunca eliminar un proyecto Git completo (contiene .git),
+          # porque rompería repo manifest (patrón jdk/qemu documentado).
+          # prebuilts/sdk/32 es subdir sin .git (el proyecto es prebuilts/sdk);
+          # cero sdk_version:"32" productivos en el árbol.
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git completo, no subdir podable) -> se aborta"
+              exit 1
+            fi
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+            rm -rf "$T"
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+          echo "=== PODA SDK/32 DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (extras profiling)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA EXTRAS ANTES ==="
+          df -h /
+          TARGETS="
+            system/extras/ioshark
+          "
+          du -sh $TARGETS 2>/dev/null || true
+          # Tolerante: si la ruta no existe se informa y se continúa (no abortar).
+          # Protección: nunca eliminar un proyecto Git completo (contiene .git),
+          # porque rompería repo manifest (patrón jdk/qemu documentado).
+          # Herramientas de profiling host sin consumidores en el grafo j2lte
+          # (verificado: sin refs en system/frameworks/packages/cts/vendor).
+          # NOTA: system/extras/simpleperf NO se poda (dependencias de
+          # perf2cfg, profcollectd y cts-simpleperf en sus módulos).
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git completo, no subdir podable) -> se aborta"
+              exit 1
+            fi
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+            rm -rf "$T"
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+          echo "=== PODA EXTRAS DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (Darwin arch remnants)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA DARWIN ANTES ==="
+          df -h /
+          TARGETS="
+            prebuilts/jdk/jdk11/darwin-x86
+            prebuilts/jdk/jdk11/darwin-arm64
+            prebuilts/jdk/jdk8/darwin-x86
+            prebuilts/build-tools/darwin-x86
+            prebuilts/extract-tools/darwin-x86
+            prebuilts/misc/darwin-x86
+            prebuilts/misc/darwin-x86_64
+          "
+          du -sh $TARGETS 2>/dev/null || true
+          # Binarios macOS inalcanzables en runner linux-x86_64: el build
+          # selecciona prebuilts por HOST_OS/HOST_TAG (Soong HostPrebuiltTag
+          # retorna "linux-x86" si runtime.GOOS=="linux"; make con ramas
+          # ifeq ($(HOST_OS),darwin)). Barrido global sin referencias.
+          # jdk11-linux, jdk8-linux, build-tools-linux, extract-linux y
+          # misc-linux quedan INTACTOS (solo se listan darwin-*).
+          # Protección: nunca eliminar un proyecto Git completo (contiene
+          # .git); estos 7 son subdirs sin .git (padres con .git).
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git completo, no subdir podable) -> se aborta"
+              exit 1
+            fi
+            case "$T" in
+              prebuilts/jdk/jdk11/darwin-*|prebuilts/jdk/jdk8/darwin-*|prebuilts/build-tools/darwin-*|prebuilts/extract-tools/darwin-*|prebuilts/misc/darwin-*) ;;
+              *) echo "::error::$T fuera de la allowlist Darwin -> se aborta"; exit 1 ;;
+            esac
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+            rm -rf "$T"
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+          echo "=== PODA DARWIN DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (sdk/tools lib)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA SDK-TOOLS-LIB ANTES ==="
+          df -h /
+          # SOLO lib auditado (d8/dx/signapk prebuilt sin refs; firma→fuente,
+          # dex→prebuilts/r8). linux RESTAURADO (run #155: el genrule
+          # build-tools-lld-linux del propio sdk/tools/Android.bp:77 copia
+          # linux/lld-bin/lld y linux/lib64/libc++.so.1 por path relativo).
+          # NO tocar sdk/tools/darwin, windows (prohibidos), niveles
+          # 28-33/current, jetifier (futura tanda).
+          TARGETS="
+            prebuilts/sdk/tools/lib
+          "
+          du -sh $TARGETS 2>/dev/null || true
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git, no subdir) -> se aborta"
+              exit 1
+            fi
+            case "$T" in
+              prebuilts/sdk/tools/lib) ;;
+              *) echo "::error::$T fuera de la allowlist sdk-lib -> se aborta"; exit 1 ;;
+            esac
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+            # Proteger el padre platform/prebuilts/sdk y .repo: solo rm del subdir.
+            rm -rf "$T"
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+          echo "=== PODA SDK-TOOLS-LIB DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (tools/common/metalava)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA METALAVA ANTES ==="
+          df -h /
+          # SOLO metalava prebuilt auditado (sin .bp, cero refs; metalava se
+          # compila de fuente). NO tocar resto de tools/common ni .repo.
+          TARGETS="
+            prebuilts/tools/common/metalava
+          "
+          du -sh $TARGETS 2>/dev/null || true
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git, no subdir) -> se aborta"
+              exit 1
+            fi
+            case "$T" in
+              prebuilts/tools/common/metalava) ;;
+              *) echo "::error::$T fuera de la allowlist metalava -> se aborta"; exit 1 ;;
+            esac
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+            rm -rf "$T"
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+          echo "=== PODA METALAVA DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (runtime/appcompat)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA APPCOMPAT ANTES ==="
+          df -h /
+          # SOLO appcompat auditado (appcompat.sh/veridex dev-tool externo;
+          # cero refs en build/art/frameworks). NO tocar resto de runtime
+          # (mainline ya podado; adb/iorap/appcompat-activo fuera de alcance).
+          TARGETS="
+            prebuilts/runtime/appcompat
+          "
+          du -sh $TARGETS 2>/dev/null || true
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git, no subdir) -> se aborta"
+              exit 1
+            fi
+            case "$T" in
+              prebuilts/runtime/appcompat) ;;
+              *) echo "::error::$T fuera de la allowlist appcompat -> se aborta"; exit 1 ;;
+            esac
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+            rm -rf "$T"
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+          echo "=== PODA APPCOMPAT DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (chicas auditadas R1-F)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA CHICAS ANTES ==="
+          df -h /
+          # Subdirs auditados con grep -F + control positivo, cero
+          # consumidores (bionic-bench/apex/brotli) o samples sin cierre
+          # (device/sample/apps; etc/ INTACTO por apns-full-conf.xml).
+          # gcam EXCLUIDA (inventario incompleto). ahat RESTAURADO (run #159).
+          # bionic/tests RESTAURADO (run #162: CtsBionicTestCases necesita
+          # libBionicTests y libs hermanas de bionic/tests; inventario previo
+          # solo cubrió bionic-unit-tests*, no las test-libs).
+          # apex/tests RESTAURADO (run #165: ApexTestCases en apexd necesita
+          # sharedlibs_generated de tests/testdata; inventario no bajó ahí).
+          # jsr166-tests RESTAURADO (run #166: módulo `jsr166-tests` definido
+          # en libcore/JavaLibrary.bp:545 con srcs DENTRO del dir podado ->
+          # Kati "Installable device module must have LOCAL_SOONG_DEX_JAR".
+          # Trampa inversa: módulo fuera, fuentes dentro. harmony/benchmarks
+          # siguen podados (sin errores en #166; si fallan, se restauran).
+          # bionic/benchmarks RESTAURADO (run #167:
+          # native_metric_test_list.mk lo exige; R5 miraba solo
+          # native_test_list.mk, no las 5 listas).
+          TARGETS="
+            prebuilts/tools/common/google-api-java-client
+            libcore/harmony-tests
+            libcore/benchmarks
+            external/brotli/tests/testdata
+            device/sample/apps
+          "
+          du -sh $TARGETS 2>/dev/null || true
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git, no subdir) -> se aborta"
+              exit 1
+            fi
+            case "$T" in
+              prebuilts/tools/common/google-api-java-client|libcore/harmony-tests|libcore/benchmarks|external/brotli/tests/testdata|device/sample/apps) ;;
+              *) echo "::error::$T fuera de la allowlist chicas-R1F -> se aborta"; exit 1 ;;
+            esac
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+            rm -rf "$T"
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+          echo "=== PODA CHICAS DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (misc-frameworks)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA MISCFW ANTES ==="
+          df -h /
+          # SOLO platformprotos prebuilt (cero consumidores globales,
+          # libplatformprotos real se compila de frameworks/base).
+          TARGETS="
+            prebuilts/misc/common/frameworks
+          "
+          du -sh $TARGETS 2>/dev/null || true
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git, no subdir) -> se aborta"
+              exit 1
+            fi
+            case "$T" in
+              prebuilts/misc/common/frameworks) ;;
+              *) echo "::error::$T fuera de la allowlist miscfw -> se aborta"; exit 1 ;;
+            esac
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+            rm -rf "$T"
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+          echo "=== PODA MISCFW DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (webview no-arm)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA WEBVIEW-NOARM ANTES ==="
+          df -h /
+          # SOLO los 3 APKs no-arm auditados (x86_64/arm64/x86). j2lte resuelve
+          # prebuilt/$(TARGET_ARCH=arm) vía get-prebuilt-src-arch; cero refs
+          # a los otros en device/vendor/build/frameworks/packages/system/
+          # hardware/external/tools/art/prebuilts (barridos completados, sin
+          # globs: Android.mk usa ruta explícita por arch). arm/ INTACTO.
+          TARGETS="
+            external/chromium-webview/prebuilt/x86_64/webview.apk
+            external/chromium-webview/prebuilt/arm64/webview.apk
+            external/chromium-webview/prebuilt/x86/webview.apk
+          "
+          du -sh $TARGETS 2>/dev/null || true
+          for T in $TARGETS; do
+            if [ ! -f "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+            case "$T" in
+              external/chromium-webview/prebuilt/x86_64/webview.apk|external/chromium-webview/prebuilt/arm64/webview.apk|external/chromium-webview/prebuilt/x86/webview.apk) ;;
+              *) echo "::error::$T fuera de la allowlist webview-noarm -> se aborta"; exit 1 ;;
+            esac
+            PARENT="$(cd "$(dirname "$T")" && pwd)"
+            EXPECTED="$(pwd)/external/chromium-webview/prebuilt"
+            case "$PARENT" in
+              "$EXPECTED"/x86_64|"$EXPECTED"/arm64|"$EXPECTED"/x86) ;;
+              *) echo "::error::ruta inesperada para $T -> abort"; exit 1 ;;
+            esac
+            rm -f "$T"
+            ls "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó $T" \
+              || echo "OK: $T eliminado"
+          done
+          echo "=== PODA WEBVIEW-NOARM DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (contents+sysroots)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA CONTENTS/SYSROOTS ANTES ==="
+          df -h /
+          # contents: test media sin refs globales (todo tipo); sysroots:
+          # musl cuyo toolchain ya fue podado. Padres intactos.
+          TARGETS="
+            frameworks/base/media/tests/contents
+            prebuilts/build-tools/sysroots
+          "
+          du -sh $TARGETS 2>/dev/null || true
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git, no subdir) -> se aborta"
+              exit 1
+            fi
+            case "$T" in
+              frameworks/base/media/tests/contents|prebuilts/build-tools/sysroots) ;;
+              *) echo "::error::$T fuera de la allowlist -> se aborta"; exit 1 ;;
+            esac
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+            rm -rf "$T"
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+          echo "=== PODA CONTENTS/SYSROOTS DESPUÉS ==="
+          df -h /
+
+      - name: "Poda post-sync (rs-prebuilt+siblings+clangpy+incidentd+svctests)"
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          echo "=== PODA TANDA2 ANTES ==="
+          df -h /
+          # samsung/j1xlte+on5ltetmo (blobs hermanas, guards por device),
+          # clang/python3 (bundled lldb, python sistema en uso),
+          # incidentd/testdata (cero refs). servicestests RESTAURADO
+          # (run #174). renderscript RESTAURADO (run #175:
+          # development/build `build-tools` necesita
+          # `renderscript_sdk_prebuilts`; reversa no cubrió development/).
+          TARGETS="
+            vendor/samsung/j1xlte
+            vendor/samsung/on5ltetmo
+            prebuilts/clang/host/linux-x86/clang-r450784d/python3
+            frameworks/base/cmds/incidentd/testdata
+          "
+          du -sh $TARGETS 2>/dev/null || true
+          for T in $TARGETS; do
+            if [ ! -d "$T" ]; then
+              echo "skip: $T no existe -> nada que podar"
+              continue
+            fi
+            if [ -e "$T/.git" ]; then
+              echo "::error::$T contiene .git (proyecto Git, no subdir) -> se aborta"
+              exit 1
+            fi
+            case "$T" in
+              vendor/samsung/j1xlte|vendor/samsung/on5ltetmo|prebuilts/clang/host/linux-x86/clang-r450784d/python3|frameworks/base/cmds/incidentd/testdata) ;;
+              *) echo "::error::$T fuera de la allowlist tanda2 -> se aborta"; exit 1 ;;
+            esac
+            PARENT="$(cd "$T" && pwd)"
+            EXPECTED="$(pwd)/$T"
+            if [ "$PARENT" != "$EXPECTED" ]; then
+              echo "::error::Resolución inesperada para $T ($PARENT != $EXPECTED) -> abort"
+              exit 1
+            fi
+            rm -rf "$T"
+            ls -d "$T" 2>/dev/null \
+              && echo "::error::la poda no eliminó por completo $T" \
+              || echo "OK: $T eliminado"
+          done
+          echo "=== PODA TANDA2 DESPUÉS ==="
+          df -h /
 
       - name: lunch lineage_j2lte-userdebug
         working-directory: /home/runner/los20
         run: |
           set -e
-
-          source build/envsetup.sh
-          lunch lineage_j2lte-userdebug
-
-      # ============================================================
-      # PARCHES (mismo mapeo que en los20-build-full.yml)
-      # ============================================================
 
       - name: Parches de framework (system/netd)
         working-directory: ${{ github.workspace }}
@@ -241,79 +1076,27 @@ jobs:
           done
           echo "=== parches aplicados: $APPLIED ==="
 
-      # ============================================================
-      # GUARD básico de espacio
-      # ============================================================
+      - name: GUARD espacio post-sync (FIX-014)
+        working-directory: /home/runner/los20
+        run: |
+          set -e
+          AVAIL_GB=$(df --output=avail -BG / | tail -1 | tr -dc '0-9')
+          MIN="${MIN_FREE_GB:-20}"
+          echo "Libres post-sync: ${AVAIL_GB}G (minimo requerido: ${MIN}G)"
+          if [ "${AVAIL_GB}" -lt "${MIN}" ]; then
+            echo "::error::INFRASTRUCTURE-BLOCKED (FIX-014): ${AVAIL_GB}G libres < ${MIN}G requeridos. No se ejecuta mka."
+            exit 90
+          fi
 
       - name: Guard de espacio
         working-directory: /home/runner/los20
         run: |
           set -e
 
-          AVAIL_GB=$(
-            df --output=avail -BG / |
-            tail -1 |
-            tr -dc '0-9'
-          )
-
-          MIN="${MIN_FREE_GB:-20}"
-
-          echo "Espacio libre: ${AVAIL_GB}G"
-          echo "Mínimo requerido: ${MIN}G"
-
-          if [ "$AVAIL_GB" -lt "$MIN" ]; then
-            echo "::error::No hay espacio suficiente para mka del módulo."
-            echo "::error::Libres: ${AVAIL_GB}G / requeridos: ${MIN}G"
-            exit 90
-          fi
-
-      # ============================================================
-      # mka del/los módulo(s) — se detiene ante el PRIMER error
-      # ============================================================
-
       - name: mka modulo(s)
         working-directory: /home/runner/los20
         run: |
           set -o pipefail
-
-          source build/envsetup.sh
-          lunch lineage_j2lte-userdebug >/dev/null
-
-          MODULES_INPUT="${{ github.event.inputs.module }}"
-
-          echo "MODULES_INPUT=$MODULES_INPUT"
-
-          OLD_IFS="$IFS"
-          IFS=','
-
-          for mod in $MODULES_INPUT; do
-            [ -z "$mod" ] && continue
-
-            echo ""
-            echo "=================================================="
-            echo "== mka $mod"
-            echo "=================================================="
-
-            time mka "$mod" -j"$(nproc)" \
-              2>&1 | tee "/tmp/${mod}-$(date +%s).log"
-
-            RC=${PIPESTATUS[0]}
-
-            if [ "$RC" -ne 0 ]; then
-              echo "::error::mka $mod falló con código $RC"
-              echo "MODULE_FAILED=$mod" >> "$GITHUB_ENV"
-              echo "MODULE_EXIT=$RC" >> "$GITHUB_ENV"
-              exit "$RC"
-            fi
-
-            echo "OK: mka $mod"
-          done
-
-          IFS="$OLD_IFS"
-
-      # ============================================================
-      # RESULTADOS
-      # ============================================================
 
       - name: ccache stats
         if: always()
@@ -324,16 +1107,6 @@ jobs:
         working-directory: /home/runner/los20
         run: |
           set +e
-
-          mkdir -p "$GITHUB_WORKSPACE/artifacts"
-
-          for f in /tmp/*.log; do
-            [ -f "$f" ] && cp "$f" "$GITHUB_WORKSPACE/artifacts/"
-          done
-
-          echo "=== DF final ==="
-          df -h /
-          du -sm out 2>/dev/null || true
 
       - name: Upload logs
         if: always()

@@ -533,6 +533,13 @@ jobs:
                 echo "    ya aplicado en $T, se omite"
                 DONE=1
                 break
+              elif git -C "$T" apply --3way "$P" 2>/tmp/apply-err.txt; then
+                # Fallback: si el parche no aplica limpio (el repo de upstream
+                # ha avanzado y el contexto cambio), se intenta el merge a 3
+                # vias. Si tampoco, el build para con el error de abajo.
+                echo "    OK (3way) -> $T"
+                DONE=1
+                break
               else
                 echo "    no aplica en $T:"
                 sed 's/^/      /' /tmp/apply-err.txt | head -15

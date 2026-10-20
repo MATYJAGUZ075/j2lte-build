@@ -180,6 +180,68 @@ jobs:
           lunch lineage_j2lte-userdebug
 
       # ============================================================
+      # PARCHES (mismo mapeo que en los20-build-full.yml)
+      # ============================================================
+
+      - name: Parches de framework (system/netd)
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -e
+          cd "$HOME/los20"
+          echo "=== parches de framework ==="
+          shopt -s nullglob
+          APPLIED=0
+          for P in "$GITHUB_WORKSPACE"/patches/*/*.patch; do
+            CASE="$(basename "$(dirname "$P")")"
+            NAME="$CASE"
+            case "$CASE" in
+              system-netd) NAME="system/netd" ;;
+              # SystemServer.java vive en frameworks/base, no en system/server.
+              system-server) NAME="frameworks/base" ;;
+              # adb es un modulo: la ruta real es packages/modules/adb.
+              adb) NAME="packages/modules/adb" ;;
+              *) NAME="$(echo "$CASE" | tr '-' '/')" ;;
+            esac
+            echo "  aplicando $(basename "$P") -> $NAME"
+            CANDS="$NAME"
+            if [ "$NAME" = "build" ]; then
+              CANDS="build/make build/soong build/blueprint art"
+            fi
+            DONE=0
+            for T in $CANDS; do
+              if [ ! -d "$HOME/los20/$T" ]; then
+                echo "    (omitido: $T no es un repo)"
+                continue
+              fi
+              if git -C "$T" apply --check "$P" 2>/tmp/apply-err.txt; then
+                git -C "$T" apply "$P"
+                echo "    OK -> $T"
+                DONE=1
+                break
+              elif git -C "$T" apply --reverse --check "$P" 2>/dev/null; then
+                echo "    ya aplicado en $T, se omite"
+                DONE=1
+                break
+              elif git -C "$T" apply --3way "$P" 2>/tmp/apply-err.txt; then
+                echo "    OK (3way) -> $T"
+                DONE=1
+                break
+              else
+                echo "    no aplica en $T:"
+                sed 's/^/      /' /tmp/apply-err.txt | head -15
+              fi
+            done
+            if [ "$DONE" != "1" ]; then
+              echo "--- archivos que toca el parche ---"
+              grep '^diff --git' "$P" | head -10 || true
+              echo "::error::el parche $P no aplica sobre ninguno de: $CANDS"
+              exit 1
+            fi
+            APPLIED=$((APPLIED+1))
+          done
+          echo "=== parches aplicados: $APPLIED ==="
+
+      # ============================================================
       # GUARD básico de espacio
       # ============================================================
 

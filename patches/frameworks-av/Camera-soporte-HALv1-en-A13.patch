@@ -11,26 +11,25 @@ index 981c569..e4aada0 100644
          "api1/client2/FrameProcessor.cpp",
          "api1/client2/StreamingProcessor.cpp",
 diff --git a/services/camera/libcameraservice/common/CameraProviderManager.cpp b/services/camera/libcameraservice/common/CameraProviderManager.cpp
-index 43f92a9..2a517d8 100644
+index 43f92a9..94cf0d7 100644
 --- a/services/camera/libcameraservice/common/CameraProviderManager.cpp
 +++ b/services/camera/libcameraservice/common/CameraProviderManager.cpp
-@@ -700,7 +700,15 @@ status_t CameraProviderManager::openHidlSession(const std::string &id,
+@@ -700,6 +700,15 @@ status_t CameraProviderManager::openHidlSession(const std::string &id,
      auto deviceInfo = findDeviceInfoLocked(id);
      if (deviceInfo == nullptr) return NAME_NOT_FOUND;
  
--    auto *hidlDeviceInfo3 = static_cast<HidlProviderInfo::HidlDeviceInfo3*>(deviceInfo);
 +    // El camino de camara HALv1 (openSession) es aparte del de HALv3
 +    // (openHidlSession). Este ultimo hace un static_cast sin comprobar el
 +    // tipo, asi que un dispositivo v1.0 (que se representa con un DeviceInfo1)
 +    // no debe llegar aqui: el cast leeria campos del tipo equivocado.
-+    auto *hidlDeviceInfo3 = dynamic_cast<HidlProviderInfo::HidlDeviceInfo3*>(deviceInfo);
-+    if (hidlDeviceInfo3 == nullptr) {
-+        ALOGV("%s: Camera device %s is not a HALv3 device", __FUNCTION__, id.c_str());
++    if (deviceInfo->mVersion.get_major() != 3) {
++        ALOGV("%s: Camera device %s is not a HALv3 device (major %d)",
++                __FUNCTION__, id.c_str(), deviceInfo->mVersion.get_major());
 +        return INVALID_OPERATION;
 +    }
+     auto *hidlDeviceInfo3 = static_cast<HidlProviderInfo::HidlDeviceInfo3*>(deviceInfo);
      sp<ProviderInfo> parentProvider = deviceInfo->mParentProvider.promote();
      if (parentProvider == nullptr) {
-         return DEAD_OBJECT;
 diff --git a/services/camera/libcameraservice/common/CameraProviderManager.h b/services/camera/libcameraservice/common/CameraProviderManager.h
 index e8d9a37..de9a1ac 100644
 --- a/services/camera/libcameraservice/common/CameraProviderManager.h
@@ -96,7 +95,7 @@ index e8d9a37..de9a1ac 100644
          struct DeviceInfo3 : public DeviceInfo {
  
 diff --git a/services/camera/libcameraservice/common/hidl/HidlProviderInfo.cpp b/services/camera/libcameraservice/common/hidl/HidlProviderInfo.cpp
-index 630090b..e689293 100644
+index 630090b..65e5823 100644
 --- a/services/camera/libcameraservice/common/hidl/HidlProviderInfo.cpp
 +++ b/services/camera/libcameraservice/common/hidl/HidlProviderInfo.cpp
 @@ -27,6 +27,7 @@
@@ -142,7 +141,7 @@ index 630090b..e689293 100644
 +            return nullptr;
 +        }
 +        if (status != Status::OK) {
-+            ALOGE("%s: Unable to obtain interface for camera device %s: %s", __FUNCTION__,
++            ALOGE("%s: Unable to obtain interface for camera device %s: %d", __FUNCTION__,
 +                    name.c_str(), mapToStatusT(status));
 +            return nullptr;
 +        }
@@ -169,7 +168,7 @@ index 630090b..e689293 100644
      auto cameraInterface = startDeviceInterface(name);
      if (cameraInterface == nullptr) return nullptr;
  
-@@ -552,6 +608,163 @@ status_t HidlProviderInfo::getConcurrentCameraIdsInternalLocked(
+@@ -552,6 +608,122 @@ status_t HidlProviderInfo::getConcurrentCameraIdsInternalLocked(
      return OK;
  }
  
@@ -208,54 +207,13 @@ index 630090b..e689293 100644
 +        mHasFlashUnit = true;
 +    }
 +
-+    status_t res = cacheCameraInfo(interface);
-+    if (res != OK) {
-+        ALOGE("%s: Could not cache CameraInfo", __FUNCTION__);
-+        return;
-+    }
-+
 +    if (!kEnableLazyHal) {
 +        // Save HAL reference indefinitely
 +        mSavedInterface = interface;
 +    }
 +}
 +
-+status_t HidlProviderInfo::HidlDeviceInfo1::cacheCameraInfo(
-+        sp<HidlProviderInfo::HidlDeviceInfo1::InterfaceT> interface) {
-+    // La interfaz HIDL V1_0 de A13 expone getCameraInfo(), que devuelve
-+    // directamente el facing y la orientacion del sensor.
-+    Status status = Status::OK;
-+    hardware::camera::device::V1_0::CameraInfo info;
-+    hardware::Return<void> ret;
-+    ret = interface->getCameraInfo([&status, &info](
-+            Status s, hardware::camera::device::V1_0::CameraInfo i) {
-+                status = s;
-+                info = i;
-+            });
-+    if (!ret.isOk()) {
-+        ALOGE("%s: Transaction error getting camera info: %s",
-+                __FUNCTION__, ret.description().c_str());
-+        return DEAD_OBJECT;
-+    }
-+    if (status != Status::OK) {
-+        ALOGE("%s: Unable to obtain camera info: %s",
-+                __FUNCTION__, mapToStatusT(status));
-+        return DEAD_OBJECT;
-+    }
-+
-+    // El campo facing del tipo CameraInfo de la interfaz V1_0 es un uint32_t
-+    // (el enum CameraFacing es de otro tipo), asi que hay que castearlo.
-+    hardware::camera::device::V1_0::CameraFacing facing =
-+            static_cast<hardware::camera::device::V1_0::CameraFacing>(info.facing);
-+    mInfo.facing = (facing == hardware::camera::device::V1_0::CameraFacing::FRONT)
-+            ? hardware::CAMERA_FACING_FRONT
-+            : hardware::CAMERA_FACING_BACK;
-+    mInfo.orientation = info.orientation;
-+
-+    return OK;
-+}
-+
-+status_t HidlProviderInfo::HidlDeviceInfo1::setTorchMode(bool enabled) {
++status_t HidlProviderInfo::HidlDeviceInfo1::setTorchMode(bool /*enabled*/) {
 +    ALOGV("%s: HALv1 does not support setting torch mode", __FUNCTION__);
 +    return INVALID_OPERATION;
 +}
@@ -284,7 +242,7 @@ index 630090b..e689293 100644
 +    return OK;
 +}
 +
-+status_t HidlProviderInfo::HidlDeviceInfo1::dumpState(int fd) {
++status_t HidlProviderInfo::HidlDeviceInfo1::dumpState(int /*fd*/) {
 +    ALOGV("%s: dumpState not supported for HALv1", __FUNCTION__);
 +    return OK;
 +}
@@ -319,13 +277,13 @@ index 630090b..e689293 100644
 +            return nullptr;
 +        }
 +        if (status != Status::OK) {
-+            ALOGE("%s: Unable to obtain interface for camera device %s: %s", __FUNCTION__,
++            ALOGE("%s: Unable to obtain interface for camera device %s: %d", __FUNCTION__,
 +                    mName.c_str(), mapToStatusT(status));
 +            return nullptr;
 +        }
 +        mSavedInterface = device;
 +    } else {
-+        device = mSavedInterface;
++        device = sp<hardware::camera::device::V1_0::ICameraDevice>(mSavedInterface);
 +    }
 +    return device;
 +}
@@ -334,10 +292,10 @@ index 630090b..e689293 100644
          const std::string& name,
          const metadata_vendor_id_t tagId,
 diff --git a/services/camera/libcameraservice/common/hidl/HidlProviderInfo.h b/services/camera/libcameraservice/common/hidl/HidlProviderInfo.h
-index e0f1646..c0afebd 100644
+index e0f1646..040668b 100644
 --- a/services/camera/libcameraservice/common/hidl/HidlProviderInfo.h
 +++ b/services/camera/libcameraservice/common/hidl/HidlProviderInfo.h
-@@ -83,6 +83,32 @@ struct HidlProviderInfo : public CameraProviderManager::ProviderInfo,
+@@ -83,6 +83,35 @@ struct HidlProviderInfo : public CameraProviderManager::ProviderInfo,
      // hidl_death_recipient interface - this locks the parent mInterfaceMutex
      virtual void serviceDied(uint64_t , const wp<hidl::base::V1_0::IBase>& ) override;
  
@@ -358,11 +316,14 @@ index e0f1646..c0afebd 100644
 +
 +        ~HidlDeviceInfo1() {}
 +
-+        virtual status_t setTorchMode(bool enabled) override;
-+        virtual status_t turnOnTorchWithStrengthLevel(int32_t torchStrength) override;
-+        virtual status_t getTorchStrengthLevel(int32_t *torchStrength) override;
++        virtual status_t setTorchMode(bool /*enabled*/) override;
++        virtual status_t turnOnTorchWithStrengthLevel(int32_t /*torchStrength*/) override;
++        virtual status_t getTorchStrengthLevel(int32_t * /*torchStrength*/) override;
 +        virtual status_t filterSmallJpegSizes() override;
-+        virtual status_t dumpState(int fd) override;
++        virtual status_t getCameraInfo(bool overrideToPortrait,
++                int *portraitRotation,
++                hardware::CameraInfo *info) const override;
++        virtual status_t dumpState(int /*fd*/) override;
 +
 +        sp<hardware::camera::device::V1_0::ICameraDevice> startDeviceInterface();
 +    };
@@ -370,6 +331,22 @@ index e0f1646..c0afebd 100644
      struct HidlDeviceInfo3 : public CameraProviderManager::ProviderInfo::DeviceInfo3 {
  
          const hardware::hidl_version mVersion = hardware::hidl_version{3, 2};
+@@ -97,11 +126,11 @@ struct HidlProviderInfo : public CameraProviderManager::ProviderInfo,
+ 
+         ~HidlDeviceInfo3() {}
+ 
+-        virtual status_t setTorchMode(bool enabled) override;
+-        virtual status_t turnOnTorchWithStrengthLevel(int32_t torchStrength) override;
+-        virtual status_t getTorchStrengthLevel(int32_t *torchStrength) override;
++        virtual status_t setTorchMode(bool /*enabled*/) override;
++        virtual status_t turnOnTorchWithStrengthLevel(int32_t /*torchStrength*/) override;
++        virtual status_t getTorchStrengthLevel(int32_t * /*torchStrength*/) override;
+ 
+-        virtual status_t dumpState(int fd) override;
++        virtual status_t dumpState(int /*fd*/) override;
+ 
+         virtual status_t isSessionConfigurationSupported(
+                 const SessionConfiguration &/*configuration*/,
 diff --git a/services/camera/libcameraservice/device1/CameraHardwareInterface.cpp b/services/camera/libcameraservice/device1/CameraHardwareInterface.cpp
 new file mode 100644
 index 0000000..62ef681

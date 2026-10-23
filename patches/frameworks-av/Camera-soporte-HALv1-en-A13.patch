@@ -11,7 +11,7 @@ index 981c569..e4aada0 100644
          "api1/client2/FrameProcessor.cpp",
          "api1/client2/StreamingProcessor.cpp",
 diff --git a/services/camera/libcameraservice/common/CameraProviderManager.cpp b/services/camera/libcameraservice/common/CameraProviderManager.cpp
-index 43f92a9..94cf0d7 100644
+index 43f92a9..cfb5029 100644
 --- a/services/camera/libcameraservice/common/CameraProviderManager.cpp
 +++ b/services/camera/libcameraservice/common/CameraProviderManager.cpp
 @@ -700,6 +700,15 @@ status_t CameraProviderManager::openHidlSession(const std::string &id,
@@ -30,6 +30,97 @@ index 43f92a9..94cf0d7 100644
      auto *hidlDeviceInfo3 = static_cast<HidlProviderInfo::HidlDeviceInfo3*>(deviceInfo);
      sp<ProviderInfo> parentProvider = deviceInfo->mParentProvider.promote();
      if (parentProvider == nullptr) {
+@@ -737,6 +746,63 @@ status_t CameraProviderManager::openHidlSession(const std::string &id,
+     return HidlProviderInfo::mapToStatusT(status);
+ }
+ 
++status_t CameraProviderManager::openSession(const std::string &id,
++        const sp<device::V1_0::ICameraDeviceCallback>& callback,
++        /*out*/
++        sp<device::V1_0::ICameraDevice> *session) {
++
++    std::lock_guard<std::mutex> lock(mInterfaceMutex);
++
++    auto deviceInfo = findDeviceInfoLocked(id);
++    if (deviceInfo == nullptr) return NAME_NOT_FOUND;
++
++    if (deviceInfo->mVersion.get_major() != 1) {
++        ALOGV("%s: Camera device %s is not a HALv1 device (major %d)",
++                __FUNCTION__, id.c_str(), deviceInfo->mVersion.get_major());
++        return INVALID_OPERATION;
++    }
++
++    auto *hidlDeviceInfo1 = static_cast<HidlProviderInfo::HidlDeviceInfo1*>(deviceInfo);
++    sp<ProviderInfo> parentProvider = deviceInfo->mParentProvider.promote();
++    if (parentProvider == nullptr) {
++        return DEAD_OBJECT;
++    }
++    const sp<provider::V2_4::ICameraProvider> provider =
++            static_cast<HidlProviderInfo *>(parentProvider.get())->startProviderInterface();
++    if (provider == nullptr) {
++        return DEAD_OBJECT;
++    }
++    std::shared_ptr<HalCameraProvider> halCameraProvider =
++            std::make_shared<HidlHalCameraProvider>(provider, provider->descriptor);
++    saveRef(DeviceMode::CAMERA, id, halCameraProvider);
++
++    auto interface = hidlDeviceInfo1->startDeviceInterface();
++    if (interface == nullptr) {
++        removeRef(DeviceMode::CAMERA, id);
++        return DEAD_OBJECT;
++    }
++
++    // La interfaz V1_0 no devuelve una sesion: el propio ICameraDevice es la
++    // sesion, y open() solo informa el estado.
++    hardware::Return<Status> ret = interface->open(callback);
++    if (!ret.isOk()) {
++        removeRef(DeviceMode::CAMERA, id);
++        ALOGE("%s: Transaction error opening a session for camera device %s: %s",
++                __FUNCTION__, id.c_str(), ret.description().c_str());
++        return DEAD_OBJECT;
++    }
++    Status status = ret;
++    if (status != Status::OK) {
++        removeRef(DeviceMode::CAMERA, id);
++        ALOGE("%s: Unable to open camera device %s: %s", __FUNCTION__,
++                id.c_str(), statusToString(status));
++        return HidlProviderInfo::mapToStatusT(status);
++    }
++
++    *session = interface;
++    return OK;
++}
++
+ void CameraProviderManager::saveRef(DeviceMode usageType, const std::string &cameraId,
+         std::shared_ptr<HalCameraProvider> provider) {
+     if (!kEnableLazyHal) {
+@@ -1897,6 +1963,7 @@ status_t CameraProviderManager::ProviderInfo::addDevice(
+     switch (transport) {
+         case IPCTransport::HIDL:
+             switch (major) {
++                case 1:
+                 case 3:
+                     break;
+                 default:
+@@ -2283,6 +2350,18 @@ void CameraProviderManager::ProviderInfo::notifyDeviceInfoStateChangeLocked(
+     }
+ }
+ 
++CameraProviderManager::ProviderInfo::DeviceInfo1::DeviceInfo1(const std::string& name,
++        const metadata_vendor_id_t tagId, const std::string &id,
++        uint16_t minorVersion,
++        const CameraResourceCost& resourceCost,
++        sp<ProviderInfo> parentProvider,
++        const std::vector<std::string>& publicCameraIds,
++        sp<InterfaceT> /*interface*/) :
++        DeviceInfo(name, tagId, id, hardware::hidl_version{1, minorVersion},
++                   publicCameraIds, resourceCost, parentProvider) { }
++
++CameraProviderManager::ProviderInfo::DeviceInfo1::~DeviceInfo1() {}
++
+ CameraProviderManager::ProviderInfo::DeviceInfo3::DeviceInfo3(const std::string& name,
+         const metadata_vendor_id_t tagId, const std::string &id,
+         uint16_t minorVersion,
 diff --git a/services/camera/libcameraservice/common/CameraProviderManager.h b/services/camera/libcameraservice/common/CameraProviderManager.h
 index e8d9a37..de9a1ac 100644
 --- a/services/camera/libcameraservice/common/CameraProviderManager.h
@@ -95,7 +186,7 @@ index e8d9a37..de9a1ac 100644
          struct DeviceInfo3 : public DeviceInfo {
  
 diff --git a/services/camera/libcameraservice/common/hidl/HidlProviderInfo.cpp b/services/camera/libcameraservice/common/hidl/HidlProviderInfo.cpp
-index 630090b..65e5823 100644
+index 630090b..e09e454 100644
 --- a/services/camera/libcameraservice/common/hidl/HidlProviderInfo.cpp
 +++ b/services/camera/libcameraservice/common/hidl/HidlProviderInfo.cpp
 @@ -27,6 +27,7 @@
@@ -168,7 +259,7 @@ index 630090b..65e5823 100644
      auto cameraInterface = startDeviceInterface(name);
      if (cameraInterface == nullptr) return nullptr;
  
-@@ -552,6 +608,122 @@ status_t HidlProviderInfo::getConcurrentCameraIdsInternalLocked(
+@@ -552,6 +608,170 @@ status_t HidlProviderInfo::getConcurrentCameraIdsInternalLocked(
      return OK;
  }
  
@@ -189,9 +280,21 @@ index 630090b..65e5823 100644
 +        sp<hardware::camera::device::V1_0::ICameraDevice> interface) :
 +        DeviceInfo1(name, tagId, id, minorVersion, resourceCost, parentProvider, publicCameraIds,
 +                    interface) {
-+    // Los parametros por defecto del HAL1 dicen si hay flash, y de ahi sale
-+    // tambien la info de la camara que se cachea.
-+    Status status;
++    // Los parametros por defecto del HAL1 solo son validos con el dispositivo
++    // abierto, y de ellos sale la info de camara y la presencia de flash.
++    hardware::Return<Status> openRet = interface->open(nullptr);
++    if (!openRet.isOk()) {
++        ALOGE("%s: Transaction error opening camera device %s: %s",
++                __FUNCTION__, id.c_str(), openRet.description().c_str());
++        return;
++    }
++    if (openRet != Status::OK) {
++        ALOGE("%s: Unable to open camera device %s: %s", __FUNCTION__,
++                id.c_str(), statusToString(openRet));
++        return;
++    }
++
++    Status status = Status::OK;
 +    hardware::Return<void> ret;
 +    ret = interface->getParameters([this](const hardware::hidl_string& parms) {
 +                mDefaultParameters.unflatten(String8(parms.c_str()));
@@ -199,12 +302,48 @@ index 630090b..65e5823 100644
 +    if (!ret.isOk()) {
 +        ALOGE("%s: Transaction error reading camera device %s params: %s",
 +                __FUNCTION__, id.c_str(), ret.description().c_str());
-+        return;
++    } else {
++        const char *flashMode =
++                mDefaultParameters.get(CameraParameters::KEY_SUPPORTED_FLASH_MODES);
++        if (flashMode && strstr(flashMode, CameraParameters::FLASH_MODE_TORCH)) {
++            mHasFlashUnit = true;
++        }
 +    }
-+    const char *flashMode =
-+            mDefaultParameters.get(CameraParameters::KEY_SUPPORTED_FLASH_MODES);
-+    if (flashMode && strstr(flashMode, CameraParameters::FLASH_MODE_TORCH)) {
-+        mHasFlashUnit = true;
++
++    hardware::camera::device::V1_0::CameraInfo cInfo;
++    ret = interface->getCameraInfo([&status, &cInfo](
++            Status s, hardware::camera::device::V1_0::CameraInfo info) {
++                status = s;
++                cInfo = info;
++            });
++    if (!ret.isOk()) {
++        ALOGE("%s: Transaction error reading camera info from device %s: %s",
++                __FUNCTION__, id.c_str(), ret.description().c_str());
++    } else if (status != Status::OK) {
++        ALOGE("%s: Unable to read camera info from device %s: %s", __FUNCTION__,
++                id.c_str(), statusToString(status));
++    } else {
++        switch (cInfo.facing) {
++            case hardware::camera::device::V1_0::CameraFacing::BACK:
++                mInfo.facing = hardware::CAMERA_FACING_BACK;
++                break;
++            case hardware::camera::device::V1_0::CameraFacing::EXTERNAL:
++                // Map external to front for the legacy API.
++            case hardware::camera::device::V1_0::CameraFacing::FRONT:
++                mInfo.facing = hardware::CAMERA_FACING_FRONT;
++                break;
++            default:
++                ALOGW("%s: Device %s: Unknown camera facing: %d",
++                        __FUNCTION__, id.c_str(), (int)cInfo.facing);
++                mInfo.facing = hardware::CAMERA_FACING_BACK;
++        }
++        mInfo.orientation = cInfo.orientation;
++    }
++
++    ret = interface->close();
++    if (!ret.isOk()) {
++        ALOGE("%s: Transaction error closing camera device %s: %s",
++                __FUNCTION__, id.c_str(), ret.description().c_str());
 +    }
 +
 +    if (!kEnableLazyHal) {
@@ -283,7 +422,7 @@ index 630090b..65e5823 100644
 +        }
 +        mSavedInterface = device;
 +    } else {
-+        device = sp<hardware::camera::device::V1_0::ICameraDevice>(mSavedInterface);
++        device = mSavedInterface;
 +    }
 +    return device;
 +}
@@ -292,7 +431,7 @@ index 630090b..65e5823 100644
          const std::string& name,
          const metadata_vendor_id_t tagId,
 diff --git a/services/camera/libcameraservice/common/hidl/HidlProviderInfo.h b/services/camera/libcameraservice/common/hidl/HidlProviderInfo.h
-index e0f1646..040668b 100644
+index e0f1646..7d5073b 100644
 --- a/services/camera/libcameraservice/common/hidl/HidlProviderInfo.h
 +++ b/services/camera/libcameraservice/common/hidl/HidlProviderInfo.h
 @@ -83,6 +83,35 @@ struct HidlProviderInfo : public CameraProviderManager::ProviderInfo,
@@ -305,7 +444,7 @@ index e0f1646..040668b 100644
 +    struct HidlDeviceInfo1 : public CameraProviderManager::ProviderInfo::DeviceInfo1 {
 +
 +        const hardware::hidl_version mVersion = hardware::hidl_version{1, 0};
-+        sp<IBase> mSavedInterface = nullptr;
++        sp<hardware::camera::device::V1_0::ICameraDevice> mSavedInterface = nullptr;
 +
 +        HidlDeviceInfo1(const std::string& , const metadata_vendor_id_t ,
 +                const std::string &, uint16_t ,

@@ -1,0 +1,27 @@
+diff --git a/light/Light.cpp b/light/Light.cpp
+index c245e17..ebc2781 100644
+--- a/light/Light.cpp
++++ b/light/Light.cpp
+@@ -19,6 +19,7 @@
+ #include "Light.h"
+ 
+ #include <fstream>
++#include <thread>
+ #include <string>
+ 
+ #include <log/log.h>
+@@ -86,9 +87,11 @@ Return<Status> Light::setLight(Type type, const LightState& state) {
+     if (type != Type::BACKLIGHT) {
+         return Status::LIGHT_NOT_SUPPORTED;
+     }
+-    if (!writeBacklight(colorToBrightness(state.color))) {
+-        return Status::UNKNOWN;
+-    }
++    // Evitar bloquear el main thread de system_server: el watchdog mataba
++    // el proceso si el sysfs del panel tarda o se cuelga. Se escribe en un
++    // hilo separado y se devuelve SUCCESS de inmediato.
++    const int brightness = colorToBrightness(state.color);
++    std::thread([brightness]() { writeBacklight(brightness); }).detach();
+     return Status::SUCCESS;
+ }
+ 

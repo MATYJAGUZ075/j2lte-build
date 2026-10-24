@@ -19,7 +19,7 @@ index 981c569..53ea0cc 100644
          "android.hardware.camera.device@3.3",
          "android.hardware.camera.device@3.4",
 diff --git a/services/camera/libcameraservice/common/CameraProviderManager.cpp b/services/camera/libcameraservice/common/CameraProviderManager.cpp
-index 43f92a9..8e2bc05 100644
+index 43f92a9..f80bff5 100644
 --- a/services/camera/libcameraservice/common/CameraProviderManager.cpp
 +++ b/services/camera/libcameraservice/common/CameraProviderManager.cpp
 @@ -700,6 +700,15 @@ status_t CameraProviderManager::openHidlSession(const std::string &id,
@@ -152,7 +152,22 @@ index 43f92a9..8e2bc05 100644
  void CameraProviderManager::saveRef(DeviceMode usageType, const std::string &cameraId,
          std::shared_ptr<HalCameraProvider> provider) {
      if (!kEnableLazyHal) {
-@@ -1897,6 +2013,7 @@ status_t CameraProviderManager::ProviderInfo::addDevice(
+@@ -890,8 +1006,12 @@ CameraProviderManager::ProviderInfo::DeviceInfo* CameraProviderManager::findDevi
+                 (transport == IPCTransport::HIDL) ? hidl_version{3, 7} : hidl_version{1000, 0};
+ 
+         for (auto& deviceInfo : provider->mDevices) {
+-            if (deviceInfo->mId == id &&
+-                    minVersion <= deviceInfo->mVersion && maxVersion >= deviceInfo->mVersion) {
++            // HALv1 devices are below the minimum version enforced for HALv3,
++            // but they are still valid devices driven through the legacy API1
++            // path, so they must be found by id like any other device.
++            bool supportedVersion = (deviceInfo->mVersion.get_major() == 1) ||
++                    (minVersion <= deviceInfo->mVersion && maxVersion >= deviceInfo->mVersion);
++            if (deviceInfo->mId == id && supportedVersion) {
+                 return deviceInfo.get();
+             }
+         }
+@@ -1897,6 +2017,7 @@ status_t CameraProviderManager::ProviderInfo::addDevice(
      switch (transport) {
          case IPCTransport::HIDL:
              switch (major) {
@@ -160,7 +175,7 @@ index 43f92a9..8e2bc05 100644
                  case 3:
                      break;
                  default:
-@@ -2283,6 +2400,18 @@ void CameraProviderManager::ProviderInfo::notifyDeviceInfoStateChangeLocked(
+@@ -2283,6 +2404,18 @@ void CameraProviderManager::ProviderInfo::notifyDeviceInfoStateChangeLocked(
      }
  }
  

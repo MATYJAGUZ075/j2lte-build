@@ -75,12 +75,24 @@ index bfd3120..eb87661 100644
          sp<hardware::camera2::ICameraDeviceCallbacks> tmp =
                  static_cast<hardware::camera2::ICameraDeviceCallbacks*>(cameraCb.get());
          *client = new CameraDeviceClient(cameraService, tmp, packageName,
+diff --git a/services/camera/libcameraservice/CameraService.h b/services/camera/libcameraservice/CameraService.h
+index 70293f4..967e427 100644
+--- a/services/camera/libcameraservice/CameraService.h
++++ b/services/camera/libcameraservice/CameraService.h
+@@ -74,6 +74,7 @@ class CameraService :
+ {
+     friend class BinderService<CameraService>;
+     friend class CameraOfflineSessionClient;
++    friend class CameraClient;
+ public:
+     class Client;
+     class BasicClient;
 diff --git a/services/camera/libcameraservice/api1/CameraClient.cpp b/services/camera/libcameraservice/api1/CameraClient.cpp
 new file mode 100644
-index 0000000..9995a33
+index 0000000..c229ed2
 --- /dev/null
 +++ b/services/camera/libcameraservice/api1/CameraClient.cpp
-@@ -0,0 +1,1228 @@
+@@ -0,0 +1,1247 @@
 +/*
 + * Copyright (C) 2012 The Android Open Source Project
 + *
@@ -1308,13 +1320,32 @@ index 0000000..9995a33
 +    return OK;
 +}
 +
++status_t CameraClient::setCameraServiceWatchdog(bool /*enabled*/) {
++    // API1 clients do not need the camera service watchdog: the HALv1 device
++    // is driven synchronously by this client.
++    return OK;
++}
++
++void CameraClient::clearStreamUseCaseOverrides() {
++    // Stream use case overrides are a camera2-only feature.
++}
++
++status_t CameraClient::injectCamera(const String8& /*injectedCamId*/,
++        sp<CameraProviderManager> /*manager*/) {
++    return INVALID_OPERATION;
++}
++
++status_t CameraClient::stopInjection() {
++    return INVALID_OPERATION;
++}
++
 +}; // namespace android
 diff --git a/services/camera/libcameraservice/api1/CameraClient.h b/services/camera/libcameraservice/api1/CameraClient.h
 new file mode 100644
-index 0000000..167a054
+index 0000000..5203236
 --- /dev/null
 +++ b/services/camera/libcameraservice/api1/CameraClient.h
-@@ -0,0 +1,197 @@
+@@ -0,0 +1,203 @@
 +/*
 + * Copyright (C) 2012 The Android Open Source Project
 + *
@@ -1385,6 +1416,12 @@ index 0000000..167a054
 +
 +    virtual bool            supportsCameraMute();
 +    virtual status_t        setCameraMute(bool enabled);
++
++    virtual status_t        setCameraServiceWatchdog(bool enabled);
++    virtual void            clearStreamUseCaseOverrides();
++    virtual status_t        injectCamera(const String8& injectedCamId,
++            sp<CameraProviderManager> manager);
++    virtual status_t        stopInjection();
 +
 +    // Interface used by CameraService
 +    CameraClient(const sp<CameraService>& cameraService,

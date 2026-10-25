@@ -1,12 +1,12 @@
-diff --git a/data/etc/privapp-permissions-platform.xml b/data/etc/privapp-permissions-platform.xml
-index e1c9b3c..f366cd5 100644
---- a/data/etc/privapp-permissions-platform.xml
-+++ b/data/etc/privapp-permissions-platform.xml
-@@ -529,6 +529,7 @@
-         <permission name="android.permission.READ_OEM_UNLOCK_STATE"/>
-     </privapp-permissions>
+diff --git a/data/etc/com.android.settings.xml b/data/etc/com.android.settings.xml
+index 5dcc599..b7fd760 100644
+--- a/data/etc/com.android.settings.xml
++++ b/data/etc/com.android.settings.xml
+@@ -16,6 +16,7 @@
+   -->
+ <permissions>
      <privapp-permissions package="com.android.settings">
 +        <permission name="android.permission.SET_PROCESS_LIMIT"/>
-         <permission name="android.permission.INSTALL_DYNAMIC_SYSTEM"/>
-         <permission name="android.permission.BIND_CELL_BROADCAST_SERVICE"/>
-         <permission name="android.permission.READ_SAFETY_CENTER_STATUS" />
+         <permission name="android.permission.ACCESS_CHECKIN_PROPERTIES"/>
+         <permission name="android.permission.ACCESS_NOTIFICATIONS"/>
+         <permission name="android.permission.BACKUP"/>

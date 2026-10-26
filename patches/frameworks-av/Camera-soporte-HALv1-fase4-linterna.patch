@@ -1,8 +1,8 @@
 diff --git a/services/camera/libcameraservice/CameraFlashlight.cpp b/services/camera/libcameraservice/CameraFlashlight.cpp
-index ccdd9e5c62..e629cdd798 100644
+index ffd38be..be455e6 100644
 --- a/services/camera/libcameraservice/CameraFlashlight.cpp
 +++ b/services/camera/libcameraservice/CameraFlashlight.cpp
-@@ -59,8 +59,9 @@ status_t CameraFlashlight::createFlashlightControl(const String8& cameraId) {
+@@ -57,8 +57,9 @@ status_t CameraFlashlight::createFlashlightControl(const String8& cameraId) {
      if (mProviderManager->supportSetTorchMode(cameraId.string())) {
          mFlashControl = new ProviderFlashControl(mProviderManager);
      } else {
@@ -14,7 +14,7 @@ index ccdd9e5c62..e629cdd798 100644
      }
  
      return OK;
-@@ -308,4 +309,271 @@ status_t ProviderFlashControl::setTorchMode(const String8& cameraId, bool enable
+@@ -375,4 +376,287 @@ status_t ProviderFlashControl::getTorchStrengthLevel(const String8& cameraId,
  }
  // ProviderFlashControl implementation ends
  
@@ -96,6 +96,22 @@ index ccdd9e5c62..e629cdd798 100644
 +    Mutex::Autolock l(mLock);
 +    // Close device after checking if it has a flash unit.
 +    return hasFlashUnitLocked(cameraId, hasFlash, /*keepDeviceOpen*/false);
++}
++
++status_t CameraHardwareInterfaceFlashControl::turnOnTorchWithStrengthLevel(
++        const String8& cameraId, int32_t torchStrength) {
++    ALOGV("%s: HALv1 does not support variable torch strength level", __FUNCTION__);
++    (void) cameraId;
++    (void) torchStrength;
++    return INVALID_OPERATION;
++}
++
++status_t CameraHardwareInterfaceFlashControl::getTorchStrengthLevel(
++        const String8& cameraId, int32_t* torchStrength) {
++    ALOGV("%s: HALv1 does not support variable torch strength level", __FUNCTION__);
++    (void) cameraId;
++    (void) torchStrength;
++    return INVALID_OPERATION;
 +}
 +
 +status_t CameraHardwareInterfaceFlashControl::hasFlashUnitLocked(
@@ -287,7 +303,7 @@ index ccdd9e5c62..e629cdd798 100644
 +
  }
 diff --git a/services/camera/libcameraservice/CameraFlashlight.h b/services/camera/libcameraservice/CameraFlashlight.h
-index b97fa5f340..1baaba27fd 100644
+index 1703ddc..083145f 100644
 --- a/services/camera/libcameraservice/CameraFlashlight.h
 +++ b/services/camera/libcameraservice/CameraFlashlight.h
 @@ -23,6 +23,8 @@
@@ -299,7 +315,7 @@ index b97fa5f340..1baaba27fd 100644
  
  namespace android {
  
-@@ -122,6 +124,59 @@ class ProviderFlashControl : public FlashControlBase {
+@@ -138,6 +140,63 @@ class ProviderFlashControl : public FlashControlBase {
          Mutex mLock;
  };
  
@@ -316,6 +332,10 @@ index b97fa5f340..1baaba27fd 100644
 +        // FlashControlBase
 +        status_t setTorchMode(const String8& cameraId, bool enabled);
 +        status_t hasFlashUnit(const String8& cameraId, bool *hasFlash);
++        // HALv1 has no variable torch strength level: keep the A13 pure virtuals
++        // implemented so the class is concrete.
++        status_t turnOnTorchWithStrengthLevel(const String8& cameraId, int32_t torchStrength);
++        status_t getTorchStrengthLevel(const String8& cameraId, int32_t* torchStrength);
 +
 +    private:
 +        // connect to a camera device

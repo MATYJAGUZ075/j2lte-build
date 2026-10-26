@@ -1,0 +1,35 @@
+diff --git a/light/Android.bp b/light/Android.bp
+index 4528dc7..3b7d828 100644
+--- a/light/Android.bp
++++ b/light/Android.bp
+@@ -42,24 +42,16 @@ package {
+ // La implementacion es una libreria compartida aparte, como en la plataforma
+ // (hardware/interfaces/light/2.0/default/Android.bp).
+ //
+-// La diferencia es donde se instala. La plataforma la deja en
+-// /vendor/lib/hw/ porque el servicio "default" la carga por dlopen y el
+-// linker tiene /vendor/${LIB}/hw entre las rutas permitidas. Aqui el
+-// servicio es el nuestro y la carga el passthrough, que la busca por
+-// nombre en las rutas de busqueda, y esas son /vendor/${LIB} (la raiz de
+-// lib) sin el subdirectorio hw. Con la .so en hw/ el servicio no
+-// arrancaba:
+-//
+-//   F/linker: CANNOT LINK EXECUTABLE
+-//     "/vendor/bin/hw/android.hardware.light@2.0-service.samsung":
+-//     library "android.hardware.light@2.0-impl.samsung.so" not found:
+-//     needed by main executable
+-//
+-// Asi que va a /vendor/lib/ (sin relative_install_path).
++// La implementacion se instala en /vendor/${LIB}/hw/ porque el passthrough
++// de libhidlbase busca las librerias -impl en las rutas HAL_LIBRARY_PATH_*
++// con subdirectorio hw. No es una shared_lib del binario: se carga por
++// dlopen. Si se lista como shared_lib, el linker la busca por DT_NEEDED en
++// /vendor/${LIB}/ y falla; por eso no va en shared_libs.
+ cc_library_shared {
+     name: "android.hardware.light@2.0-impl.samsung",
+     defaults: ["hidl_defaults"],
+     vendor: true,
++    relative_install_path: "hw",
+     srcs: ["Light.cpp"],
+ 
+     shared_libs: [

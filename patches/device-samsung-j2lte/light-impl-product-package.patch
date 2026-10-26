@@ -1,0 +1,14 @@
+diff --git a/device.mk b/device.mk
+index edd02e1..94a0f6f 100644
+--- a/device.mk
++++ b/device.mk
+@@ -142,7 +142,8 @@ $(call inherit-product, vendor/samsung/j2lte/j2lte-vendor.mk)
+ # El servicio propio escribe en /sys/class/backlight/panel/brightness, que el driver
+ # del panel ya expone whose rango es 0..max_brightness (355 en este equipo).
+ PRODUCT_PACKAGES += \
+-    android.hardware.light@2.0-service.samsung
++    android.hardware.light@2.0-service.samsung \
++    android.hardware.light@2.0-impl.samsung
+ 
+ # Utilidad USB (app de sistema) + overlay de gestos.
+ #

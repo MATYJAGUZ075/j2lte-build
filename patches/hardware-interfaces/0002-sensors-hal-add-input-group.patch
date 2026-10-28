@@ -1,0 +1,57 @@
+sensors: add input group to the sensors HAL service
+
+El HAL de sensores (vendor.sensors-hal-1-0) corre como usuario "system" con
+los grupos declarados en su init rc. El RC de AOSP los declara sin "input":
+
+    group system wakelock uhid context_hub
+
+Pero el nodo del acelerometro y del sensor de proximidad son nodos de
+entrada de Linux con permisos 660 root:input:
+
+    crw-rw---- 1 root input 13, 64 /dev/input/event0
+    -rw-rw---- 1 root input 4096 /sys/class/input/input3/enable
+
+Sin el grupo "input" el DAC le niega al HAL la apertura de /dev/input/event*,
+asi que el kernel genera los eventos (dmesg: "[SENSOR] k2hh_work_func: x = -13,
+y = 159, z = 8374") pero el HAL nunca los lee.
+
+Medido en el dispositivo (build 20.0-20261026-UNOFFICIAL-j2lte):
+
+    $ adb shell dumpsys sensorservice
+    Sensor List:
+    0000000000) K2HH Acceleration | STM | type: android.sensor.accelerometer(1)
+    Total 2 h/w sensors, 2 running 0 disabled clients
+    Recent Sensor events:            <- vacio
+    0 active connections
+
+    $ adb shell dumpsys window | grep -A10 WindowOrientationListener
+    WindowOrientationListener
+      mEnabled=true
+      mSensor={Sensor name="K2HH Acceleration " ...}
+      AccelSensorJudge
+        mProposedRotation=-1
+        mLastFilteredX=0.0
+        mLastFilteredY=0.0
+
+El listener de rotacion esta habilitado y el sensor aparece, pero nunca le
+llega ningun evento: mLastFilteredX/Y se quedan en 0.0 y mProposedRotation en
+-1, por eso la rotacion automatica no gira la pantalla.
+
+El sepolicy ya lo permite (universal3475-common ecd0c8c: hal_sensors_default
+sobre input_device y sysfs_input), lo que faltaba era el grupo DAC.
+
+Este patch anade "input" al grupo del servicio, que es lo que permite al HAL
+leer los nodos de evento del acelerometro.
+
+diff --git a/sensors/1.0/default/android.hardware.sensors@1.0-service.rc b/sensors/1.0/default/android.hardware.sensors@1.0-service.rc
+index 1af6d0b..4dad393 100644
+--- a/sensors/1.0/default/android.hardware.sensors@1.0-service.rc
++++ b/sensors/1.0/default/android.hardware.sensors@1.0-service.rc
+@@ -2,6 +2,6 @@ service vendor.sensors-hal-1-0 /vendor/bin/hw/android.hardware.sensors@1.0-servi
+     interface android.hardware.sensors@1.0::ISensors default
+     class hal
+     user system
+-    group system wakelock uhid context_hub
++    group system wakelock uhid context_hub input
+     capabilities BLOCK_SUSPEND
+     rlimit rtprio 10 10

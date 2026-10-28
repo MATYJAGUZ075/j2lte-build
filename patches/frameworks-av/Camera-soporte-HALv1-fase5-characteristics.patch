@@ -1,0 +1,228 @@
+diff --git a/services/camera/libcameraservice/common/hidl/HidlProviderInfo.cpp b/services/camera/libcameraservice/common/hidl/HidlProviderInfo.cpp
+index e09e454..f50918c 100644
+--- a/services/camera/libcameraservice/common/hidl/HidlProviderInfo.cpp
++++ b/services/camera/libcameraservice/common/hidl/HidlProviderInfo.cpp
+@@ -22,6 +22,11 @@
+ #include <android/hardware/ICameraService.h>
+ #include <camera_metadata_hidden.h>
+ 
++#include <stdlib.h>
++
++#include <string>
++#include <vector>
++
+ #include "device3/ZoomRatioMapper.h"
+ #include <utils/SessionConfigurationUtilsHidl.h>
+ #include <utils/Trace.h>
+@@ -731,6 +736,198 @@ status_t HidlProviderInfo::HidlDeviceInfo1::dumpState(int /*fd*/) {
+     return OK;
+ }
+ 
++namespace {
++
++// Formatos de salida de la API2 (equivalentes a ImageFormat del framework).
++constexpr int32_t kLegacyFormatJpeg = 0x100;
++constexpr int32_t kLegacyFormatYuv420 = 0x23;
++constexpr int32_t kLegacyFormatPrivate = 0x101;
++
++// La API1 expresa los factores de zoom como una lista separada por ','.
++float getLegacyMaxZoom(const char *value) {
++    if (value == nullptr) return 1.0f;
++    float maxZoom = 1.0f;
++    const char *cursor = value;
++    while (*cursor != '\0') {
++        char *end = nullptr;
++        float ratio = strtof(cursor, &end);
++        if (end == cursor) break;
++        if (ratio > maxZoom) maxZoom = ratio;
++        cursor = end;
++        if (*cursor != ',') break;
++        ++cursor;
++    }
++    return maxZoom;
++}
++
++} // namespace
++
++status_t HidlProviderInfo::HidlDeviceInfo1::getCameraCharacteristics(
++        bool /*overrideForPerfClass*/, CameraMetadata *characteristics,
++        bool /*overrideToPortrait*/) {
++    if (characteristics == nullptr) return BAD_VALUE;
++
++    // El HAL v1 no entrega metadata de la API2, por lo que se sintetiza un
++    // conjunto minimo (nivel LEGACY) a partir de los parametros por defecto
++    // de la API1 que el driver devolvio al abrir el dispositivo.
++    CameraMetadata metadata(/*entryCapacity*/32, /*dataCapacity*/512);
++
++    uint8_t hardwareLevel = ANDROID_INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY;
++    metadata.update(ANDROID_INFO_SUPPORTED_HARDWARE_LEVEL, &hardwareLevel, 1);
++
++    uint8_t lensFacing = (mInfo.facing == hardware::CAMERA_FACING_FRONT)
++            ? ANDROID_LENS_FACING_FRONT : ANDROID_LENS_FACING_BACK;
++    metadata.update(ANDROID_LENS_FACING, &lensFacing, 1);
++
++    int32_t sensorOrientation = static_cast<int32_t>(mInfo.orientation);
++    metadata.update(ANDROID_SENSOR_ORIENTATION, &sensorOrientation, 1);
++
++    uint8_t flashAvailable = mHasFlashUnit ? 1 : 0;
++    metadata.update(ANDROID_FLASH_INFO_AVAILABLE, &flashAvailable, 1);
++
++    // Se usa android::Size explicitamente: camera3::Size tambien esta
++    // visible en este archivo y ambos tipos entran en conflicto.
++    Vector<android::Size> previewSizes;
++    Vector<android::Size> pictureSizes;
++    mDefaultParameters.getSupportedPreviewSizes(previewSizes);
++    mDefaultParameters.getSupportedPictureSizes(pictureSizes);
++
++    // La API1 no publica la lista de rangos de fps soportados, solo el rango
++    // de preview activo. Los valores van en miles de fotogramas por segundo.
++    std::vector<int32_t> fpsRanges;
++    int minFps = 0;
++    int maxFps = 0;
++    mDefaultParameters.getPreviewFpsRange(&minFps, &maxFps);
++    if (minFps <= 0 || maxFps <= 0) {
++        minFps = 15000;
++        maxFps = 30000;
++    }
++    fpsRanges.push_back(minFps);
++    fpsRanges.push_back(maxFps);
++    metadata.update(ANDROID_CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES,
++            fpsRanges.data(), fpsRanges.size());
++
++    const int64_t frameDuration = maxFps > 0
++            ? 1000000000LL / (maxFps / 1000) : 33333333LL;
++
++    std::vector<int32_t> streamConfigs;
++    std::vector<int64_t> minFrameDurations;
++    std::vector<int64_t> stallDurations;
++
++    for (size_t i = 0; i < previewSizes.size(); i++) {
++        const int32_t width = previewSizes[i].width;
++        const int32_t height = previewSizes[i].height;
++        const int32_t formats[] = { kLegacyFormatPrivate, kLegacyFormatYuv420 };
++        for (size_t f = 0; f < sizeof(formats) / sizeof(formats[0]); f++) {
++            streamConfigs.push_back(formats[f]);
++            streamConfigs.push_back(width);
++            streamConfigs.push_back(height);
++            streamConfigs.push_back(0);
++            minFrameDurations.push_back(formats[f]);
++            minFrameDurations.push_back(width);
++            minFrameDurations.push_back(height);
++            minFrameDurations.push_back(frameDuration);
++            stallDurations.push_back(formats[f]);
++            stallDurations.push_back(width);
++            stallDurations.push_back(height);
++            stallDurations.push_back(0);
++        }
++    }
++
++    int32_t maxWidth = 0;
++    int32_t maxHeight = 0;
++    for (size_t i = 0; i < pictureSizes.size(); i++) {
++        const int32_t width = pictureSizes[i].width;
++        const int32_t height = pictureSizes[i].height;
++        streamConfigs.push_back(kLegacyFormatJpeg);
++        streamConfigs.push_back(width);
++        streamConfigs.push_back(height);
++        streamConfigs.push_back(100);
++        minFrameDurations.push_back(kLegacyFormatJpeg);
++        minFrameDurations.push_back(width);
++        minFrameDurations.push_back(height);
++        minFrameDurations.push_back(frameDuration);
++        stallDurations.push_back(kLegacyFormatJpeg);
++        stallDurations.push_back(width);
++        stallDurations.push_back(height);
++        stallDurations.push_back(frameDuration);
++        if (width * height > maxWidth * maxHeight) {
++            maxWidth = width;
++            maxHeight = height;
++        }
++    }
++
++    if (maxWidth == 0 || maxHeight == 0) {
++        for (size_t i = 0; i < previewSizes.size(); i++) {
++            if (previewSizes[i].width * previewSizes[i].height >
++                    maxWidth * maxHeight) {
++                maxWidth = previewSizes[i].width;
++                maxHeight = previewSizes[i].height;
++            }
++        }
++    }
++
++    metadata.update(ANDROID_SCALER_AVAILABLE_STREAM_CONFIGURATIONS,
++            streamConfigs.data(), streamConfigs.size());
++    metadata.update(ANDROID_SCALER_AVAILABLE_MIN_FRAME_DURATIONS,
++            minFrameDurations.data(), minFrameDurations.size());
++    metadata.update(ANDROID_SCALER_AVAILABLE_STALL_DURATIONS,
++            stallDurations.data(), stallDurations.size());
++
++    int32_t activeArray[2] = { maxWidth, maxHeight };
++    metadata.update(ANDROID_SENSOR_INFO_ACTIVE_ARRAY_SIZE, activeArray, 2);
++    metadata.update(ANDROID_SENSOR_INFO_PIXEL_ARRAY_SIZE, activeArray, 2);
++
++    // El HAL v1 no informa del tamaño fisico del sensor.
++    float physicalSize[2] = { 0.0f, 0.0f };
++    metadata.update(ANDROID_SENSOR_INFO_PHYSICAL_SIZE, physicalSize, 2);
++
++    int32_t noCapabilities[1] = { 0 };
++    metadata.update(ANDROID_REQUEST_AVAILABLE_CAPABILITIES, noCapabilities, 0);
++
++    uint8_t noFaceDetectModes[1] = { 0 };
++    metadata.update(ANDROID_STATISTICS_INFO_AVAILABLE_FACE_DETECT_MODES,
++            noFaceDetectModes, 0);
++
++    uint8_t tonemapModes[1] = {
++        static_cast<uint8_t>(ANDROID_TONEMAP_MODE_FAST) };
++    metadata.update(ANDROID_TONEMAP_AVAILABLE_TONE_MAP_MODES, tonemapModes, 1);
++
++    uint8_t edgeModes[1] = { static_cast<uint8_t>(ANDROID_EDGE_MODE_OFF) };
++    metadata.update(ANDROID_EDGE_AVAILABLE_EDGE_MODES, edgeModes, 1);
++
++    uint8_t noiseReductionModes[2] = {
++        static_cast<uint8_t>(ANDROID_NOISE_REDUCTION_MODE_OFF),
++        static_cast<uint8_t>(ANDROID_NOISE_REDUCTION_MODE_FAST) };
++    metadata.update(ANDROID_NOISE_REDUCTION_AVAILABLE_NOISE_REDUCTION_MODES,
++            noiseReductionModes, 2);
++
++    uint8_t aeModes[2] = {
++        static_cast<uint8_t>(ANDROID_CONTROL_AE_MODE_ON),
++        static_cast<uint8_t>(ANDROID_CONTROL_AE_MODE_OFF) };
++    metadata.update(ANDROID_CONTROL_AE_AVAILABLE_MODES, aeModes, 2);
++
++    uint8_t afModes[2] = {
++        static_cast<uint8_t>(ANDROID_CONTROL_AF_MODE_OFF),
++        static_cast<uint8_t>(ANDROID_CONTROL_AF_MODE_AUTO) };
++    metadata.update(ANDROID_CONTROL_AF_AVAILABLE_MODES, afModes, 2);
++
++    uint8_t awbModes[1] = { static_cast<uint8_t>(ANDROID_CONTROL_AWB_MODE_AUTO) };
++    metadata.update(ANDROID_CONTROL_AWB_AVAILABLE_MODES, awbModes, 1);
++
++    float maxDigitalZoom = getLegacyMaxZoom(
++            mDefaultParameters.get(CameraParameters::KEY_ZOOM_RATIOS));
++    metadata.update(ANDROID_SCALER_AVAILABLE_MAX_DIGITAL_ZOOM,
++            &maxDigitalZoom, 1);
++
++    float minimumFocusDistance = 0.0f;
++    metadata.update(ANDROID_LENS_INFO_MINIMUM_FOCUS_DISTANCE,
++            &minimumFocusDistance, 1);
++
++    *characteristics = metadata;
++    return OK;
++}
++
+ sp<hardware::camera::device::V1_0::ICameraDevice>
+ HidlProviderInfo::HidlDeviceInfo1::startDeviceInterface() {
+     Mutex::Autolock l(mDeviceAvailableLock);
+diff --git a/services/camera/libcameraservice/common/hidl/HidlProviderInfo.h b/services/camera/libcameraservice/common/hidl/HidlProviderInfo.h
+index 7d5073b..a314e24 100644
+--- a/services/camera/libcameraservice/common/hidl/HidlProviderInfo.h
++++ b/services/camera/libcameraservice/common/hidl/HidlProviderInfo.h
+@@ -107,6 +107,8 @@ struct HidlProviderInfo : public CameraProviderManager::ProviderInfo,
+         virtual status_t getCameraInfo(bool overrideToPortrait,
+                 int *portraitRotation,
+                 hardware::CameraInfo *info) const override;
++        virtual status_t getCameraCharacteristics(bool overrideForPerfClass,
++                CameraMetadata *characteristics, bool overrideToPortrait) override;
+         virtual status_t dumpState(int /*fd*/) override;
+ 
+         sp<hardware::camera::device::V1_0::ICameraDevice> startDeviceInterface();

@@ -1,0 +1,45 @@
+From 0bfd23ea26d73303906292338bf67ef9dde1f05a Mon Sep 17 00:00:00 2001
+From: Vikas batchu <quic_vikabatc@quicinc.com>
+Date: Wed, 23 Mar 2022 22:25:29 +0530
+Subject: [PATCH] surfaceflinger: avoid present hidl call when DP is
+ disconnected.
+
+CRs-Fixed: 3121678
+Change-Id: I2b778cc0fa1d9f93560fadfd715605ae062f5af1
+Signed-off-by: Pranav Vashi <neobuddy89@gmail.com>
+---
+ .../surfaceflinger/DisplayHardware/HWComposer.cpp     | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/services/surfaceflinger/DisplayHardware/HWComposer.cpp b/services/surfaceflinger/DisplayHardware/HWComposer.cpp
+index a6aee1f..f9ca984 100644
+--- a/services/surfaceflinger/DisplayHardware/HWComposer.cpp
++++ b/services/surfaceflinger/DisplayHardware/HWComposer.cpp
+@@ -491,6 +491,13 @@ status_t HWComposer::getDeviceCompositionChanges(
+ 
+ sp<Fence> HWComposer::getPresentFence(HalDisplayId displayId) const {
+     RETURN_IF_INVALID_DISPLAY(displayId, Fence::NO_FENCE);
++
++    auto& hwcDisplay = mDisplayData.at(displayId).hwcDisplay;
++
++    if (!hwcDisplay->isConnected()) {
++        return Fence::NO_FENCE;
++    }
++
+     return mDisplayData.at(displayId).lastPresentFence;
+ }
+ 
+@@ -515,6 +522,10 @@ status_t HWComposer::presentAndGetReleaseFences(
+     auto& displayData = mDisplayData[displayId];
+     auto& hwcDisplay = displayData.hwcDisplay;
+ 
++    if (!hwcDisplay->isConnected()) {
++        return NO_ERROR;
++    }
++
+     if (displayData.validateWasSkipped) {
+         // explicitly flush all pending commands
+         auto error = static_cast<hal::Error>(mComposer->executeCommands());
+-- 
+2.43.0
+

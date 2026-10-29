@@ -1,0 +1,2062 @@
+diff --git a/Android.bp b/Android.bp
+new file mode 100644
+index 0000000..37039bb
+--- /dev/null
++++ b/Android.bp
+@@ -0,0 +1,29 @@
++// Android.bp para LineageOS Snap (cm-12.1), app de camara camera1 real
++// usada por Lineage en dispositivos con HAL v1. Portado a Android 13.
++//
++// El Android.mk original se elimina en este mismo parche: no pueden coexistir
++// Android.mk y Android.bp para el mismo modulo (modulo duplicado).
++
++android_app {
++    name: "Snap",
++    srcs: [
++        "src/**/*.java",
++        "src_pd/**/*.java",
++        "src_pd_gcam/**/*.java",
++    ],
++    resource_dirs: ["res"],
++    libs: [
++        "xmp_toolkit",
++    ],
++    jni_libs: [
++        "libjni_snapmosaic",
++        "libjni_snaptinyplanet",
++    ],
++    certificate: "platform",
++    platform_apis: true,
++    version_name: "2.0.002",
++    version_code: "20002130",
++    optimize: {
++        proguard_flags_file: "proguard.flags",
++    },
++}
+diff --git a/Android.mk b/Android.mk
+deleted file mode 100644
+index 606aa87..0000000
+--- a/Android.mk
++++ /dev/null
+@@ -1,46 +0,0 @@
+-LOCAL_PATH:= $(call my-dir)
+-
+-include $(CLEAR_VARS)
+-
+-LOCAL_MODULE_TAGS := optional
+-
+-LOCAL_STATIC_JAVA_LIBRARIES := android-support-v13
+-LOCAL_STATIC_JAVA_LIBRARIES += xmp_toolkit
+-
+-
+-LOCAL_SRC_FILES := $(call all-java-files-under, src)
+-LOCAL_SRC_FILES += $(call all-java-files-under, src_pd)
+-LOCAL_SRC_FILES += $(call all-java-files-under, src_pd_gcam)
+-
+-LOCAL_RESOURCE_DIR += $(LOCAL_PATH)/res
+-
+-LOCAL_CERTIFICATE := platform
+-
+-include $(LOCAL_PATH)/version.mk
+-LOCAL_AAPT_FLAGS := \
+-        --auto-add-overlay \
+-        --version-name "$(version_name_package)" \
+-        --version-code $(version_code_package) \
+-
+-LOCAL_PACKAGE_NAME := Snap
+-
+-LOCAL_AAPT_FLAGS += --rename-manifest-package org.cyanogenmod.snap
+-
+-#LOCAL_SDK_VERSION := current
+-
+-LOCAL_OVERRIDES_PACKAGES := Camera2
+-
+-LOCAL_PROGUARD_FLAG_FILES := proguard.flags
+-
+-# If this is an unbundled build (to install separately) then include
+-# the libraries in the APK, otherwise just put them in /system/lib and
+-# leave them out of the APK
+-ifneq (,$(TARGET_BUILD_APPS))
+-  LOCAL_JNI_SHARED_LIBRARIES := libjni_snapmosaic libjni_snaptinyplanet
+-else
+-  LOCAL_REQUIRED_MODULES := libjni_snapmosaic libjni_snaptinyplanet
+-endif
+-
+-include $(BUILD_PACKAGE)
+-
+-include $(call all-makefiles-under, $(LOCAL_PATH))
+diff --git a/AndroidManifest.xml b/AndroidManifest.xml
+index 07cc5c7..ddede2c 100644
+--- a/AndroidManifest.xml
++++ b/AndroidManifest.xml
+@@ -4,37 +4,23 @@
+     xmlns:android="http://schemas.android.com/apk/res/android"
+     package="org.codeaurora.snapcam">
+ 
++    <!-- minSdk 23: A13 exige >= 23 para apps de plataforma (core-for-system-modules).
++         targetSdk 20 se mantiene a proposito: por debajo de 29 Android mantiene el
++         almacenamiento legado, necesario para que la app (4.4) siga escribiendo
++         las fotos en DCIM sinScoped Storage. -->
+     <uses-sdk
+-        android:minSdkVersion="14"
++        android:minSdkVersion="23"
+         android:targetSdkVersion="20" />
+ 
+     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+-    <uses-permission android:name="android.permission.BIND_WALLPAPER" />
+     <uses-permission android:name="android.permission.CAMERA" />
+-    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+-    <uses-permission android:name="android.permission.GET_ACCOUNTS" />
+-    <uses-permission android:name="android.permission.INTERNET" />
+-    <uses-permission android:name="android.permission.MANAGE_ACCOUNTS" />
+     <uses-permission android:name="android.permission.NFC" />
+-    <uses-permission android:name="android.permission.READ_CONTACTS" />
+-    <uses-permission android:name="android.permission.READ_SYNC_SETTINGS" />
+     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+-    <uses-permission android:name="android.permission.SET_WALLPAPER" />
+-    <uses-permission android:name="android.permission.SUBSCRIBED_FEEDS_READ" />
+-    <uses-permission android:name="android.permission.SUBSCRIBED_FEEDS_WRITE" />
+-    <uses-permission android:name="android.permission.USE_CREDENTIALS" />
+     <uses-permission android:name="android.permission.VIBRATE" />
+     <uses-permission android:name="android.permission.WAKE_LOCK" />
+     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+-    <uses-permission android:name="android.permission.WRITE_MEDIA_STORAGE" />
+-    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+-    <uses-permission android:name="android.permission.WRITE_SYNC_SETTINGS" />
+-    <uses-permission android:name="android.permission.MOUNT_UNMOUNT_FILESYSTEMS" />
+-    <uses-permission android:name="android.permission.PREVENT_POWER_KEY" />
+ 
+     <supports-screens
+         android:anyDensity="true"
+@@ -54,6 +40,7 @@
+         <activity
+             android:name="com.android.camera.CameraActivity"
+             android:clearTaskOnLaunch="true"
++            android:exported="true"
+             android:configChanges="orientation|screenSize|keyboardHidden"
+             android:label="@string/app_name"
+             android:launchMode="singleTop"
+@@ -81,6 +68,7 @@
+ 
+         <activity-alias
+             android:name="com.android.camera.CameraLauncher"
++            android:exported="true"
+             android:label="@string/app_name"
+             android:launchMode="singleTop"
+             android:targetActivity="com.android.camera.CameraActivity">
+@@ -95,6 +83,7 @@
+         <!-- Video camera and capture use the Camcorder label and icon. -->
+         <activity-alias
+             android:name="com.android.camera.VideoCamera"
++            android:exported="true"
+             android:label="@string/video_camera_label"
+             android:launchMode="singleTop"
+             android:targetActivity="com.android.camera.CameraActivity">
+@@ -111,6 +100,7 @@
+         <activity
+             android:name="com.android.camera.SecureCameraActivity"
+             android:clearTaskOnLaunch="true"
++            android:exported="true"
+             android:configChanges="orientation|screenSize|keyboardHidden"
+             android:excludeFromRecents="true"
+             android:label="@string/app_name"
+@@ -136,6 +126,7 @@
+ 
+         <activity-alias
+             android:name="com.android.camera.CameraGestureActivity"
++            android:exported="true"
+             android:icon="@mipmap/ic_launcher_camera"
+             android:label="@string/camera_gesture_title"
+             android:targetActivity="com.android.camera.SecureCameraActivity">
+@@ -157,12 +148,12 @@
+             android:configChanges="keyboardHidden|orientation|screenSize">
+         </activity>
+ 
+-        <receiver android:name="com.android.camera.DisableCameraReceiver">
++        <receiver android:name="com.android.camera.DisableCameraReceiver" android:exported="true">
+             <intent-filter>
+                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+             </intent-filter>
+         </receiver>
+-        <receiver android:name="com.android.camera.CameraButtonIntentReceiver">
++        <receiver android:name="com.android.camera.CameraButtonIntentReceiver" android:exported="true">
+             <intent-filter>
+                 <action android:name="android.intent.action.CAMERA_BUTTON"/>
+             </intent-filter>
+diff --git a/jni/Android.bp b/jni/Android.bp
+new file mode 100644
+index 0000000..0c07a4d
+--- /dev/null
++++ b/jni/Android.bp
+@@ -0,0 +1,71 @@
++// Android.bp de las librerias JNI de LineageOS Snap (cm-12.1).
++// Sustituye a jni/Android.mk (no pueden coexistir para el mismo modulo).
++//
++// -std=gnu++11: el codigo C++ es de 2014 y usa construcciones que el
++// estandar C++17 (default de clang en A13) ya no acepta.
++
++cc_library_shared {
++    name: "libjni_snapmosaic",
++    srcs: [
++        "feature_mos_jni.cpp",
++        "mosaic_renderer_jni.cpp",
++        "feature_mos/src/mosaic/trsMatrix.cpp",
++        "feature_mos/src/mosaic/AlignFeatures.cpp",
++        "feature_mos/src/mosaic/Blend.cpp",
++        "feature_mos/src/mosaic/Delaunay.cpp",
++        "feature_mos/src/mosaic/ImageUtils.cpp",
++        "feature_mos/src/mosaic/Mosaic.cpp",
++        "feature_mos/src/mosaic/Pyramid.cpp",
++        "feature_mos/src/mosaic_renderer/Renderer.cpp",
++        "feature_mos/src/mosaic_renderer/WarpRenderer.cpp",
++        "feature_mos/src/mosaic_renderer/SurfaceTextureRenderer.cpp",
++        "feature_mos/src/mosaic_renderer/YVURenderer.cpp",
++        "feature_mos/src/mosaic_renderer/FrameBuffer.cpp",
++        "feature_stab/db_vlvm/db_feature_detection.cpp",
++        "feature_stab/db_vlvm/db_feature_matching.cpp",
++        "feature_stab/db_vlvm/db_framestitching.cpp",
++        "feature_stab/db_vlvm/db_image_homography.cpp",
++        "feature_stab/db_vlvm/db_rob_image_homography.cpp",
++        "feature_stab/db_vlvm/db_utilities.cpp",
++        "feature_stab/db_vlvm/db_utilities_camera.cpp",
++        "feature_stab/db_vlvm/db_utilities_indexing.cpp",
++        "feature_stab/db_vlvm/db_utilities_linalg.cpp",
++        "feature_stab/db_vlvm/db_utilities_poly.cpp",
++        "feature_stab/src/dbreg/dbreg.cpp",
++        "feature_stab/src/dbreg/dbstabsmooth.cpp",
++        "feature_stab/src/dbreg/vp_motionmodel.c",
++    ],
++    local_include_dirs: [
++        "feature_stab/db_vlvm",
++        "feature_stab/src",
++        "feature_stab/src/dbreg",
++        "feature_mos/src",
++        "feature_mos/src/mosaic",
++    ],
++    cflags: [
++        "-O3",
++        "-DNDEBUG",
++        "-fstrict-aliasing",
++        "-std=gnu++11",
++    ],
++    shared_libs: [
++        "liblog",
++        "libGLESv2",
++    ],
++}
++
++cc_library_shared {
++    name: "libjni_snaptinyplanet",
++    srcs: ["tinyplanet.cc"],
++    cpp_extension: ".cc",
++    cflags: [
++        "-ffast-math",
++        "-O3",
++        "-funroll-loops",
++        "-std=gnu++11",
++    ],
++    shared_libs: [
++        "liblog",
++        "libjnigraphics",
++    ],
++}
+diff --git a/jni/Android.mk b/jni/Android.mk
+deleted file mode 100755
+index b052c09..0000000
+--- a/jni/Android.mk
++++ /dev/null
+@@ -1,65 +0,0 @@
+-LOCAL_PATH:= $(call my-dir)
+-
+-include $(CLEAR_VARS)
+-
+-LOCAL_C_INCLUDES := \
+-        $(LOCAL_PATH)/feature_stab/db_vlvm \
+-        $(LOCAL_PATH)/feature_stab/src \
+-        $(LOCAL_PATH)/feature_stab/src/dbreg \
+-        $(LOCAL_PATH)/feature_mos/src \
+-        $(LOCAL_PATH)/feature_mos/src/mosaic
+-
+-LOCAL_CFLAGS := -O3 -DNDEBUG -fstrict-aliasing
+-
+-LOCAL_SRC_FILES := \
+-        feature_mos_jni.cpp \
+-        mosaic_renderer_jni.cpp \
+-        feature_mos/src/mosaic/trsMatrix.cpp \
+-        feature_mos/src/mosaic/AlignFeatures.cpp \
+-        feature_mos/src/mosaic/Blend.cpp \
+-        feature_mos/src/mosaic/Delaunay.cpp \
+-        feature_mos/src/mosaic/ImageUtils.cpp \
+-        feature_mos/src/mosaic/Mosaic.cpp \
+-        feature_mos/src/mosaic/Pyramid.cpp \
+-        feature_mos/src/mosaic_renderer/Renderer.cpp \
+-        feature_mos/src/mosaic_renderer/WarpRenderer.cpp \
+-        feature_mos/src/mosaic_renderer/SurfaceTextureRenderer.cpp \
+-        feature_mos/src/mosaic_renderer/YVURenderer.cpp \
+-        feature_mos/src/mosaic_renderer/FrameBuffer.cpp \
+-        feature_stab/db_vlvm/db_feature_detection.cpp \
+-        feature_stab/db_vlvm/db_feature_matching.cpp \
+-        feature_stab/db_vlvm/db_framestitching.cpp \
+-        feature_stab/db_vlvm/db_image_homography.cpp \
+-        feature_stab/db_vlvm/db_rob_image_homography.cpp \
+-        feature_stab/db_vlvm/db_utilities.cpp \
+-        feature_stab/db_vlvm/db_utilities_camera.cpp \
+-        feature_stab/db_vlvm/db_utilities_indexing.cpp \
+-        feature_stab/db_vlvm/db_utilities_linalg.cpp \
+-        feature_stab/db_vlvm/db_utilities_poly.cpp \
+-        feature_stab/src/dbreg/dbreg.cpp \
+-        feature_stab/src/dbreg/dbstabsmooth.cpp \
+-        feature_stab/src/dbreg/vp_motionmodel.c
+-
+-LOCAL_SDK_VERSION := 9
+-
+-LOCAL_LDFLAGS := -llog -lGLESv2
+-
+-LOCAL_MODULE_TAGS := optional
+-
+-LOCAL_MODULE    := libjni_snapmosaic
+-include $(BUILD_SHARED_LIBRARY)
+-
+-# TinyPlanet
+-include $(CLEAR_VARS)
+-
+-LOCAL_CPP_EXTENSION := .cc
+-LOCAL_LDFLAGS   := -llog -ljnigraphics
+-LOCAL_SDK_VERSION := 9
+-LOCAL_MODULE    := libjni_snaptinyplanet
+-LOCAL_SRC_FILES := tinyplanet.cc
+-
+-LOCAL_CFLAGS    += -ffast-math -O3 -funroll-loops
+-LOCAL_ARM_MODE := arm
+-
+-include $(BUILD_SHARED_LIBRARY)
+-
+diff --git a/res/values/strings.xml b/res/values/strings.xml
+index 1734f6d..ffc3174 100644
+--- a/res/values/strings.xml
++++ b/res/values/strings.xml
+@@ -677,4 +677,10 @@ CHAR LIMIT = NONE] -->
+ 
+     <!--  String shown when setting the homepage wallpaper in the background [CHAR LIMIT=NONE] -->
+     <string name="setting_wallpaper">Setting wallpaper</string>
++ 
++    <!-- Strings que solo existian en traducciones: AAPT2 exige un valor por
++         defecto (en ingles) para cada recurso. -->
++    <string name="select_image">Select image</string>
++    <string name="pref_camera_redeyereduction_entry_disable">off</string>
++    <string name="pref_camera_ae_bracket_hdr_entry_off">off</string>
+  </resources>
+diff --git a/src/com/android/camera/AndroidCameraManagerImpl.java b/src/com/android/camera/AndroidCameraManagerImpl.java
+index a03631a..e6da089 100644
+--- a/src/com/android/camera/AndroidCameraManagerImpl.java
++++ b/src/com/android/camera/AndroidCameraManagerImpl.java
+@@ -39,8 +39,6 @@ import android.os.Looper;
+ import android.os.Message;
+ import android.util.Log;
+ import android.view.SurfaceHolder;
+-import android.hardware.Camera.CameraDataCallback;
+-import android.hardware.Camera.CameraMetaDataCallback;
+ import com.android.camera.util.ApiHelper;
+ import android.os.ConditionVariable;
+ 
+@@ -340,26 +338,6 @@ class AndroidCameraManagerImpl implements CameraManager {
+                         mParametersIsDirty = true;
+                         return;
+ 
+-                    case SET_HISTOGRAM_MODE:
+-                        mCamera.setHistogramMode((CameraDataCallback) msg.obj);
+-                        break;
+-
+-                    case SEND_HISTOGRAM_DATA:
+-                        mCamera.sendHistogramData();
+-                        break;
+-
+-                    case SET_LONGSHOT:
+-                        mCamera.setLongshot((Boolean) msg.obj);
+-                        break;
+-
+-                    case STOP_LONGSHOT:
+-                        mCamera.stopLongshot();
+-                        break;
+-
+-                    case SET_AUTO_HDR_MODE:
+-                        mCamera.setMetadataCb((CameraMetaDataCallback) msg.obj);
+-                        break;
+-
+                     default:
+                         throw new RuntimeException("Invalid CameraProxy message=" + msg.what);
+                 }
+@@ -451,11 +429,6 @@ class AndroidCameraManagerImpl implements CameraManager {
+             mCameraHandler.sendEmptyMessage(LOCK);
+         }
+ 
+-        @Override
+-        public void setMetadataCb(CameraMetaDataCallback cb){
+-            mCameraHandler.obtainMessage(SET_AUTO_HDR_MODE, cb).sendToTarget();
+-        }
+-
+         @Override
+         public void setPreviewTexture(SurfaceTexture surfaceTexture) {
+             mCameraHandler.obtainMessage(SET_PREVIEW_TEXTURE_ASYNC, surfaceTexture).sendToTarget();
+@@ -597,25 +570,6 @@ class AndroidCameraManagerImpl implements CameraManager {
+                     ENABLE_SHUTTER_SOUND, (enable ? 1 : 0), 0).sendToTarget();
+         }
+ 
+-        @Override
+-        public void setLongshot(boolean enable) {
+-            mCameraHandler.obtainMessage(SET_LONGSHOT,
+-                    new Boolean(enable)).sendToTarget();
+-        }
+-
+-        @Override
+-        public void stopLongshot() {
+-            mCameraHandler.sendEmptyMessage(STOP_LONGSHOT);
+-        }
+-
+-        @Override
+-        public void setHistogramMode(CameraDataCallback cb) {
+-            mCameraHandler.obtainMessage(SET_HISTOGRAM_MODE, cb).sendToTarget();
+-        }
+-        @Override
+-        public void sendHistogramData() {
+-            mCameraHandler.sendEmptyMessage(SEND_HISTOGRAM_DATA);
+-        }
+     }
+ 
+     /**
+diff --git a/src/com/android/camera/CameraActivity.java b/src/com/android/camera/CameraActivity.java
+index 71894b8..ba981c2 100644
+--- a/src/com/android/camera/CameraActivity.java
++++ b/src/com/android/camera/CameraActivity.java
+@@ -1408,10 +1408,10 @@ public class CameraActivity extends Activity
+         GcamHelper.init(getContentResolver());
+ 
+         mAudioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+-        mOriginalMasterVol = mAudioManager.getMasterVolume();
++        mOriginalMasterVol = mAudioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+         mShutterVol =  SystemProperties.getInt("persist.camera.snapshot.volume", -1);
+         if (mShutterVol >= 0 && mShutterVol <= 100 )
+-            mAudioManager.setMasterVolume(mShutterVol,0);
++            mAudioManager.setStreamVolume(AudioManager.STREAM_MUSIC, mShutterVol, 0);
+ 
+         getWindow().requestFeature(Window.FEATURE_ACTION_BAR);
+         setContentView(R.layout.camera_filmstrip);
+@@ -1594,7 +1594,7 @@ public class CameraActivity extends Activity
+     @Override
+     public void onPause() {
+         if (mShutterVol >= 0 && mShutterVol <= 100)
+-            mAudioManager.setMasterVolume(mOriginalMasterVol,0);
++            mAudioManager.setStreamVolume(AudioManager.STREAM_MUSIC, mOriginalMasterVol, 0);
+         // Delete photos that are pending deletion
+         performDeletion();
+         mOrientationListener.disable();
+@@ -1619,7 +1619,7 @@ public class CameraActivity extends Activity
+     @Override
+     public void onResume() {
+         if (mShutterVol >= 0 && mShutterVol <= 100)
+-            mAudioManager.setMasterVolume(mShutterVol,0);
++            mAudioManager.setStreamVolume(AudioManager.STREAM_MUSIC, mShutterVol, 0);
+ 
+         UsageStatistics.onEvent(UsageStatistics.COMPONENT_CAMERA,
+                 UsageStatistics.ACTION_FOREGROUNDED, this.getClass().getSimpleName());
+@@ -1682,7 +1682,7 @@ public class CameraActivity extends Activity
+             Log.d(TAG, "wake lock release");
+         }
+         if (mShutterVol >= 0 && mShutterVol <= 100)
+-            mAudioManager.setMasterVolume(mOriginalMasterVol,0);
++            mAudioManager.setStreamVolume(AudioManager.STREAM_MUSIC, mOriginalMasterVol, 0);
+         if (mSecureCamera) {
+             unregisterReceiver(mScreenOffReceiver);
+         }
+@@ -1785,13 +1785,9 @@ public class CameraActivity extends Activity
+         if (!CameraUtil.hasCameraKey()) {
+             mPowerShutter = val.equals(CameraSettings.VALUE_ON);
+         }
+-        if (mPowerShutter && mInCameraApp) {
+-            getWindow().addPrivateFlags(
+-                    WindowManager.LayoutParams.PRIVATE_FLAG_PREVENT_POWER_KEY);
+-        } else {
+-            getWindow().clearPrivateFlags(
+-                    WindowManager.LayoutParams.PRIVATE_FLAG_PREVENT_POWER_KEY);
+-        }
++        // PRIVATE_FLAG_PREVENT_POWER_KEY fue eliminado de WindowManager en
++        // Android 13: el comportamiento de la tecla de power se deja por
++        // defecto (el sistema ya ignora la tecla mientras hay una camara).
+     }
+ 
+     protected void initMaxBrightness(ComboPreferences prefs) {
+diff --git a/src/com/android/camera/CameraManager.java b/src/com/android/camera/CameraManager.java
+index d5547a4..909e1ca 100644
+--- a/src/com/android/camera/CameraManager.java
++++ b/src/com/android/camera/CameraManager.java
+@@ -25,8 +25,6 @@ import android.hardware.Camera.Parameters;
+ import android.os.Build;
+ import android.os.Handler;
+ import android.view.SurfaceHolder;
+-import android.hardware.Camera.CameraDataCallback;
+-import android.hardware.Camera.CameraMetaDataCallback;
+ 
+ /**
+  * An interface which provides possible camera device operations.
+@@ -166,12 +164,6 @@ public interface CameraManager {
+          */
+         public void release();
+ 
+-        /**
+-         * Sets the metadata cb
+-         * @cb Metadata callback object
+-        */
+-        public void setMetadataCb (CameraMetaDataCallback cb);
+-
+         /**
+          * Reconnects to the camera device.
+          * @see android.hardware.Camera#reconnect()
+@@ -357,28 +349,5 @@ public interface CameraManager {
+          *                 {@code false} to disable it.
+          */
+         public void enableShutterSound(boolean enable);
+-        /**
+-         * Set histogram Mode
+-         *
+-         * @param cb   cameraDataCallback to use
+-         */
+-        public void setHistogramMode(CameraDataCallback cb);
+-        /**
+-         * Send the Histogram Data.
+-         *
+-        */
+-        public void sendHistogramData();
+-        /**
+-         * Enables/Disables longshot mode.
+-         *
+-         * @param enable   {@code true} to enable longshot mode,
+-         *                 {@code false} to disable it.
+-        */
+-        public void setLongshot(boolean enable);
+-        /**
+-         * Stop longshot.
+-         *
+-        */
+-        public void stopLongshot();
+     }
+ }
+diff --git a/src/com/android/camera/CameraSettings.java b/src/com/android/camera/CameraSettings.java
+index 465c690..3957f24 100644
+--- a/src/com/android/camera/CameraSettings.java
++++ b/src/com/android/camera/CameraSettings.java
+@@ -30,8 +30,8 @@ import android.hardware.Camera.Parameters;
+ import android.hardware.Camera.Size;
+ import android.media.CamcorderProfile;
+ import android.media.MediaRecorder;
+-import android.media.EncoderCapabilities;
+-import android.media.EncoderCapabilities.VideoEncoderCap;
++import android.media.MediaCodecInfo;
++import android.media.MediaCodecList;
+ import java.util.HashMap;
+ import android.util.Log;
+ 
+@@ -250,7 +250,7 @@ public class CameraSettings {
+     static {
+         VIDEO_ENCODER_TABLE.put(MediaRecorder.VideoEncoder.H263, "h263");
+         VIDEO_ENCODER_TABLE.put(MediaRecorder.VideoEncoder.H264, "h264");
+-        VIDEO_ENCODER_TABLE.put(MediaRecorder.VideoEncoder.H265, "h265");
++        VIDEO_ENCODER_TABLE.put(MediaRecorder.VideoEncoder.HEVC, "h265");
+         VIDEO_ENCODER_TABLE.put(MediaRecorder.VideoEncoder.MPEG_4_SP, "m4v");
+     }
+ 
+@@ -514,13 +514,32 @@ public class CameraSettings {
+     }
+ 
+     private static List<String> getSupportedVideoEncoders() {
++        // android.media.EncoderCapabilities fue eliminado en Android 13, asi que
++        // los encoders de video se detectan con MediaCodecList (API publica).
+         ArrayList<String> supported = new ArrayList<String>();
+-        String str = null;
+-        List<VideoEncoderCap> videoEncoders = EncoderCapabilities.getVideoEncoders();
+-        for (VideoEncoderCap videoEncoder: videoEncoders) {
+-            str = VIDEO_ENCODER_TABLE.get(videoEncoder.mCodec);
+-            if (str != null) {
+-                supported.add(str);
++        MediaCodecList codecList = new MediaCodecList(MediaCodecList.REGULAR_CODECS);
++        for (MediaCodecInfo info : codecList.getCodecInfos()) {
++            if (!info.isEncoder()) {
++                continue;
++            }
++            String name = null;
++            for (String type : info.getSupportedTypes()) {
++                if ("video/3gpp".equals(type)) {
++                    name = "h263";
++                    break;
++                } else if ("video/avc".equals(type)) {
++                    name = "h264";
++                    break;
++                } else if ("video/hevc".equals(type)) {
++                    name = "h265";
++                    break;
++                } else if ("video/mp4v-es".equals(type)) {
++                    name = "m4v";
++                    break;
++                }
++            }
++            if (name != null && !supported.contains(name)) {
++                supported.add(name);
+             }
+         }
+         return supported;
+@@ -599,16 +618,16 @@ public class CameraSettings {
+ 
+         if (touchAfAec != null) {
+             filterUnsupportedOptions(group,
+-                    touchAfAec, mParameters.getSupportedTouchAfAec());
++                    touchAfAec, null);
+         }
+ 
+-        if (!mParameters.isPowerModeSupported() && powerMode != null) {
++        if (!false && powerMode != null) {
+             removePreference(group, powerMode.getKey());
+         }
+ 
+         if (selectableZoneAf != null) {
+             filterUnsupportedOptions(group,
+-                    selectableZoneAf, mParameters.getSupportedSelectableZoneAf());
++                    selectableZoneAf, null);
+         }
+ 
+         if (saturation != null && !CameraUtil.isSupported(mParameters, "saturation") &&
+@@ -628,22 +647,22 @@ public class CameraSettings {
+ 
+         if (mIso != null) {
+             filterUnsupportedOptions(group,
+-                    mIso, mParameters.getSupportedIsoValues());
++                    mIso, null);
+         }
+ 
+         if (redeyeReduction != null) {
+             filterUnsupportedOptions(group,
+-                    redeyeReduction, mParameters.getSupportedRedeyeReductionModes());
++                    redeyeReduction, null);
+         }
+ 
+         if (denoise != null) {
+             filterUnsupportedOptions(group,
+-                    denoise, mParameters.getSupportedDenoiseModes());
++                    denoise, null);
+         }
+ 
+         if (videoHdr != null) {
+             filterUnsupportedOptions(group,
+-                    videoHdr, mParameters.getSupportedVideoHDRModes());
++                    videoHdr, null);
+         }
+ 
+         if (colorEffect != null) {
+@@ -673,10 +692,10 @@ public class CameraSettings {
+ 
+         if (autoExposure != null) {
+             filterUnsupportedOptions(group,
+-                    autoExposure, mParameters.getSupportedAutoexposure());
++                    autoExposure, null);
+         }
+ 
+-        if (!mParameters.isPowerModeSupported()){
++        if (!false){
+             filterUnsupportedOptions(group,
+                     videoSnapSize, null);
+         } else {
+@@ -686,7 +705,7 @@ public class CameraSettings {
+ 
+         if (histogram!= null) {
+             filterUnsupportedOptions(group,
+-                    histogram, mParameters.getSupportedHistogramModes());
++                    histogram, null);
+         }
+ 
+         if (pictureFormat!= null) {
+@@ -704,7 +723,7 @@ public class CameraSettings {
+ 
+         if (videoRotation != null) {
+             filterUnsupportedOptions(group,
+-                    videoRotation, mParameters.getSupportedVideoRotationValues());
++                    videoRotation, null);
+         }
+ 
+         if (manualFocus != null) {
+@@ -755,7 +774,7 @@ public class CameraSettings {
+         }
+ 
+         if ((videoHfrMode != null) &&
+-            (mParameters.getSupportedHfrSizes() == null)) {
++            (null == null)) {
+                 filterUnsupportedOptions(group, videoHfrMode, null);
+         }
+ 
+@@ -1175,9 +1194,9 @@ public class CameraSettings {
+     @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR2)
+     private static void getFineResolutionQuality(ArrayList<String> supported,
+                                                  int cameraId,Parameters parameters) {
+-        if (CamcorderProfile.hasProfile(cameraId, CamcorderProfile.QUALITY_4kDCI)) {
++        if (CamcorderProfile.hasProfile(cameraId, CamcorderProfile.QUALITY_4KDCI)) {
+            if (checkSupportedVideoQuality(parameters,4096,2160)) {
+-              supported.add(Integer.toString(CamcorderProfile.QUALITY_4kDCI));
++              supported.add(Integer.toString(CamcorderProfile.QUALITY_4KDCI));
+            }
+         }
+         if (CamcorderProfile.hasProfile(cameraId, CamcorderProfile.QUALITY_2160P)) {
+@@ -1200,26 +1219,11 @@ public class CameraSettings {
+               supported.add(Integer.toString(CamcorderProfile.QUALITY_480P));
+            }
+         }
+-        if (CamcorderProfile.hasProfile(cameraId, CamcorderProfile.QUALITY_FWVGA)) {
+-           if (checkSupportedVideoQuality(parameters,864,480)){
+-              supported.add(Integer.toString(CamcorderProfile.QUALITY_FWVGA));
+-           }
+-        }
+-        if (CamcorderProfile.hasProfile(cameraId, CamcorderProfile.QUALITY_WVGA)) {
+-           if (checkSupportedVideoQuality(parameters,800,480)){
+-              supported.add(Integer.toString(CamcorderProfile.QUALITY_WVGA));
+-           }
+-        }
+         if (CamcorderProfile.hasProfile(cameraId, CamcorderProfile.QUALITY_VGA)) {
+            if (checkSupportedVideoQuality(parameters,640,480)){
+               supported.add(Integer.toString(CamcorderProfile.QUALITY_VGA));
+            }
+         }
+-        if (CamcorderProfile.hasProfile(cameraId, CamcorderProfile.QUALITY_HVGA)) {
+-           if (checkSupportedVideoQuality(parameters,480,360)){
+-              supported.add(Integer.toString(CamcorderProfile.QUALITY_HVGA));
+-           }
+-        }
+         if (CamcorderProfile.hasProfile(cameraId, CamcorderProfile.QUALITY_CIF)) {
+            if (checkSupportedVideoQuality(parameters,352,288)){
+               supported.add(Integer.toString(CamcorderProfile.QUALITY_CIF));
+diff --git a/src/com/android/camera/PhotoMenu.java b/src/com/android/camera/PhotoMenu.java
+index 37aa77f..29d9142 100644
+--- a/src/com/android/camera/PhotoMenu.java
++++ b/src/com/android/camera/PhotoMenu.java
+@@ -625,13 +625,13 @@ public class PhotoMenu extends MenuController
+         if ((autohdr != null) && autohdr.equals("enable")) {
+             popup1.setPreferenceEnabled(CameraSettings.KEY_SCENE_MODE, false);
+         }
+-        if ((zsl != null) && Parameters.ZSL_ON.equals(zsl)) {
++        if ((zsl != null) && "on".equals(zsl)) {
+             popup1.setPreferenceEnabled(CameraSettings.KEY_FOCUS_MODE, false);
+             popup1.setPreferenceEnabled(CameraSettings.KEY_MANUAL_EXPOSURE, false);
+             popup1.setPreferenceEnabled(CameraSettings.KEY_MANUAL_WB, false);
+             popup1.setPreferenceEnabled(CameraSettings.KEY_MANUAL_FOCUS, false);
+         }
+-        if ((faceDetection != null) && !Parameters.FACE_DETECTION_ON.equals(faceDetection)) {
++        if ((faceDetection != null) && !"on".equals(faceDetection)) {
+             popup1.setPreferenceEnabled(CameraSettings.KEY_FACE_RECOGNITION, false);
+         }
+         popup1.setPreferenceEnabled(CameraSettings.KEY_ZSL, !mUI.isCountingDown());
+@@ -654,7 +654,7 @@ public class PhotoMenu extends MenuController
+         String multiTouchFocusOn = mActivity.getString(R.string.
+                 pref_camera_advanced_feature_value_multi_touch_focus_on);
+ 
+-        if ((zsl != null) && Parameters.ZSL_OFF.equals(zsl)) {
++        if ((zsl != null) && "off".equals(zsl)) {
+             popup1.overrideSettings(CameraSettings.KEY_ADVANCED_FEATURES,
+                     mActivity.getString(R.string.pref_camera_advanced_feature_default));
+ 
+diff --git a/src/com/android/camera/PhotoModule.java b/src/com/android/camera/PhotoModule.java
+index f67200f..2cfe534 100644
+--- a/src/com/android/camera/PhotoModule.java
++++ b/src/com/android/camera/PhotoModule.java
+@@ -306,8 +306,6 @@ public class PhotoModule
+                     : null;
+ 
+     private final CameraErrorCallback mErrorCallback = new CameraErrorCallback();
+-    private final StatsCallback mStatsCallback = new StatsCallback();
+-    private final MetaDataCallback mMetaDataCallback = new MetaDataCallback();
+     private long mFocusStartTime;
+     private long mShutterCallbackTime;
+     private long mPostViewPictureCallbackTime;
+@@ -328,7 +326,7 @@ public class PhotoModule
+     private FocusOverlayManager mFocusManager;
+ 
+     private String mSceneMode;
+-    private String mCurrTouchAfAec = Parameters.TOUCH_AF_AEC_ON;
++    private String mCurrTouchAfAec = "on";
+ 
+     private final Handler mHandler = new MainHandler();
+     private MessageQueue.IdleHandler mIdleHandler = null;
+@@ -752,17 +750,17 @@ public class PhotoModule
+         boolean disableQcomMiscSetting =
+                 SystemProperties.getBoolean("camera.qcom.misc.disable", false);
+         if (disableQcomMiscSetting) {
+-            mUI.setPreference(CameraSettings.KEY_ZSL, Parameters.ZSL_OFF);
++            mUI.setPreference(CameraSettings.KEY_ZSL, "off");
+             mUI.setPreference(CameraSettings.KEY_FACE_DETECTION,
+-                    Parameters.FACE_DETECTION_OFF);
++                    "off");
+             mUI.setPreference(CameraSettings.KEY_TOUCH_AF_AEC,
+-                    Parameters.TOUCH_AF_AEC_OFF);
++                    "off");
+             mUI.setPreference(CameraSettings.KEY_FOCUS_MODE,
+                     Parameters.FOCUS_MODE_AUTO);
+             mUI.setPreference(CameraSettings.KEY_FLASH_MODE,
+                     Parameters.FLASH_MODE_OFF);
+             mUI.setPreference(CameraSettings.KEY_DENOISE,
+-                    Parameters.DENOISE_OFF);
++                    "off");
+             onSharedPreferenceChanged();
+         }
+     }
+@@ -931,7 +929,8 @@ public class PhotoModule
+                     Context.ACTIVITY_SERVICE);
+             ActivityManager.MemoryInfo memInfo = new ActivityManager.MemoryInfo();
+             am.getMemoryInfo(memInfo);
+-            SECONDARY_SERVER_MEM = memInfo.secondaryServerThreshold;
++            // secondaryServerThreshold se elimino de MemoryInfo en Android 13.
++            SECONDARY_SERVER_MEM = 192 * 1024 * 1024;
+         }
+ 
+         long totalMemory = Runtime.getRuntime().totalMemory();
+@@ -970,13 +969,11 @@ public class PhotoModule
+                     (mLongShotMaxSnap != -1)) {
+                     mLongshotActive = false;
+                     mUI.enableShutter(false);
+-                    mCameraDevice.stopLongshot();
+                     return;
+                 }
+ 
+                 if (mCameraState != LONGSHOT ||
+                     !mLongshotActive) {
+-                    mCameraDevice.stopLongshot();
+                     return;
+                 }
+ 
+@@ -1028,67 +1025,6 @@ public class PhotoModule
+             }
+         }
+     }
+-    private final class StatsCallback
+-           implements android.hardware.Camera.CameraDataCallback {
+-            @Override
+-        public void onCameraData(int [] data, android.hardware.Camera camera) {
+-            //if(!mPreviewing || !mHiston || !mFirstTimeInitialized){
+-            if(!mHiston || !mFirstTimeInitialized){
+-                return;
+-            }
+-            /*The first element in the array stores max hist value . Stats data begin from second value*/
+-            synchronized(statsdata) {
+-                System.arraycopy(data,0,statsdata,0,STATS_DATA);
+-            }
+-            mActivity.runOnUiThread(new Runnable() {
+-                public void run() {
+-                    if(mGraphView != null)
+-                        mGraphView.PreviewChanged();
+-                }
+-           });
+-        }
+-    }
+-
+-    private final class MetaDataCallback
+-           implements android.hardware.Camera.CameraMetaDataCallback{
+-        @Override
+-        public void onCameraMetaData (byte[] data, android.hardware.Camera camera) {
+-            int metadata[] = new int[3];
+-            if (data.length <= 12) {
+-                for (int i =0;i<3;i++) {
+-                    metadata[i] = byteToInt( (byte []) data, i*4);
+-                }
+-                if (metadata[2] == 1) {
+-                    mAutoHdrEnable = true;
+-                    mActivity.runOnUiThread(new Runnable() {
+-                        public void run() {
+-                            if (mDrawAutoHDR != null)
+-                                mDrawAutoHDR.AutoHDR();
+-                        }
+-                    });
+-                }
+-                else {
+-                    mAutoHdrEnable = false;
+-                    mActivity.runOnUiThread(new Runnable() {
+-                        public void run() {
+-                            if (mDrawAutoHDR != null)
+-                                mDrawAutoHDR.AutoHDR();
+-                        }
+-                    });
+-                }
+-            }
+-        }
+-
+-        private int byteToInt (byte[] b, int offset) {
+-            int value = 0;
+-            for (int i = 0; i < 4; i++) {
+-                int shift = (4 - 1 - i) * 8;
+-                value += (b[(3-i) + offset] & 0x000000FF) << shift;
+-            }
+-            return value;
+-        }
+-    }
+-
+     private final class PostViewPictureCallback
+             implements CameraPictureCallback {
+         @Override
+@@ -1193,7 +1129,7 @@ public class PhotoModule
+ 
+             mReceivedSnapNum = mReceivedSnapNum + 1;
+             mJpegPictureCallbackTime = System.currentTimeMillis();
+-            if(mSnapshotMode == CameraInfo.CAMERA_SUPPORT_MODE_ZSL) {
++            if(mSnapshotMode == 1) {
+                 Log.v(TAG, "JpegPictureCallback : in zslmode");
+                 mParameters = mCameraDevice.getParameters();
+                 if (CameraUtil.isBurstSupported(mParameters)) {
+@@ -1224,13 +1160,12 @@ public class PhotoModule
+             mFocusManager.updateFocusUI(); // Ensure focus indicator is hidden.
+ 
+             if (isLongshotDone()) {
+-                mCameraDevice.setLongshot(false);
+-            }
++                }
+ 
+             boolean needRestartPreview = !mIsImageCaptureIntent
+                     && !mPreviewRestartSupport
+                     && (mCameraState != LONGSHOT)
+-                    && (mSnapshotMode != CameraInfo.CAMERA_SUPPORT_MODE_ZSL)
++                    && (mSnapshotMode != 1)
+                     && ((mReceivedSnapNum == mBurstSnapNum) && (mCameraState != LONGSHOT));
+             needRestartPreview |= (isLongshotDone() && !mFocusManager.isZslEnabled());
+             if (needRestartPreview) {
+@@ -1381,7 +1316,7 @@ public class PhotoModule
+                         mLongshotSnapNum = 0;
+                     }
+ 
+-                    if (mHiston && (mSnapshotMode ==CameraInfo.CAMERA_SUPPORT_MODE_ZSL)) {
++                    if (mHiston && (mSnapshotMode ==1)) {
+                         mActivity.runOnUiThread(new Runnable() {
+                         public void run() {
+                             if (mGraphView != null) {
+@@ -1391,7 +1326,7 @@ public class PhotoModule
+                         }
+                     });
+                 }
+-                if (mSnapshotMode == CameraInfo.CAMERA_SUPPORT_MODE_ZSL &&
++                if (mSnapshotMode == 1 &&
+                         mCameraState != LONGSHOT &&
+                         mReceivedSnapNum == mBurstSnapNum &&
+                         !mIsImageCaptureIntent) {
+@@ -1512,9 +1447,8 @@ public class PhotoModule
+ 
+         final boolean animateBefore = (mSceneMode == CameraUtil.SCENE_MODE_HDR);
+         if(mHiston) {
+-            if (mSnapshotMode != CameraInfo.CAMERA_SUPPORT_MODE_ZSL) {
++            if (mSnapshotMode != 1) {
+                 mHiston = false;
+-                mCameraDevice.setHistogramMode(null);
+             }
+             mActivity.runOnUiThread(new Runnable() {
+                 public void run() {
+@@ -1530,7 +1464,6 @@ public class PhotoModule
+ 
+         if (mCameraState == LONGSHOT) {
+             mLongshotSnapNum = 0;
+-            mCameraDevice.setLongshot(true);
+         }
+ 
+         // Set rotation and gps data.
+@@ -1597,7 +1530,7 @@ public class PhotoModule
+ 
+         mNamedImages.nameNewImage(mCaptureStartTime, mRefocus);
+ 
+-        if (mSnapshotMode != CameraInfo.CAMERA_SUPPORT_MODE_ZSL) {
++        if (mSnapshotMode != 1) {
+             mFaceDetectionStarted = false;
+         }
+         UsageStatistics.onEvent(UsageStatistics.COMPONENT_CAMERA,
+@@ -1631,7 +1564,7 @@ public class PhotoModule
+     }
+ 
+     private void updateCommonManual3ASettings() {
+-        String touchAfAec = mParameters.TOUCH_AF_AEC_OFF;
++        String touchAfAec = "off";
+         mSceneMode = Parameters.SCENE_MODE_AUTO;
+         String flashMode = Parameters.FLASH_MODE_OFF;
+         String redeyeReduction = mActivity.getString(R.string.
+@@ -1645,7 +1578,7 @@ public class PhotoModule
+         if (mManual3AEnabled > 0) {
+             overrideCameraSettings(flashMode, null, null,
+                                    exposureCompensation, touchAfAec,
+-                                   mParameters.getAutoExposure(),
++                                   mParameters.get("auto-exposure"),
+                                    getSaturationSafe(),
+                                    getContrastSafe(),
+                                    getSharpnessSafe(),
+@@ -1664,7 +1597,7 @@ public class PhotoModule
+             mUI.overrideSettings(CameraSettings.KEY_LONGSHOT, null);
+         }
+ 
+-        String isoMode = mParameters.getISOValue();
++        String isoMode = mParameters.get("iso");
+         final String isoManual = CameraSettings.KEY_MANUAL_ISO;
+         if (isoMode.equals(isoManual)) {
+             final String isoPref = mPreferences.getString(
+@@ -1781,7 +1714,7 @@ public class PhotoModule
+ 
+             overrideCameraSettings(flashMode, whiteBalance, focusMode,
+                     exposureCompensation, touchAfAec,
+-                    mParameters.getAutoExposure(),
++                    mParameters.get("auto-exposure"),
+                     getSaturationSafe(),
+                     getContrastSafe(),
+                     getSharpnessSafe(),
+@@ -2076,7 +2009,7 @@ public class PhotoModule
+ 
+          //Need to disable focus for ZSL mode
+         if (mFocusManager != null) {
+-            if (mSnapshotMode == CameraInfo.CAMERA_SUPPORT_MODE_ZSL) {
++            if (mSnapshotMode == 1) {
+                 mFocusManager.setZslEnable(true);
+             } else {
+                 mFocusManager.setZslEnable(false);
+@@ -2673,8 +2606,7 @@ public class PhotoModule
+     public void stopPreview() {
+         if (mCameraDevice != null && mCameraState != PREVIEW_STOPPED) {
+             if (mCameraState == LONGSHOT) {
+-                mCameraDevice.setLongshot(false);
+-                mLongshotActive = false;
++                    mLongshotActive = false;
+             }
+             Log.v(TAG, "stopPreview");
+             mCameraDevice.stopPreview();
+@@ -2717,14 +2649,14 @@ public class PhotoModule
+         mRestartPreview = false;
+         String zsl = mPreferences.getString(CameraSettings.KEY_ZSL,
+                                   mActivity.getString(R.string.pref_camera_zsl_default));
+-        if(zsl.equals("on") && mSnapshotMode != CameraInfo.CAMERA_SUPPORT_MODE_ZSL
++        if(zsl.equals("on") && mSnapshotMode != 1
+            && mCameraState != PREVIEW_STOPPED) {
+             //Switch on ZSL Camera mode
+             Log.v(TAG, "Switching to ZSL Camera Mode. Restart Preview");
+             mRestartPreview = true;
+             return mRestartPreview;
+         }
+-        if(zsl.equals("off") && mSnapshotMode != CameraInfo.CAMERA_SUPPORT_MODE_NONZSL
++        if(zsl.equals("off") && mSnapshotMode != 0
+                  && mCameraState != PREVIEW_STOPPED) {
+             //Switch on Normal Camera mode
+             Log.v(TAG, "Switching to Normal Camera Mode. Restart Preview");
+@@ -2818,16 +2750,16 @@ public class PhotoModule
+             String touchAfAec = mPreferences.getString(
+                  CameraSettings.KEY_TOUCH_AF_AEC,
+                  mActivity.getString(R.string.pref_camera_touchafaec_default));
+-            if (CameraUtil.isSupported(touchAfAec, mParameters.getSupportedTouchAfAec())) {
++            if (CameraUtil.isSupported(touchAfAec, null)) {
+                 mCurrTouchAfAec = touchAfAec;
+-                mParameters.setTouchAfAec(touchAfAec);
++                mParameters.set("touch-af-aec", touchAfAec);
+             }
+         } else {
+-            mParameters.setTouchAfAec(mParameters.TOUCH_AF_AEC_OFF);
++            mParameters.set("touch-af-aec", "off");
+             mFocusManager.resetTouchFocus();
+         }
+         try {
+-            if(mParameters.getTouchAfAec().equals(mParameters.TOUCH_AF_AEC_ON))
++            if("off".equals("on"))
+                 this.mTouchAfAecFlag = true;
+             else
+                 this.mTouchAfAecFlag = false;
+@@ -2882,24 +2814,24 @@ public class PhotoModule
+         String selectableZoneAf = mPreferences.getString(
+             CameraSettings.KEY_SELECTABLE_ZONE_AF,
+             mActivity.getString(R.string.pref_camera_selectablezoneaf_default));
+-        List<String> str = mParameters.getSupportedSelectableZoneAf();
+-        if (CameraUtil.isSupported(selectableZoneAf, mParameters.getSupportedSelectableZoneAf())) {
+-            mParameters.setSelectableZoneAf(selectableZoneAf);
++        List<String> str = null;
++        if (CameraUtil.isSupported(selectableZoneAf, null)) {
++            mParameters.set("selectable-zone-af", selectableZoneAf);
+         }
+ 
+         // Set wavelet denoise mode
+-        if (mParameters.getSupportedDenoiseModes() != null) {
++        if (null != null) {
+             String Denoise = mPreferences.getString( CameraSettings.KEY_DENOISE,
+                              mActivity.getString(R.string.pref_camera_denoise_default));
+-            mParameters.setDenoise(Denoise);
++            mParameters.set("denoise", Denoise);
+         }
+         // Set Redeye Reduction
+         String redeyeReduction = mPreferences.getString(
+                 CameraSettings.KEY_REDEYE_REDUCTION,
+                 mActivity.getString(R.string.pref_camera_redeyereduction_default));
+         if (CameraUtil.isSupported(redeyeReduction,
+-            mParameters.getSupportedRedeyeReductionModes())) {
+-            mParameters.setRedeyeReductionMode(redeyeReduction);
++            null)) {
++            mParameters.set("redeye-reduction", redeyeReduction);
+         }
+         // Set ISO parameter
+         if ((mManual3AEnabled & MANUAL_EXPOSURE) == 0) {
+@@ -2907,8 +2839,8 @@ public class PhotoModule
+                     CameraSettings.KEY_ISO,
+                     mActivity.getString(R.string.pref_camera_iso_default));
+             if (CameraUtil.isSupported(iso,
+-                mParameters.getSupportedIsoValues())) {
+-                mParameters.setISOValue(iso);
++                null)) {
++                mParameters.set("iso", iso);
+             }
+         }
+         // Set color effect parameter.
+@@ -2924,8 +2856,8 @@ public class PhotoModule
+         if (saturationStr != null) {
+             int saturation = Integer.parseInt(saturationStr);
+             Log.v(TAG, "Saturation value =" + saturation);
+-            if((0 <= saturation) && (saturation <= mParameters.getMaxSaturation())){
+-                mParameters.setSaturation(saturation);
++            if((0 <= saturation) && (saturation <= 100)){
++                mParameters.set("saturation", String.valueOf(saturation));
+             }
+         }
+         // Set contrast parameter.
+@@ -2933,18 +2865,18 @@ public class PhotoModule
+         if (contrastStr != null) {
+             int contrast = Integer.parseInt(contrastStr);
+             Log.v(TAG, "Contrast value =" + contrast);
+-            if ((0 <= contrast) && (contrast <= mParameters.getMaxContrast())) {
+-                mParameters.setContrast(contrast);
++            if ((0 <= contrast) && (contrast <= 100)) {
++                mParameters.set("contrast", String.valueOf(contrast));
+             }
+         }
+         // Set sharpness parameter
+         String sharpnessStr = getSharpnessSafe();
+         if (sharpnessStr != null) {
+             int sharpness = Integer.parseInt(sharpnessStr) *
+-                    (mParameters.getMaxSharpness() / MAX_SHARPNESS_LEVEL);
++                    (100 / MAX_SHARPNESS_LEVEL);
+             Log.v(TAG, "Sharpness value =" + sharpness);
+-            if ((0 <= sharpness) && (sharpness <= mParameters.getMaxSharpness())) {
+-                mParameters.setSharpness(sharpness);
++            if ((0 <= sharpness) && (sharpness <= 100)) {
++                mParameters.set("sharpness", String.valueOf(sharpness));
+             }
+         }
+         // Set Face Recognition
+@@ -3124,8 +3056,8 @@ public class PhotoModule
+                 CameraSettings.KEY_AUTOEXPOSURE,
+                 mActivity.getString(R.string.pref_camera_autoexposure_default));
+         Log.v(TAG, "autoExposure value =" + autoExposure);
+-        if (CameraUtil.isSupported(autoExposure, mParameters.getSupportedAutoexposure())) {
+-            mParameters.setAutoExposure(autoExposure);
++        if (CameraUtil.isSupported(autoExposure, null)) {
++            mParameters.set("auto-exposure", autoExposure);
+         }
+ 
+         // Set anti banding parameter.
+@@ -3152,7 +3084,6 @@ public class PhotoModule
+                     }
+                 });
+                 mParameters.setSceneMode("asd");
+-                mCameraDevice.setMetadataCb(mMetaDataCallback);
+             }
+             else {
+                 mAutoHdrEnable = false;
+@@ -3165,11 +3096,9 @@ public class PhotoModule
+                 });
+             }
+         }
+-        mParameters.setZSLMode(zsl);
+         if(zsl.equals("on")) {
+             //Switch on ZSL Camera mode
+-            mSnapshotMode = CameraInfo.CAMERA_SUPPORT_MODE_ZSL;
+-            mParameters.setCameraMode(1);
++            mSnapshotMode = 1;
+             mFocusManager.setZslEnable(true);
+ 
+             //Raw picture format is not supported under ZSL mode
+@@ -3197,8 +3126,7 @@ public class PhotoModule
+                 });
+             }
+         } else if(zsl.equals("off")) {
+-            mSnapshotMode = CameraInfo.CAMERA_SUPPORT_MODE_NONZSL;
+-            mParameters.setCameraMode(0);
++            mSnapshotMode = 0;
+             mFocusManager.setZslEnable(false);
+             if ((mManual3AEnabled & MANUAL_FOCUS) == 0) {
+                 mFocusManager.overrideFocusMode(null);
+@@ -3210,24 +3138,15 @@ public class PhotoModule
+             CameraSettings.KEY_FACE_DETECTION,
+             mActivity.getString(R.string.pref_camera_facedetection_default));
+ 
+-        if (CameraUtil.isSupported(faceDetection, mParameters.getSupportedFaceDetectionModes())) {
+-            mParameters.setFaceDetectionMode(faceDetection);
+-            if(faceDetection.equals("on") && mFaceDetectionEnabled == false) {
+-                mFaceDetectionEnabled = true;
+-                startFaceDetection();
+-            }
+-            if(faceDetection.equals("off") && mFaceDetectionEnabled == true) {
+-                stopFaceDetection();
+-                mFaceDetectionEnabled = false;
+-            }
+-        }
++        // La deteccion de caras de la API camera1 fue eliminada en Android 5:
++        // el ajuste se conserva en el menu pero no se aplica al dispositivo.
+ 
+         //Set Histogram
+         String histogram = mPreferences.getString(
+                 CameraSettings.KEY_HISTOGRAM,
+                 mActivity.getString(R.string.pref_camera_histogram_default));
+         if (CameraUtil.isSupported(histogram,
+-            mParameters.getSupportedHistogramModes()) && mCameraDevice != null) {
++            null) && mCameraDevice != null) {
+             // Call for histogram
+             if(histogram.equals("enable")) {
+                 mActivity.runOnUiThread(new Runnable() {
+@@ -3238,7 +3157,6 @@ public class PhotoModule
+                         }
+                     }
+                 });
+-                mCameraDevice.setHistogramMode(mStatsCallback);
+                 mHiston = true;
+             } else {
+                 mHiston = false;
+@@ -3248,7 +3166,6 @@ public class PhotoModule
+                              mGraphView.setVisibility(View.INVISIBLE);
+                          }
+                     });
+-                mCameraDevice.setHistogramMode(null);
+             }
+         }
+ 
+@@ -3762,7 +3679,7 @@ public class PhotoModule
+                     int focusPos = focusbar.getProgress();
+                     Log.v(TAG, "Setting focus position : " + focusPos);
+                     mManual3AEnabled |= MANUAL_FOCUS;
+-                    mParameters.setFocusMode(Parameters.FOCUS_MODE_MANUAL_POSITION);
++                    // El modo de foco manual (constante Qualcomm) no existe en AOSP.
+                     mParameters.set(CameraSettings.KEY_MANUAL_FOCUS_TYPE, 2); // 2 for scale mode
+                     mParameters.set(CameraSettings.KEY_MANUAL_FOCUS_POSITION, focusPos);
+                     updateCommonManual3ASettings();
+@@ -3803,7 +3720,7 @@ public class PhotoModule
+                     if (focuspos >= minFocusPos && focuspos <= maxFocusPos) {
+                         Log.v(TAG, "Setting focus position : " + focusStr);
+                         mManual3AEnabled |= MANUAL_FOCUS;
+-                        mParameters.setFocusMode(Parameters.FOCUS_MODE_MANUAL_POSITION);
++                        // El modo de foco manual (constante Qualcomm) no existe en AOSP.
+                         //focus type 3 is diopter mode
+                         mParameters.set(CameraSettings.KEY_MANUAL_FOCUS_TYPE, 3);
+                         mParameters.set(CameraSettings.KEY_MANUAL_FOCUS_POSITION, focusStr);
+@@ -3994,7 +3911,7 @@ public class PhotoModule
+         mParameters = mCameraDevice.getParameters();
+         final int minISO = mParameters.getInt(CameraSettings.KEY_MIN_ISO);
+         final int maxISO = mParameters.getInt(CameraSettings.KEY_MAX_ISO);
+-        String isoMode = mParameters.getISOValue();
++        String isoMode = mParameters.get("iso");
+         final String isoManual = CameraSettings.KEY_MANUAL_ISO;
+         String currentISO = mParameters.get(CameraSettings.KEY_CURRENT_ISO);
+         if (currentISO != null) {
+@@ -4036,7 +3953,7 @@ public class PhotoModule
+                     if (newISO <= maxISO && newISO >= minISO) {
+                         Log.v(TAG, "Setting ISO : " + newISO);
+                         mManual3AEnabled |= MANUAL_EXPOSURE;
+-                        mParameters.setISOValue(isoManual);
++                        mParameters.set("iso", isoManual);
+                         mParameters.set(CameraSettings.KEY_CONTINUOUS_ISO, newISO);
+                         mParameters.set(CameraSettings.KEY_EXPOSURE_TIME, "0");
+                         updateCommonManual3ASettings();
+@@ -4067,8 +3984,8 @@ public class PhotoModule
+                         Log.v(TAG, "Setting Exposure time : " + newExpTime);
+                         mManual3AEnabled |= MANUAL_EXPOSURE;
+                         mParameters.set(CameraSettings.KEY_EXPOSURE_TIME, expTime);
+-                        mParameters.setISOValue(Parameters.ISO_AUTO);
+-                        mUI.setPreference(CameraSettings.KEY_ISO, Parameters.ISO_AUTO);
++                        mParameters.set("iso", "auto");
++                        mUI.setPreference(CameraSettings.KEY_ISO, "auto");
+                         mUI.overrideSettings(CameraSettings.KEY_ISO, null);
+                         updateCommonManual3ASettings();
+                         onSharedPreferenceChanged();
+@@ -4113,7 +4030,7 @@ public class PhotoModule
+                         newExpTime >= Double.parseDouble(minExpTime)) {
+                         mManual3AEnabled |= MANUAL_EXPOSURE;
+                         Log.v(TAG, "Setting ISO : " + newISO);
+-                        mParameters.setISOValue(isoManual);
++                        mParameters.set("iso", isoManual);
+                         mParameters.set(CameraSettings.KEY_CONTINUOUS_ISO, newISO);
+                         Log.v(TAG, "Setting Exposure time : " + newExpTime);
+                         mParameters.set(CameraSettings.KEY_EXPOSURE_TIME, expTime);
+@@ -4499,12 +4416,6 @@ class GraphView extends View {
+             }
+             canvas.drawBitmap(mBitmap, 0, 0, null);
+         }
+-        if (mPhotoModule.mHiston && mPhotoModule!= null) {
+-            mGraphCameraDevice = mPhotoModule.getCamera();
+-            if (mGraphCameraDevice != null){
+-                mGraphCameraDevice.sendHistogramData();
+-            }
+-        }
+     }
+     public void PreviewChanged() {
+         invalidate();
+diff --git a/src/com/android/camera/SDCard.java b/src/com/android/camera/SDCard.java
+index dad3540..158238d 100644
+--- a/src/com/android/camera/SDCard.java
++++ b/src/com/android/camera/SDCard.java
+@@ -1,76 +1,51 @@
+-/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
++/*
++ * Copyright (C) 2013 The Android Open Software Foundation
+  *
+- * Redistribution and use in source and binary forms, with or without
+- * modification, are permitted provided that the following conditions are
+- * met:
+- *     * Redistributions of source code must retain the above copyright
+- *       notice, this list of conditions and the following disclaimer.
+- *     * Redistributions in binary form must reproduce the above
+- *       copyright notice, this list of conditions and the following
+- *       disclaimer in the documentation and/or other materials provided
+- *       with the distribution.
+- *     * Neither the name of The Linux Foundation nor the names of its
+- *       contributors may be used to endorse or promote products derived
+- *       from this software without specific prior written permission.
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
+  *
+- * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
+- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT
+- * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
+- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+- * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+- * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+- * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
+  */
+ 
+ package com.android.camera;
+ 
+-import android.content.Context;
+-import android.os.StatFs;
+ import android.os.Environment;
+-import android.os.storage.StorageVolume;
+-import android.os.storage.IMountService;
+-import android.os.ServiceManager;
+-import android.util.Log;
+ 
++/**
++ * Acceso al almacenamiento externo.
++ *
++ * Port a Android 13: android.os.storage.IMountService ya no existe (se
++ * sustituyo por IStorageManager) y era una API oculta. Ahora se usa la API
++ * publica Environment, que describe el almacenamiento externo principal
++ * (en este dispositivo el "SD card" es el propio almacenamiento interno).
++ */
+ public class SDCard {
+-    private static final String TAG = "SDCard";
++    private static SDCard sSDCard;
+ 
+-    private static final int VOLUME_SDCARD_INDEX = 1;
+-    private IMountService mMountService = null;
+-    private StorageVolume mVolume = null;
+     private String path = null;
+     private String rawpath = null;
+-    private static SDCard sSDCard;
+ 
+     public boolean isWriteable() {
+-        if (mVolume == null) return false;
+-        final String state = getSDCardStorageState();
+-        if (Environment.MEDIA_MOUNTED.equals(state)) {
+-            return true;
+-        }
+-        return false;
++        return Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState());
+     }
+ 
+     public String getDirectory() {
+-        if (mVolume == null) {
+-            return null;
+-        }
+         if (path == null) {
+-            path = mVolume.getPath() + "/DCIM/Camera";
++            path = Environment.getExternalStorageDirectory().getPath() + "/DCIM/Camera";
+         }
+         return path;
+     }
+ 
+     public String getRawDirectory() {
+-        if (mVolume == null) {
+-            return null;
+-        }
+         if (rawpath == null) {
+-            rawpath = mVolume.getPath() + "/DCIM/Camera/raw";
++            rawpath = Environment.getExternalStorageDirectory().getPath() + "/DCIM/Camera/raw";
+         }
+         return rawpath;
+     }
+@@ -82,26 +57,6 @@ public class SDCard {
+         return sSDCard;
+     }
+ 
+-    private String getSDCardStorageState() {
+-        try {
+-            return mMountService.getVolumeState(mVolume.getPath());
+-        } catch (Exception e) {
+-            Log.w(TAG, "Failed to read SDCard storage state; assuming REMOVED: " + e);
+-            return Environment.MEDIA_REMOVED;
+-        }
+-    }
+-
+     private SDCard() {
+-        try {
+-            mMountService = IMountService.Stub.asInterface(ServiceManager
+-                                                           .getService("mount"));
+-            final StorageVolume[] volumes = mMountService.getVolumeList();
+-            if (volumes.length > VOLUME_SDCARD_INDEX) {
+-                mVolume = volumes[VOLUME_SDCARD_INDEX];
+-            }
+-        } catch (Exception e) {
+-            Log.e(TAG, "couldn't talk to MountService", e);
+-        }
+     }
+-
+ }
+diff --git a/src/com/android/camera/VideoModule.java b/src/com/android/camera/VideoModule.java
+index cfca4d6..adc7717 100644
+--- a/src/com/android/camera/VideoModule.java
++++ b/src/com/android/camera/VideoModule.java
+@@ -56,8 +56,9 @@ import android.view.SurfaceHolder;
+ import android.view.View;
+ import android.view.WindowManager;
+ import android.widget.Toast;
+-import android.media.EncoderCapabilities;
+-import android.media.EncoderCapabilities.VideoEncoderCap;
++import android.media.MediaCodecInfo;
++import android.media.MediaCodecList;
++import android.util.Range;
+ 
+ import com.android.camera.CameraManager.CameraAFCallback;
+ import com.android.camera.CameraManager.CameraPictureCallback;
+@@ -306,7 +307,7 @@ public class VideoModule implements CameraModule,
+ 
+         VIDEO_ENCODER_TABLE.put("h263", MediaRecorder.VideoEncoder.H263);
+         VIDEO_ENCODER_TABLE.put("h264", MediaRecorder.VideoEncoder.H264);
+-        VIDEO_ENCODER_TABLE.put("h265", MediaRecorder.VideoEncoder.H265);
++        VIDEO_ENCODER_TABLE.put("h265", MediaRecorder.VideoEncoder.HEVC);
+         VIDEO_ENCODER_TABLE.put("m4v", MediaRecorder.VideoEncoder.MPEG_4_SP);
+         VIDEO_ENCODER_TABLE.putDefault(MediaRecorder.VideoEncoder.DEFAULT);
+ 
+@@ -810,23 +811,23 @@ public class VideoModule implements CameraModule,
+ 
+         Log.v(TAG, "Audio Encoder selected = " +mAudioEncoder);
+ 
+-        if(mParameters.isPowerModeSupported()) {
++        if(false) {
+             String powermode = mPreferences.getString(
+                     CameraSettings.KEY_POWER_MODE,
+                     mActivity.getString(R.string.pref_camera_powermode_default));
+             Log.v(TAG, "read videopreferences power mode =" +powermode);
+-            String old_mode = mParameters.getPowerMode();
++            String old_mode = null;
+             if(!old_mode.equals(powermode) && mPreviewing)
+                 mRestartPreview = true;
+ 
+-            mParameters.setPowerMode(powermode);
++            mParameters.set("power-mode", powermode);
+         }
+ 
+         // Set wavelet denoise mode
+-        if (mParameters.getSupportedDenoiseModes() != null) {
++        if (null != null) {
+             String denoise = mPreferences.getString(CameraSettings.KEY_DENOISE,
+                     mActivity.getString(R.string.pref_camera_denoise_default));
+-            mParameters.setDenoise(denoise);
++            mParameters.set("denoise", denoise);
+         }
+     }
+ 
+@@ -901,7 +902,7 @@ public class VideoModule implements CameraModule,
+ 
+     private boolean is4KEnabled() {
+        if (mProfile.quality == CamcorderProfile.QUALITY_2160P ||
+-           mProfile.quality == CamcorderProfile.QUALITY_4kDCI) {
++           mProfile.quality == CamcorderProfile.QUALITY_4KDCI) {
+            return true;
+        } else {
+            return false;
+@@ -936,13 +937,8 @@ public class VideoModule implements CameraModule,
+         if(!("off".equals(HighFrameRate))) {
+             Size size = null;
+             try {
+-                if (isSupported(HighFrameRate.substring(3), mParameters.getSupportedVideoHighFrameRateModes())) {
+-                    int index = mParameters.getSupportedVideoHighFrameRateModes().indexOf(
+-                            HighFrameRate.substring(3));
+-                    size = mParameters.getSupportedHfrSizes().get(index);
+-                } else {
+-                    return false;
+-                }
++                // Los modos HFR son especificos del HAL y no estan soportados.
++                return false;
+             } catch (NullPointerException e) {
+                 return false;
+             } catch (IndexOutOfBoundsException e) {
+@@ -960,17 +956,14 @@ public class VideoModule implements CameraModule,
+             int hfrFps = Integer.parseInt(HighFrameRate.substring(3));
+             int inputBitrate = videoWidth * videoHeight * hfrFps;
+ 
++            // android.media.EncoderCapabilities se elimino en Android 13: las
++            // capacidades del encoder se consultan con MediaCodecInfo.
+             boolean supported = false;
+-            List<VideoEncoderCap> videoEncoders = EncoderCapabilities.getVideoEncoders();
+-            for (VideoEncoderCap videoEncoder: videoEncoders) {
+-                if (videoEncoder.mCodec == mVideoEncoder) {
+-                    int maxBitrate = (videoEncoder.mMaxHFRFrameWidth *
+-                                     videoEncoder.mMaxHFRFrameHeight *
+-                                     videoEncoder.mMaxHFRMode);
+-                    if (inputBitrate > 0 && inputBitrate <= maxBitrate ) {
+-                        supported = true;
+-                    }
+-                    break;
++            MediaCodecInfo.VideoCapabilities videoCaps = getVideoEncoderCapabilities();
++            if (videoCaps != null && inputBitrate > 0) {
++                Range<Integer> frameRates = videoCaps.getSupportedFrameRates();
++                if (frameRates != null && frameRates.contains(hfrFps)) {
++                    supported = true;
+                 }
+             }
+ 
+@@ -980,6 +973,53 @@ public class VideoModule implements CameraModule,
+         return false;
+     }
+ 
++    /**
++     * Tipo MIME del encoder de video seleccionado.
++     * (Sustituye a android.media.EncoderCapabilities, eliminado en Android 13).
++     */
++    private String getVideoEncoderMimeType() {
++        switch (mVideoEncoder) {
++            case MediaRecorder.VideoEncoder.H263:
++                return "video/3gpp";
++            case MediaRecorder.VideoEncoder.H264:
++                return "video/avc";
++            case MediaRecorder.VideoEncoder.HEVC:
++                return "video/hevc";
++            case MediaRecorder.VideoEncoder.MPEG_4_SP:
++                return "video/mp4v-es";
++            default:
++                return null;
++        }
++    }
++
++    private MediaCodecInfo.VideoCapabilities getVideoEncoderCapabilities() {
++        String mimeType = getVideoEncoderMimeType();
++        if (mimeType == null) {
++            return null;
++        }
++        MediaCodecList codecList = new MediaCodecList(MediaCodecList.REGULAR_CODECS);
++        for (MediaCodecInfo info : codecList.getCodecInfos()) {
++            if (!info.isEncoder()) {
++                continue;
++            }
++            for (String type : info.getSupportedTypes()) {
++                if (mimeType.equals(type)) {
++                    return info.getCapabilitiesForType(mimeType).getVideoCapabilities();
++                }
++            }
++        }
++        return null;
++    }
++
++    private static boolean isSupportedResolution(
++            MediaCodecInfo.VideoCapabilities videoCaps, int width, int height) {
++        Range<Integer> widths = videoCaps.getSupportedWidths();
++        Range<Integer> heights = videoCaps.getSupportedHeights();
++        boolean widthOk = widths != null && widths.contains(width);
++        boolean heightOk = heights != null && heights.contains(height);
++        return widthOk && heightOk;
++    }
++
+     @TargetApi(Build.VERSION_CODES.HONEYCOMB)
+     private void getDesiredPreviewSize() {
+         if (mCameraDevice == null) {
+@@ -1461,27 +1501,16 @@ public class VideoModule implements CameraModule,
+         mUnsupportedResolution = false;
+ 
+         //check if codec supports the resolution, otherwise throw toast
+-        List<VideoEncoderCap> videoEncoders = EncoderCapabilities.getVideoEncoders();
+-        for (VideoEncoderCap videoEncoder: videoEncoders) {
+-            if (videoEncoder.mCodec == mVideoEncoder) {
+-                if (videoWidth > videoEncoder.mMaxFrameWidth ||
+-                        videoWidth < videoEncoder.mMinFrameWidth ||
+-                        videoHeight > videoEncoder.mMaxFrameHeight ||
+-                        videoHeight < videoEncoder.mMinFrameHeight) {
+-                    Log.e(TAG, "Selected codec " + mVideoEncoder +
+-                            " does not support "+ videoWidth + "x" + videoHeight
+-                            + " resolution");
+-                    Log.e(TAG, "Codec capabilities: " +
+-                            "mMinFrameWidth = " + videoEncoder.mMinFrameWidth + " , " +
+-                            "mMinFrameHeight = " + videoEncoder.mMinFrameHeight + " , " +
+-                            "mMaxFrameWidth = " + videoEncoder.mMaxFrameWidth + " , " +
+-                            "mMaxFrameHeight = " + videoEncoder.mMaxFrameHeight);
+-                    mUnsupportedResolution = true;
+-                    RotateTextToast.makeText(mActivity, R.string.error_app_unsupported,
+-                            Toast.LENGTH_LONG).show();
+-                    return;
+-                }
+-                break;
++        MediaCodecInfo.VideoCapabilities videoCaps = getVideoEncoderCapabilities();
++        if (videoCaps != null) {
++            if (!isSupportedResolution(videoCaps, videoWidth, videoHeight)) {
++                Log.e(TAG, "Selected codec " + mVideoEncoder +
++                        " does not support "+ videoWidth + "x" + videoHeight
++                        + " resolution");
++                mUnsupportedResolution = true;
++                RotateTextToast.makeText(mActivity, R.string.error_app_unsupported,
++                        Toast.LENGTH_LONG).show();
++                return;
+             }
+         }
+ 
+@@ -1507,7 +1536,7 @@ public class VideoModule implements CameraModule,
+         // Unlock the camera object before passing it to media recorder.
+         mCameraDevice.unlock();
+         mMediaRecorder.setCamera(mCameraDevice.getCamera());
+-        String hfr = mParameters.getVideoHighFrameRate();
++        String hfr = null;
+         if (!mCaptureTimeLapse && ((hfr == null) || ("off".equals(hfr)))) {
+             mMediaRecorder.setAudioSource(MediaRecorder.AudioSource.CAMCORDER);
+             mProfile.audioCodec = mAudioEncoder;
+@@ -1662,7 +1691,7 @@ public class VideoModule implements CameraModule,
+             }
+ 
+             /* Change the duration as per HFR selection */
+-            String hfr = mParameters.getVideoHighFrameRate();
++            String hfr = null;
+             int defaultFps = 30;
+             int hfrRatio = 1;
+             if (!("off".equals(hfr))) {
+@@ -2287,11 +2316,8 @@ public class VideoModule implements CameraModule,
+             Log.v(TAG, "current set resolution is : "+hfrsize);
+             try {
+                 Size size = null;
+-                if (isSupported(hfrRate, mParameters.getSupportedVideoHighFrameRateModes())) {
+-                    int index = mParameters.getSupportedVideoHighFrameRateModes().indexOf(
+-                            hfrRate);
+-                    size = mParameters.getSupportedHfrSizes().get(index);
+-                }
++                // Los modos HFR son especificos del HAL y no estan soportados.
++                size = null;
+                 if (size != null) {
+                     if (videoWidth <= size.width && videoHeight <= size.height) {
+                         if ("hfr".equals(HighFrameRate.substring(0,3))) {
+@@ -2310,39 +2336,33 @@ public class VideoModule implements CameraModule,
+             int inputBitrate = videoWidth*videoHeight*hfrFps;
+ 
+             //check if codec supports the resolution, otherwise throw toast
+-            List<VideoEncoderCap> videoEncoders = EncoderCapabilities.getVideoEncoders();
+-            for (VideoEncoderCap videoEncoder: videoEncoders) {
+-                if (videoEncoder.mCodec == mVideoEncoder){
+-                    int maxBitrate = (videoEncoder.mMaxHFRFrameWidth *
+-                                     videoEncoder.mMaxHFRFrameHeight *
+-                                     videoEncoder.mMaxHFRMode);
+-                    if (inputBitrate > maxBitrate ) {
+-                        Log.e(TAG,"Selected codec "+mVideoEncoder+
+-                                " does not support HFR " + HighFrameRate + " with "+ videoWidth
+-                                + "x" + videoHeight +" resolution");
+-                        Log.e(TAG, "Codec capabilities: " +
+-                                "mMaxHFRFrameWidth = " + videoEncoder.mMaxHFRFrameWidth + " , " +
+-                                "mMaxHFRFrameHeight = " + videoEncoder.mMaxHFRFrameHeight + " , " +
+-                                "mMaxHFRMode = " + videoEncoder.mMaxHFRMode);
+-                        if ("hfr".equals(HighFrameRate.substring(0,3))) {
+-                            mUnsupportedHFRVideoSize = true;
+-                        } else {
+-                            mUnsupportedHSRVideoSize = true;
+-                        }
++            MediaCodecInfo.VideoCapabilities hfrCaps = getVideoEncoderCapabilities();
++            if (hfrCaps != null) {
++                Range<Integer> hfrFrameRates = hfrCaps.getSupportedFrameRates();
++                boolean fpsSupported = hfrFrameRates != null
++                        && hfrFrameRates.contains(hfrFps);
++                boolean sizeSupported = isSupportedResolution(hfrCaps, videoWidth, videoHeight);
++                if (!fpsSupported || !sizeSupported) {
++                    Log.e(TAG,"Selected codec "+mVideoEncoder+
++                            " does not support HFR " + HighFrameRate + " with "+ videoWidth
++                            + "x" + videoHeight +" resolution");
++                    if ("hfr".equals(HighFrameRate.substring(0,3))) {
++                        mUnsupportedHFRVideoSize = true;
++                    } else {
++                        mUnsupportedHSRVideoSize = true;
+                     }
+-                    break;
+                 }
+             }
+             if ("hfr".equals(HighFrameRate.substring(0,3))) {
+                 mParameters.set(CameraSettings.KEY_VIDEO_HSR, "off");
+                 if (mUnsupportedHFRVideoSize) {
+-                    mParameters.setVideoHighFrameRate("off");
++                    mParameters.set("video-hfr", "off");
+                     Log.v(TAG,"Unsupported hfr resolution");
+                 } else {
+-                    mParameters.setVideoHighFrameRate(hfrRate);
++                    mParameters.set("video-hfr", hfrRate);
+                 }
+             } else {
+-                mParameters.setVideoHighFrameRate("off");
++                mParameters.set("video-hfr", "off");
+                 if (mUnsupportedHSRVideoSize) {
+                     Log.v(TAG,"Unsupported hsr resolution");
+                     mParameters.set(CameraSettings.KEY_VIDEO_HSR, "off");
+@@ -2354,7 +2374,7 @@ public class VideoModule implements CameraModule,
+                 mUnsupportedHFRVideoCodec = true;
+             }
+         } else {
+-            mParameters.setVideoHighFrameRate("off");
++            mParameters.set("video-hfr", "off");
+             mParameters.set(CameraSettings.KEY_VIDEO_HSR, "off");
+         }
+         setFlipValue();
+@@ -2415,15 +2435,15 @@ public class VideoModule implements CameraModule,
+                 CameraSettings.KEY_VIDEO_HDR,
+                 mActivity.getString(R.string.pref_camera_video_hdr_default));
+         Log.v(TAG, "Video HDR Setting =" + videoHDR);
+-        if (isSupported(videoHDR, mParameters.getSupportedVideoHDRModes())) {
+-             mParameters.setVideoHDRMode(videoHDR);
++        if (isSupported(videoHDR, null)) {
++             mParameters.set("video-hdr", videoHDR);
+         } else
+-             mParameters.setVideoHDRMode("off");
++             mParameters.set("video-hdr", "off");
+ 
+         //HFR/HSR recording not supported with DIS,TimeLapse,HDR option
+-        String hfr = mParameters.getVideoHighFrameRate();
++        String hfr = null;
+         String hsr = mParameters.get(CameraSettings.KEY_VIDEO_HSR);
+-        String hdr = mParameters.getVideoHDRMode();
++        String hdr = null;
+         if ( ((hfr != null) && (!hfr.equals("off"))) ||
+              ((hsr != null) && (!hsr.equals("off"))) ) {
+              // Read time lapse recording interval.
+@@ -2435,7 +2455,7 @@ public class VideoModule implements CameraModule,
+                   (disMode.equals("enable")) ||
+                   ((hdr != null) && (!hdr.equals("off"))) ) {
+                 Log.v(TAG,"HDR/DIS/Time Lapse ON for HFR/HSR selection, turning HFR/HSR off");
+-                mParameters.setVideoHighFrameRate("off");
++                mParameters.set("video-hfr", "off");
+                 mParameters.set(CameraSettings.KEY_VIDEO_HSR, "off");
+                 mUI.overrideSettings(CameraSettings.KEY_VIDEO_HIGH_FRAME_RATE, "off");
+              }
+@@ -2458,8 +2478,8 @@ public class VideoModule implements CameraModule,
+         String videoRotation = mPreferences.getString(
+             CameraSettings.KEY_VIDEO_ROTATION,
+             mActivity.getString(R.string.pref_camera_video_rotation_default));
+-        if (isSupported(videoRotation, mParameters.getSupportedVideoRotationValues())) {
+-            mParameters.setVideoRotation(videoRotation);
++        if (isSupported(videoRotation, null)) {
++            mParameters.set("video-rotation", videoRotation);
+         }
+ 
+         //set power mode settings
+diff --git a/src/com/android/camera/WideAnglePanoramaUI.java b/src/com/android/camera/WideAnglePanoramaUI.java
+index 862e4d2..3cbbc49 100644
+--- a/src/com/android/camera/WideAnglePanoramaUI.java
++++ b/src/com/android/camera/WideAnglePanoramaUI.java
+@@ -585,7 +585,7 @@ public class WideAnglePanoramaUI implements
+             Rect bounds = getBounds();
+             int cx = bounds.centerX();
+             int cy = bounds.centerY();
+-            canvas.save(Canvas.MATRIX_SAVE_FLAG);
++            canvas.save();
+             canvas.rotate(180, cx, cy);
+             super.draw(canvas);
+             canvas.restore();
+diff --git a/src/com/android/camera/crop/GeometryMathUtils.java b/src/com/android/camera/crop/GeometryMathUtils.java
+index cb5fefe..3f0ac3f 100644
+--- a/src/com/android/camera/crop/GeometryMathUtils.java
++++ b/src/com/android/camera/crop/GeometryMathUtils.java
+@@ -43,6 +43,14 @@ public final class GeometryMathUtils {
+     private static final String TAG = "GeometryMathUtils";
+     public static final float SHOW_SCALE = .9f;
+ 
++    /*
++     * Valores tomados de com.android.gallery3d.filtershow.cache.ImageLoader
++     * (Gallery3D ya no existe en la plataforma desde Android 5).
++     */
++    private static final int ORI_ROTATE_90 = 90;
++    private static final int ORI_ROTATE_180 = 180;
++    private static final int ORI_ROTATE_270 = 270;
++
+     private GeometryMathUtils() {};
+ 
+     // Math operations for 2d vectors
+@@ -167,11 +175,11 @@ public final class GeometryMathUtils {
+ 
+     private static int getRotationForOrientation(int orientation) {
+         switch (orientation) {
+-            case ImageLoader.ORI_ROTATE_90:
++            case ORI_ROTATE_90:
+                 return 90;
+-            case ImageLoader.ORI_ROTATE_180:
++            case ORI_ROTATE_180:
+                 return 180;
+-            case ImageLoader.ORI_ROTATE_270:
++            case ORI_ROTATE_270:
+                 return 270;
+             default:
+                 return 0;
+diff --git a/src/com/android/camera/ui/CountDownView.java b/src/com/android/camera/ui/CountDownView.java
+index c8d7174..de36745 100644
+--- a/src/com/android/camera/ui/CountDownView.java
++++ b/src/com/android/camera/ui/CountDownView.java
+@@ -56,7 +56,7 @@ public class CountDownView extends FrameLayout {
+         mCountDownAnim = AnimationUtils.loadAnimation(context, R.anim.count_down_exit);
+         // Load the beeps
+         if (context.getResources().getBoolean(R.bool.force_count_down_sound)) {
+-            mSoundPool = new SoundPool(1, AudioManager.STREAM_SYSTEM_ENFORCED, 0);
++            mSoundPool = new SoundPool(1, AudioManager.STREAM_SYSTEM, 0);
+         } else {
+             mSoundPool = new SoundPool(1, AudioManager.STREAM_NOTIFICATION, 0);
+         }
+diff --git a/src/com/android/camera/ui/FaceView.java b/src/com/android/camera/ui/FaceView.java
+index 4ab74e4..ad0caf0 100644
+--- a/src/com/android/camera/ui/FaceView.java
++++ b/src/com/android/camera/ui/FaceView.java
+@@ -34,7 +34,6 @@ import android.view.View;
+ import com.android.camera.PhotoUI;
+ import com.android.camera.util.CameraUtil;
+ import org.codeaurora.snapcam.R;
+-import org.codeaurora.camera.ExtendedFace;
+ 
+ public class FaceView extends View
+     implements FocusIndicator, Rotatable,
+@@ -232,164 +231,6 @@ public class FaceView extends View
+                 mPaint.setColor(mColor);
+                 mRect.offset(dx, dy);
+                 canvas.drawOval(mRect, mPaint);
+-                if (mFaces[i] instanceof ExtendedFace) {
+-                    ExtendedFace face = (ExtendedFace)mFaces[i];
+-                    float[] point = new float[4];
+-                    int delta_x = mFaces[i].rect.width() / 12;
+-                    int delta_y = mFaces[i].rect.height() / 12;
+-                    Log.e(TAG, "blink: (" + face.getLeftEyeBlinkDegree()+ ", " +
+-                        face.getRightEyeBlinkDegree() + ")");
+-                    if (face.leftEye != null) {
+-                        if ((mDisplayRotation == 0) ||
+-                                (mDisplayRotation == 180)) {
+-                            point[0] = face.leftEye.x;
+-                            point[1] = face.leftEye.y - delta_y / 2;
+-                            point[2] = face.leftEye.x;
+-                            point[3] = face.leftEye.y + delta_y / 2;
+-                        } else {
+-                            point[0] = face.leftEye.x - delta_x / 2;
+-                            point[1] = face.leftEye.y;
+-                            point[2] = face.leftEye.x + delta_x / 2;
+-                            point[3] = face.leftEye.y;
+-
+-                        }
+-                        mMatrix.mapPoints (point);
+-                        if (face.getLeftEyeBlinkDegree() >= blink_threshold) {
+-                            canvas.drawLine(point[0]+ dx, point[1]+ dy,
+-                                point[2]+ dx, point[3]+ dy, mPaint);
+-                        }
+-                    }
+-                    if (face.rightEye != null) {
+-                        if ((mDisplayRotation == 0) ||
+-                                (mDisplayRotation == 180)) {
+-                            point[0] = face.rightEye.x;
+-                            point[1] = face.rightEye.y - delta_y / 2;
+-                            point[2] = face.rightEye.x;
+-                            point[3] = face.rightEye.y + delta_y / 2;
+-                        } else {
+-                            point[0] = face.rightEye.x - delta_x / 2;
+-                            point[1] = face.rightEye.y;
+-                            point[2] = face.rightEye.x + delta_x / 2;
+-                            point[3] = face.rightEye.y;
+-                        }
+-                        mMatrix.mapPoints (point);
+-                        if (face.getRightEyeBlinkDegree() >= blink_threshold) {
+-                            //Add offset to the points if the rect has an offset
+-                            canvas.drawLine(point[0] + dx, point[1] + dy,
+-                                point[2] +dx, point[3] +dy, mPaint);
+-                        }
+-                    }
+-
+-                    if (face.getLeftRightGazeDegree() != 0
+-                        || face.getTopBottomGazeDegree() != 0 ) {
+-
+-                        double length =
+-                            Math.sqrt((face.leftEye.x - face.rightEye.x) *
+-                                (face.leftEye.x - face.rightEye.x) +
+-                                (face.leftEye.y - face.rightEye.y) *
+-                                (face.leftEye.y - face.rightEye.y)) / 2.0;
+-                        double nGazeYaw = -face.getLeftRightGazeDegree();
+-                        double nGazePitch = -face.getTopBottomGazeDegree();
+-                        float gazeRollX =
+-                            (float)((-Math.sin(nGazeYaw/180.0*Math.PI) *
+-                                Math.cos(-face.getRollDirection()/
+-                                    180.0*Math.PI) +
+-                                Math.sin(nGazePitch/180.0*Math.PI) *
+-                                Math.cos(nGazeYaw/180.0*Math.PI) *
+-                                Math.sin(-face.getRollDirection()/
+-                                    180.0*Math.PI)) *
+-                                (-length) + 0.5);
+-                        float gazeRollY =
+-                            (float)((Math.sin(-nGazeYaw/180.0*Math.PI) *
+-                                Math.sin(-face.getRollDirection()/
+-                                    180.0*Math.PI)-
+-                                Math.sin(nGazePitch/180.0*Math.PI) *
+-                                Math.cos(nGazeYaw/180.0*Math.PI) *
+-                                Math.cos(-face.getRollDirection()/
+-                                    180.0*Math.PI)) *
+-                                (-length) + 0.5);
+-
+-                        if (face.getLeftEyeBlinkDegree() < blink_threshold) {
+-                            if ((mDisplayRotation == 90) ||
+-                                    (mDisplayRotation == 270)) {
+-                                point[0] = face.leftEye.x;
+-                                point[1] = face.leftEye.y;
+-                                point[2] = face.leftEye.x + gazeRollX;
+-                                point[3] = face.leftEye.y + gazeRollY;
+-                            } else {
+-                                point[0] = face.leftEye.x;
+-                                point[1] = face.leftEye.y;
+-                                point[2] = face.leftEye.x + gazeRollY;
+-                                point[3] = face.leftEye.y + gazeRollX;
+-                            }
+-                            mMatrix.mapPoints (point);
+-                            canvas.drawLine(point[0] +dx, point[1] + dy,
+-                                point[2] + dx, point[3] +dy, mPaint);
+-                        }
+-
+-                        if (face.getRightEyeBlinkDegree() < blink_threshold) {
+-                            if ((mDisplayRotation == 90) ||
+-                                    (mDisplayRotation == 270)) {
+-                                point[0] = face.rightEye.x;
+-                                point[1] = face.rightEye.y;
+-                                point[2] = face.rightEye.x + gazeRollX;
+-                                point[3] = face.rightEye.y + gazeRollY;
+-                            } else {
+-                                point[0] = face.rightEye.x;
+-                                point[1] = face.rightEye.y;
+-                                point[2] = face.rightEye.x + gazeRollY;
+-                                point[3] = face.rightEye.y + gazeRollX;
+-
+-                            }
+-                            mMatrix.mapPoints (point);
+-                            canvas.drawLine(point[0] + dx, point[1] + dy,
+-                                point[2] + dx, point[3] + dy, mPaint);
+-                        }
+-                    }
+-
+-                    if (face.mouth != null) {
+-                        Log.e(TAG, "smile: " + face.getSmileDegree() + "," +
+-                            face.getSmileScore());
+-                        if (face.getSmileDegree() < smile_threashold_no_smile) {
+-                            if ((mDisplayRotation == 90) ||
+-                                (mDisplayRotation == 270)) {
+-                                point[0] = face.mouth.x + dx - delta_x;
+-                                point[1] = face.mouth.y;
+-                                point[2] = face.mouth.x + dx + delta_x;
+-                                point[3] = face.mouth.y;
+-                            } else {
+-                                point[0] = face.mouth.x;
+-                                point[1] = face.mouth.y + dy - delta_y;
+-                                point[2] = face.mouth.x ;
+-                                point[3] = face.mouth.y + dy + delta_y;
+-                            }
+-                            Matrix faceMatrix = new Matrix(mMatrix);
+-                            faceMatrix.preRotate(face.getRollDirection(),
+-                                    face.mouth.x, face.mouth.y);
+-                            faceMatrix.mapPoints(point);
+-                            canvas.drawLine(point[0] + dx, point[1] + dy,
+-                                point[2] + dx, point[3] + dy, mPaint);
+-
+-                        } else if (face.getSmileDegree() <
+-                            smile_threashold_small_smile) {
+-                            int rotation_mouth = 360 - mDisplayRotation;
+-                            mRect.set(face.mouth.x-delta_x,
+-                                face.mouth.y-delta_y, face.mouth.x+delta_x,
+-                                face.mouth.y+delta_y);
+-                            mMatrix.mapRect(mRect);
+-                            mRect.offset(dx, dy);
+-                            canvas.drawArc(mRect, rotation_mouth,
+-                                    180, true, mPaint);
+-                        } else {
+-                            mRect.set(face.mouth.x-delta_x,
+-                                face.mouth.y-delta_y, face.mouth.x+delta_x,
+-                                face.mouth.y+delta_y);
+-                            mMatrix.mapRect(mRect);
+-                            mRect.offset(dx, dy);
+-                            canvas.drawOval(mRect, mPaint);
+-                        }
+-                    }
+-                }
+             }
+             canvas.restore();
+         }
+diff --git a/src/com/android/camera/ui/PieRenderer.java b/src/com/android/camera/ui/PieRenderer.java
+index 324e0fe..ffc78d6 100644
+--- a/src/com/android/camera/ui/PieRenderer.java
++++ b/src/com/android/camera/ui/PieRenderer.java
+@@ -387,7 +387,7 @@ public class PieRenderer extends OverlayRenderer
+     }
+ 
+     private void layoutLabel(int level) {
+-        int x = mPieCenterX - (int) (FloatMath.sin(mCenterAngle - CENTER)
++        int x = mPieCenterX - (int) (Math.sin(mCenterAngle - CENTER)
+                 * (mArcRadius + (level + 2) * mRadiusInc));
+         int y = mArcCenterY - mArcRadius - (level + 2) * mRadiusInc;
+         int w = mLabel.getIntrinsicWidth();
+diff --git a/src/com/android/camera/util/AccessibilityUtils.java b/src/com/android/camera/util/AccessibilityUtils.java
+index 543c7ff..5f7d841 100644
+--- a/src/com/android/camera/util/AccessibilityUtils.java
++++ b/src/com/android/camera/util/AccessibilityUtils.java
+@@ -1,36 +1,17 @@
+ package com.android.camera.util;
+ 
+-import android.content.Context;
+-import android.support.v4.view.accessibility.AccessibilityRecordCompat;
+ import android.view.View;
+-import android.view.accessibility.AccessibilityEvent;
+-import android.view.accessibility.AccessibilityManager;
+ 
+ /**
+- * AccessibilityUtils provides functions needed in accessibility mode. All the functions
+- * in this class are made compatible with gingerbread and later API's
++ * AccessibilityUtils provides functions needed in accessibility mode.
++ *
++ * Port a Android 13: se elimino la rama legacy para API 15 (y el uso de
++ * android.support.v4, que ya no existe en la plataforma) porque minSdk es 23.
+ */
+ public class AccessibilityUtils {
+     public static void makeAnnouncement(View view, CharSequence announcement) {
+         if (view == null)
+             return;
+-        if (ApiHelper.HAS_ANNOUNCE_FOR_ACCESSIBILITY) {
+-            view.announceForAccessibility(announcement);
+-        } else {
+-            // For API 15 and earlier, we need to construct an accessibility event
+-            Context ctx = view.getContext();
+-            AccessibilityManager am = (AccessibilityManager) ctx.getSystemService(
+-                    Context.ACCESSIBILITY_SERVICE);
+-            if (!am.isEnabled()) return;
+-            AccessibilityEvent event = AccessibilityEvent.obtain(
+-                    AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED);
+-            AccessibilityRecordCompat arc = new AccessibilityRecordCompat(event);
+-            arc.setSource(view);
+-            event.setClassName(view.getClass().getName());
+-            event.setPackageName(view.getContext().getPackageName());
+-            event.setEnabled(view.isEnabled());
+-            event.getText().add(announcement);
+-            am.sendAccessibilityEvent(event);
+-        }
++        view.announceForAccessibility(announcement);
+     }
+-}
+\ No newline at end of file
++}

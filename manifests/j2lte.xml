@@ -52,4 +52,16 @@
   <project name="android_hardware_lineage_interfaces"
            path="hardware/lineage/interfaces"
            remote="maty" revision="lineage-20.0" />
+
+  <!-- Camara camera1 real de LineageOS (Snap cm-12.1). El dispositivo usa
+       HAL v1, y en Android 13 el framework no expone camera2 sobre HAL v1
+       (CameraService devuelve ERROR_DEPRECATED_HAL), por lo que la app
+       camera2 (Aperture) no puede abrir la camara. Este es el port de la
+       app camera1 que Lineage usaba en dispositivos legacy; se aplica el
+       parche patches/packages-apps-Snap/ para compilarla en A13. -->
+  <project name="android_packages_apps_Snap"
+           path="packages/apps/Snap"
+           remote="los"
+           revision="cm-12.1" />
+
 </manifest>

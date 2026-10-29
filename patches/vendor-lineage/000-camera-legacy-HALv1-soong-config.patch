@@ -1,0 +1,154 @@
+diff --git a/build/soong/Android.bp b/build/soong/Android.bp
+index 2029d7e..b746292 100644
+--- a/build/soong/Android.bp
++++ b/build/soong/Android.bp
+@@ -242,6 +242,40 @@ bootloader_message_offset {
+     },
+ }
+ 
++soong_config_module_type {
++    name: "camera_parameter_library",
++    module_type: "cc_defaults",
++    config_namespace: "lineageGlobalVars",
++    value_variables: ["uses_camera_parameter_lib"],
++    properties: ["whole_static_libs"],
++}
++
++camera_parameter_library {
++    name: "camera_parameter_library_defaults",
++    soong_config_variables: {
++        uses_camera_parameter_lib: {
++            whole_static_libs: ["%s"],
++        },
++    },
++}
++
++soong_config_module_type {
++    name: "needs_camera_boottime",
++    module_type: "cc_defaults",
++    config_namespace: "lineageGlobalVars",
++    bool_variables: ["needs_camera_boottime"],
++    properties: ["cppflags"],
++}
++
++needs_camera_boottime {
++    name: "needs_camera_boottime_defaults",
++    soong_config_variables: {
++        needs_camera_boottime: {
++            cppflags: ["-DTARGET_CAMERA_BOOTTIME_TIMESTAMP"],
++        },
++    },
++}
++
+ soong_config_module_type {
+     name: "egl_display_array",
+     module_type: "cc_defaults",
+@@ -401,3 +435,53 @@ qti_vibrator_hal {
+         },
+     },
+ }
++
++soong_config_module_type {
++    name: "no_cameraserver",
++    module_type: "cc_defaults",
++    config_namespace: "lineageGlobalVars",
++    bool_variables: ["has_legacy_camera_hal1"],
++    properties: [
++        "cppflags",
++    ],
++}
++
++no_cameraserver {
++    name: "no_cameraserver_defaults",
++    soong_config_variables: {
++        has_legacy_camera_hal1: {
++            cppflags: [
++                "-DNO_CAMERA_SERVER",
++                "-Wno-overloaded-virtual",
++            ],
++        },
++    },
++}
++
++soong_config_module_type {
++    name: "camera_in_mediaserver",
++    module_type: "cc_defaults",
++    config_namespace: "lineageGlobalVars",
++    bool_variables: ["has_legacy_camera_hal1"],
++    properties: [
++        "overrides",
++        "shared_libs",
++    ],
++}
++
++camera_in_mediaserver {
++    name: "camera_in_mediaserver_defaults",
++    defaults: ["no_cameraserver_defaults"],
++    soong_config_variables: {
++        has_legacy_camera_hal1: {
++            overrides: ["cameraserver"],
++            shared_libs: [
++                "android.hardware.camera.common@1.0",
++                "android.hardware.camera.device@3.4",
++                "android.hardware.camera.provider@2.6",
++                "libcameraservice",
++                "libgui",
++            ],
++        },
++    },
++}
+diff --git a/config/BoardConfigSoong.mk b/config/BoardConfigSoong.mk
+index 651d337..8a7bc68 100644
+--- a/config/BoardConfigSoong.mk
++++ b/config/BoardConfigSoong.mk
+@@ -28,12 +28,14 @@ $(foreach v,$(EXPORT_TO_SOONG),$(eval $(call addVar,$(v))))
+ 
+ SOONG_CONFIG_NAMESPACES += lineageGlobalVars
+ SOONG_CONFIG_lineageGlobalVars += \
++    has_legacy_camera_hal1 \
+     aapt_version_code \
+     additional_gralloc_10_usage_bits \
+     bootloader_message_offset \
+     camera_override_format_from_reserved \
+     gralloc_handle_has_custom_content_md_reserved_size \
+     gralloc_handle_has_reserved_size \
++    needs_camera_boottime \
+     target_health_charging_control_charging_path \
+     target_health_charging_control_charging_enabled \
+     target_health_charging_control_charging_disabled \
+@@ -47,6 +49,7 @@ SOONG_CONFIG_lineageGlobalVars += \
+     target_trust_usb_control_path \
+     target_trust_usb_control_enable \
+     target_trust_usb_control_disable \
++    uses_camera_parameter_lib \
+     uses_egl_display_array
+ 
+ SOONG_CONFIG_NAMESPACES += lineageNvidiaVars
+@@ -70,6 +73,7 @@ endif
+ SOONG_CONFIG_lineageGlobalVars_camera_override_format_from_reserved := $(TARGET_CAMERA_OVERRIDE_FORMAT_FROM_RESERVED)
+ SOONG_CONFIG_lineageGlobalVars_gralloc_handle_has_custom_content_md_reserved_size := $(TARGET_GRALLOC_HANDLE_HAS_CUSTOM_CONTENT_MD_RESERVED_SIZE)
+ SOONG_CONFIG_lineageGlobalVars_gralloc_handle_has_reserved_size := $(TARGET_GRALLOC_HANDLE_HAS_RESERVED_SIZE)
++SOONG_CONFIG_lineageGlobalVars_needs_camera_boottime := $(TARGET_CAMERA_BOOTTIME_TIMESTAMP)
+ SOONG_CONFIG_lineageGlobalVars_uses_egl_display_array := $(TARGET_USES_EGL_DISPLAY_ARRAY)
+ SOONG_CONFIG_lineageNvidiaVars_uses_nvidia_enhancements := $(NV_ANDROID_FRAMEWORK_ENHANCEMENTS)
+ SOONG_CONFIG_lineageQcomVars_qti_vibrator_use_effect_stream := $(TARGET_QTI_VIBRATOR_USE_EFFECT_STREAM)
+@@ -89,6 +93,7 @@ TARGET_HEALTH_CHARGING_CONTROL_SUPPORTS_DEADLINE ?= false
+ TARGET_HEALTH_CHARGING_CONTROL_SUPPORTS_TOGGLE ?= true
+ TARGET_INIT_VENDOR_LIB ?= vendor_init
+ TARGET_QTI_VIBRATOR_EFFECT_LIB ?= libqtivibratoreffect
++TARGET_SPECIFIC_CAMERA_PARAMETER_LIBRARY ?= libcamera_parameters
+ TARGET_SURFACEFLINGER_UDFPS_LIB ?= surfaceflinger_udfps_lib
+ TARGET_TRUST_USB_CONTROL_PATH ?= /proc/sys/kernel/deny_new_usb
+ TARGET_TRUST_USB_CONTROL_ENABLE ?= 1
+@@ -111,9 +116,11 @@ SOONG_CONFIG_lineageGlobalVars_target_surfaceflinger_udfps_lib := $(TARGET_SURFA
+ SOONG_CONFIG_lineageGlobalVars_target_trust_usb_control_path := $(TARGET_TRUST_USB_CONTROL_PATH)
+ SOONG_CONFIG_lineageGlobalVars_target_trust_usb_control_enable := $(TARGET_TRUST_USB_CONTROL_ENABLE)
+ SOONG_CONFIG_lineageGlobalVars_target_trust_usb_control_disable := $(TARGET_TRUST_USB_CONTROL_DISABLE)
++SOONG_CONFIG_lineageGlobalVars_uses_camera_parameter_lib := $(TARGET_SPECIFIC_CAMERA_PARAMETER_LIBRARY)
+ ifneq ($(filter $(QSSI_SUPPORTED_PLATFORMS),$(TARGET_BOARD_PLATFORM)),)
+ SOONG_CONFIG_lineageQcomVars_qcom_display_headers_namespace := vendor/qcom/opensource/commonsys-intf/display
+ else
+ SOONG_CONFIG_lineageQcomVars_qcom_display_headers_namespace := $(QCOM_SOONG_NAMESPACE)/display
+ endif
+ SOONG_CONFIG_lineageQcomVars_qti_vibrator_effect_lib := $(TARGET_QTI_VIBRATOR_EFFECT_LIB)
++SOONG_CONFIG_lineageGlobalVars_has_legacy_camera_hal1 := $(TARGET_HAS_LEGACY_CAMERA_HAL1)

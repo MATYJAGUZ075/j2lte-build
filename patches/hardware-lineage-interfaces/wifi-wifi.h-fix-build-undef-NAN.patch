@@ -1,0 +1,19 @@
+diff --git a/wifi/1.0-legacy/wifi.h b/wifi/1.0-legacy/wifi.h
+index 087d6f7..02c659c 100644
+--- a/wifi/1.0-legacy/wifi.h
++++ b/wifi/1.0-legacy/wifi.h
+@@ -17,6 +17,11 @@
+ #ifndef WIFI_H_
+ #define WIFI_H_
+ 
++// HACK: NAN is a macro defined in math.h, which can be included in various
++// headers. This wifi HAL uses an enum called NAN, which does not compile when
++// the macro is defined. Undefine NAN to work around it.
++#undef NAN
++
+ #include <functional>
+ 
+ #include <android-base/macros.h>
+-- 
+2.43.0
+

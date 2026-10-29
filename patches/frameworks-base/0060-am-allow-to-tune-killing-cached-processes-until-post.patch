@@ -1,0 +1,35 @@
+From b31da294ab77e3384afd1ea90c7780a5d8f9338f Mon Sep 17 00:00:00 2001
+From: Yaroslav Zviezda <acroreiser@gmail.com>
+Date: Wed, 12 Jul 2023 23:37:04 +0300
+Subject: [PATCH] am: allow to tune killing cached processes until/post
+ boot completed
+
+* ro.am.no_kill_cached_processes_until_boot_completed (true)
+* ro.am.no_kill_cached_processes_post_boot_completed_duration_millis (600_000)
+---
+ .../com/android/server/am/ActivityManagerConstants.java     | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/services/core/java/com/android/server/am/ActivityManagerConstants.java b/services/core/java/com/android/server/am/ActivityManagerConstants.java
+index 30162288..45289756 100644
+--- a/services/core/java/com/android/server/am/ActivityManagerConstants.java
++++ b/services/core/java/com/android/server/am/ActivityManagerConstants.java
+@@ -731,11 +731,13 @@ final class ActivityManagerConstants extends ContentObserver {
+             "no_kill_cached_processes_post_boot_completed_duration_millis";
+ 
+     /** @see #mNoKillCachedProcessesUntilBootCompleted */
+-    private static final boolean DEFAULT_NO_KILL_CACHED_PROCESSES_UNTIL_BOOT_COMPLETED = true;
++    private static final boolean DEFAULT_NO_KILL_CACHED_PROCESSES_UNTIL_BOOT_COMPLETED =
++            SystemProperties.getBoolean("ro.am.no_kill_cached_processes_until_boot_completed", true);
+ 
+     /** @see #mNoKillCachedProcessesPostBootCompletedDurationMillis */
+     private static final long
+-            DEFAULT_NO_KILL_CACHED_PROCESSES_POST_BOOT_COMPLETED_DURATION_MILLIS = 600_000;
++            DEFAULT_NO_KILL_CACHED_PROCESSES_POST_BOOT_COMPLETED_DURATION_MILLIS =
++            SystemProperties.getLong("ro.am.no_kill_cached_processes_post_boot_completed_duration_millis", 600_000);
+ 
+     /**
+      * If true, do not kill excessive cached processes proactively, until user-0 is unlocked.
+-- 
+2.43.0
+

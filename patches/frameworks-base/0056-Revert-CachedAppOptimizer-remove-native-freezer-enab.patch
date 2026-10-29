@@ -1,0 +1,86 @@
+From 4837e089ac2c14344caecd11e063e281c882558e Mon Sep 17 00:00:00 2001
+From: Yaroslav Zviezda <acroreiser@gmail.com>
+Date: Sat, 6 Nov 2021 01:27:33 +0300
+Subject: [PATCH] Revert "CachedAppOptimizer: remove native freezer
+ enabling code"
+
+This reverts commit f354af53bef47ac79c6f487d93ee688179dddde9.
+
+Change-Id: I74da883baead2113cb506f85cbdf826dbc141646
+---
+ .../android/server/am/CachedAppOptimizer.java   | 16 ++++++++++++++++
+ ...com_android_server_am_CachedAppOptimizer.cpp | 17 +++++++++++++++++
+ 2 files changed, 33 insertions(+)
+
+diff --git a/services/core/java/com/android/server/am/CachedAppOptimizer.java b/services/core/java/com/android/server/am/CachedAppOptimizer.java
+index 347557ca..8c44d6fe 100644
+--- a/services/core/java/com/android/server/am/CachedAppOptimizer.java
++++ b/services/core/java/com/android/server/am/CachedAppOptimizer.java
+@@ -736,6 +736,18 @@ public final class CachedAppOptimizer {
+         return true;
+     }
+ 
++    /**
++     * Enable or disable the freezer. When enable == false all frozen processes are unfrozen,
++     * but aren't removed from the freezer. While in this state, processes can be added or removed
++     * by using Process.setProcessFrozen(), but they wouldn't be actually frozen until the freezer
++     * is enabled. If enable == true all processes in the freezer are frozen.
++     *
++     * @param enable Specify whether to enable (true) or disable (false) the freezer.
++     *
++     * @hide
++     */
++    private static native void enableFreezerInternal(boolean enable);
++
+     /**
+      * Informs binder that a process is about to be frozen. If freezer is enabled on a process via
+      * this method, this method will synchronously dispatch all pending transactions to the
+@@ -782,6 +794,10 @@ public final class CachedAppOptimizer {
+                 // Also check freezer binder ioctl
+                 getBinderFreezeInfo(Process.myPid());
+                 supported = true;
++                // This is a workaround after reverting the cgroup v2 uid/pid hierarchy due to
++                // http://b/179006802.
++                // TODO: remove once the uid/pid hierarchy is restored
++                enableFreezerInternal(true);
+             } else {
+                 Slog.e(TAG_AM, "unexpected value in cgroup.freeze");
+             }
+diff --git a/services/core/jni/com_android_server_am_CachedAppOptimizer.cpp b/services/core/jni/com_android_server_am_CachedAppOptimizer.cpp
+index aceffcbd..9be3184a 100644
+--- a/services/core/jni/com_android_server_am_CachedAppOptimizer.cpp
++++ b/services/core/jni/com_android_server_am_CachedAppOptimizer.cpp
+@@ -472,6 +472,21 @@ static void com_android_server_am_CachedAppOptimizer_compactProcess(JNIEnv*, job
+     compactProcessOrFallback(pid, compactionFlags);
+ }
+ 
++static void com_android_server_am_CachedAppOptimizer_enableFreezerInternal(
++        JNIEnv *env, jobject clazz, jboolean enable) {
++    bool success = true;
++
++    if (enable) {
++        success = SetTaskProfiles(0, {"FreezerEnabled"}, true);
++    } else {
++        success = SetTaskProfiles(0, {"FreezerDisabled"}, true);
++    }
++
++    if (!success) {
++        jniThrowException(env, "java/lang/RuntimeException", "Unknown error");
++    }
++}
++
+ static jint com_android_server_am_CachedAppOptimizer_freezeBinder(
+         JNIEnv *env, jobject clazz, jint pid, jboolean freeze) {
+ 
+@@ -518,6 +533,8 @@ static const JNINativeMethod sMethods[] = {
+          (void*)com_android_server_am_CachedAppOptimizer_getFreeSwapPercent},
+         {"compactSystem", "()V", (void*)com_android_server_am_CachedAppOptimizer_compactSystem},
+         {"compactProcess", "(II)V", (void*)com_android_server_am_CachedAppOptimizer_compactProcess},
++        {"enableFreezerInternal", "(Z)V",
++         (void*)com_android_server_am_CachedAppOptimizer_enableFreezerInternal},
+         {"freezeBinder", "(IZ)I", (void*)com_android_server_am_CachedAppOptimizer_freezeBinder},
+         {"getBinderFreezeInfo", "(I)I",
+          (void*)com_android_server_am_CachedAppOptimizer_getBinderFreezeInfo},
+-- 
+2.43.0
+

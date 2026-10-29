@@ -1,0 +1,68 @@
+From 5396339d1cb234c1c674666660030f8e7aa3f2b9 Mon Sep 17 00:00:00 2001
+From: Yaroslav Zviezda <acroreiser@gmail.com>
+Date: Sat, 6 Nov 2021 01:29:17 +0300
+Subject: [PATCH] Revert "CachedAppOptimizer: don't hardcode freezer
+ path"
+
+This reverts commit e5430976256a10c7ed727f7c7c96ff0bc1db4cde.
+---
+ .../java/com/android/server/am/CachedAppOptimizer.java   | 8 +-------
+ .../jni/com_android_server_am_CachedAppOptimizer.cpp     | 9 +--------
+ 2 files changed, 2 insertions(+), 15 deletions(-)
+
+diff --git a/services/core/java/com/android/server/am/CachedAppOptimizer.java b/services/core/java/com/android/server/am/CachedAppOptimizer.java
+index 8c44d6fe..73308584 100644
+--- a/services/core/java/com/android/server/am/CachedAppOptimizer.java
++++ b/services/core/java/com/android/server/am/CachedAppOptimizer.java
+@@ -773,12 +773,6 @@ public final class CachedAppOptimizer {
+      */
+     private static native int getBinderFreezeInfo(int pid);
+ 
+-    /**
+-     * Returns the path to be checked to verify whether the freezer is supported by this system.
+-     * @return absolute path to the file
+-     */
+-    private static native String getFreezerCheckPath();
+-
+     /**
+      * Determines whether the freezer is supported by this system
+      */
+@@ -787,7 +781,7 @@ public final class CachedAppOptimizer {
+         FileReader fr = null;
+ 
+         try {
+-            fr = new FileReader(getFreezerCheckPath());
++            fr = new FileReader("/sys/fs/cgroup/uid_0/cgroup.freeze");
+             char state = (char) fr.read();
+ 
+             if (state == '1' || state == '0') {
+diff --git a/services/core/jni/com_android_server_am_CachedAppOptimizer.cpp b/services/core/jni/com_android_server_am_CachedAppOptimizer.cpp
+index 9be3184a..f3e9fe63 100644
+--- a/services/core/jni/com_android_server_am_CachedAppOptimizer.cpp
++++ b/services/core/jni/com_android_server_am_CachedAppOptimizer.cpp
+@@ -520,11 +520,6 @@ static jint com_android_server_am_CachedAppOptimizer_getBinderFreezeInfo(JNIEnv
+     return retVal;
+ }
+ 
+-static jstring com_android_server_am_CachedAppOptimizer_getFreezerCheckPath(JNIEnv* env,
+-                                                                            jobject clazz) {
+-    return env->NewStringUTF(CGROUP_FREEZE_PATH);
+-}
+-
+ static const JNINativeMethod sMethods[] = {
+         /* name, signature, funcPtr */
+         {"cancelCompaction", "()V",
+@@ -537,9 +532,7 @@ static const JNINativeMethod sMethods[] = {
+          (void*)com_android_server_am_CachedAppOptimizer_enableFreezerInternal},
+         {"freezeBinder", "(IZ)I", (void*)com_android_server_am_CachedAppOptimizer_freezeBinder},
+         {"getBinderFreezeInfo", "(I)I",
+-         (void*)com_android_server_am_CachedAppOptimizer_getBinderFreezeInfo},
+-        {"getFreezerCheckPath", "()Ljava/lang/String;",
+-         (void*)com_android_server_am_CachedAppOptimizer_getFreezerCheckPath}};
++         (void*)com_android_server_am_CachedAppOptimizer_getBinderFreezeInfo}};
+ 
+ int register_android_server_am_CachedAppOptimizer(JNIEnv* env)
+ {
+-- 
+2.43.0
+

@@ -1,0 +1,48 @@
+From c31a76494ddfc1aee3e57b9c5fab022b4b6f85ec Mon Sep 17 00:00:00 2001
+From: lavenly <135024283+lavenly@users.noreply.github.com>
+Date: Thu, 18 Jun 2026 19:43:17 -0700
+Subject: [PATCH] btm: fix SCO I2S routing
+
+Android 10 removed BT_VND_OP_SET_AUDIO_STATE which prevented libbt-vendor
+from sending the necessary VSC initialization commands to the Broadcom
+controller to configure its PCM/I2S interface.
+
+Inject the exact VSCs (I2S, Master Role, 256KHz clock, Short sync) required
+by the s2803x codec directly into btm_send_connect_request.
+
+Generated with Antigravity (https://antigravity.google) using Gemini 3.1 Pro (High)
+
+Signed-off-by: lavenly <135024283+lavenly@users.noreply.github.com>
+---
+ system/stack/btm/btm_sco.cc | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/system/stack/btm/btm_sco.cc b/system/stack/btm/btm_sco.cc
+index 99701d6..aeb2111 100644
+--- a/system/stack/btm/btm_sco.cc
++++ b/system/stack/btm/btm_sco.cc
+@@ -261,6 +261,21 @@ BT_HDR* btm_sco_make_packet(std::vector<uint8_t> data, uint16_t sco_handle) {
+  ******************************************************************************/
+ static tBTM_STATUS btm_send_connect_request(uint16_t acl_handle,
+                                             enh_esco_params_t* p_setup) {
++  /* Force Broadcom SCO routing and I2S configuration */
++  /* HCI_VSC_WRITE_I2SPCM_INTERFACE_PARAM (0xFC6D) */
++  /* { I2S(1), Master(1), 8K(0), 256K(1) } */
++  uint8_t i2s_param[4] = {0x01, 0x01, 0x00, 0x01};
++  BTM_VendorSpecificCommand(0x006D, 4, i2s_param, NULL);
++
++  /* HCI_VSC_WRITE_SCO_PCM_INT_PARAM (0xFC1C) */
++  /* { PCM(0), 256K(1), Short(0), MasterSync(1), MasterClock(1) } */
++  uint8_t pcm_param[5] = {0x00, 0x01, 0x00, 0x01, 0x01};
++  BTM_VendorSpecificCommand(0x001C, 5, pcm_param, NULL);
++
++  /* HCI_VSC_WRITE_PCM_DATA_FORMAT_PARAM (0xFC1E) */
++  uint8_t fmt_param[5] = {0x03, 0x00, 0x00, 0x00, 0x00};
++  BTM_VendorSpecificCommand(0x001E, 5, fmt_param, NULL);
++
+   /* Send connect request depending on version of spec */
+   if (!btm_cb.sco_cb.esco_supported) {
+     LOG(INFO) << __func__ << ": sending non-eSCO request for handle="
+-- 
+2.43.0
+

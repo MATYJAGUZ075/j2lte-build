@@ -336,14 +336,14 @@ index b052c09..0000000
 -include $(BUILD_SHARED_LIBRARY)
 -
 diff --git a/res/values/strings.xml b/res/values/strings.xml
-index 1734f6d..ffc3174 100644
+index 1734f6d..fa177ac 100644
 --- a/res/values/strings.xml
 +++ b/res/values/strings.xml
 @@ -677,4 +677,10 @@ CHAR LIMIT = NONE] -->
  
      <!--  String shown when setting the homepage wallpaper in the background [CHAR LIMIT=NONE] -->
      <string name="setting_wallpaper">Setting wallpaper</string>
-+ 
++
 +    <!-- Strings que solo existian en traducciones: AAPT2 exige un valor por
 +         defecto (en ingles) para cada recurso. -->
 +    <string name="select_image">Select image</string>

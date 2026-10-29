@@ -1,16 +1,21 @@
-From e5c2b39a0f7ed0bab3c8efd97145a7d6664564b5 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: lavenly <135024283+lavenly@users.noreply.github.com>
 Date: Thu, 1 Oct 2026 15:02:03 +0000
 Subject: [PATCH] Revert "audio: use binder threadpool"
 
 This reverts commit d90c47420af3aa59c6fc864c30023ec62b0a26ac.
 
+Adaptado a A13 (lineage-20.0) y aplicado sobre 0001-audio-service-set-threadpool.
+Quita el threadpool NDK (ABinderProcess_*) del servicio de audio: en este
+dispositivo el vendor HAL se bloquea en ioctl de binder y el threadpool NDK
+con 1 solo hilo provoca el cuelgue de audioserver (TimeCheck timeout).
+
 Change-Id: Ib2e3527a999568a11c0e64536bc32fe881a4fc20
 Signed-off-by: lavenly <135024283+lavenly@users.noreply.github.com>
 ---
  audio/common/all-versions/default/service/Android.bp  | 1 -
- audio/common/all-versions/default/service/service.cpp | 4 ----
- 2 files changed, 5 deletions(-)
+ audio/common/all-versions/default/service/service.cpp | 3 ---
+ 2 files changed, 4 deletions(-)
 
 diff --git a/audio/common/all-versions/default/service/Android.bp b/audio/common/all-versions/default/service/Android.bp
 index 9890be2..1bd6abe 100644
@@ -25,7 +30,7 @@ index 9890be2..1bd6abe 100644
          "liblog",
          "libutils",
 diff --git a/audio/common/all-versions/default/service/service.cpp b/audio/common/all-versions/default/service/service.cpp
-index fbf6165..e37074d 100644
+index 509d908..92dfed9 100644
 --- a/audio/common/all-versions/default/service/service.cpp
 +++ b/audio/common/all-versions/default/service/service.cpp
 @@ -20,7 +20,6 @@
@@ -36,16 +41,16 @@ index fbf6165..e37074d 100644
  #include <binder/ProcessState.h>
  #include <cutils/properties.h>
  #include <dlfcn.h>
-@@ -79,9 +78,6 @@ int main(int /* argc */, char* /* argv */ []) {
-     // start a threadpool for vndbinder interactions
-     ::android::ProcessState::self()->startThreadPool();
+@@ -77,10 +76,8 @@ int main(int /* argc */, char* /* argv */ []) {
+ 
+     ::android::ProcessState::initWithDriver("/dev/vndbinder");
  
 -    ABinderProcess_setThreadPoolMaxThreadCount(1);
+     // start a threadpool for vndbinder interactions
+     ::android::ProcessState::self()->startThreadPool();
 -    ABinderProcess_startThreadPool();
--
+ 
      const int32_t defaultValue = -1;
      int32_t value =
-         property_get_int32("persist.vendor.audio.service.hwbinder.size_kbyte", defaultValue);
 -- 
 2.43.0
-

@@ -1,0 +1,95 @@
+From defa40a1793fbeccb4d600971219970cd68e0c9c Mon Sep 17 00:00:00 2001
+From: lavenly <135024283+lavenly@users.noreply.github.com>
+Date: Tue, 16 Jun 2026 23:29:46 -0700
+Subject: [PATCH] audio: Implement auto-fade-in to suppress AudioFlinger volume
+ delay blast
+
+When playing a new track, Android's AudioFlinger can take several hundred
+milliseconds to apply the correct AudioTrack stream volume, resulting in a loud
+'blast' or 'pop' at the beginning of playback.
+
+This patch mitigates the issue by monitoring the PCM buffer for silence (>100ms)
+and automatically applying a smooth 280ms software fade-in when audio resumes.
+
+This logic explicitly ignores the built-in speaker. A 280ms fade-in is used to
+find a middle ground—adequately masking the AudioFlinger blast while minimizing
+the muting effect on short UI clicks and notifications.
+
+Generated with Antigravity (https://antigravity.google) using Gemini 3.1 Pro (High)
+
+Signed-off-by: lavenly <135024283+lavenly@users.noreply.github.com>
+---
+ audio/audio_hw.c | 42 +++++++++++++++++++++++++++++++++++++++++-
+ audio/audio_hw.h |  2 ++
+ 2 files changed, 43 insertions(+), 1 deletion(-)
+
+diff --git a/audio/audio_hw.c b/audio/audio_hw.c
+index 8e2333d..c950a6f 100644
+--- a/audio/audio_hw.c
++++ b/audio/audio_hw.c
+@@ -2952,8 +2952,48 @@ false_alarm:
+         }
+ #endif
+ 
+-        if (out->muted)
++        if (out->muted) {
+             memset((void *)buffer, 0, bytes);
++        } else {
++            short *pcm = (short *)buffer;
++            size_t frames = bytes / audio_stream_out_frame_size(stream);
++            bool is_silent = true;
++            
++            for (size_t i = 0; i < frames * out->config.channels; i++) {
++                if (pcm[i] != 0) {
++                    is_silent = false;
++                    break;
++                }
++            }
++            
++            if (is_silent) {
++                out->silent_frames += frames;
++            } else {
++                /* If stream was perfectly silent for > 100ms, trigger a fast 280ms fade-in */
++                if (out->silent_frames > (int)(out->config.rate / 10)) {
++                    /* Exclude the built-in speaker */
++                    if (!(out->devices & AUDIO_DEVICE_OUT_SPEAKER)) {
++                        out->fade_in_frames = 280 * out->config.rate / 1000;
++                    }
++                }
++                out->silent_frames = 0;
++            }
++            
++            if (out->fade_in_frames > 0) {
++                int fade_total = 280 * out->config.rate / 1000;
++                for (size_t i = 0; i < frames * out->config.channels; i += out->config.channels) {
++                    float multiplier = 1.0f - ((float)out->fade_in_frames / fade_total);
++                    if (multiplier < 0.0f) multiplier = 0.0f;
++                    if (multiplier > 1.0f) multiplier = 1.0f;
++                    
++                    for (unsigned int ch = 0; ch < out->config.channels; ch++) {
++                        pcm[i + ch] = (short)(pcm[i + ch] * multiplier);
++                    }
++                    if (out->fade_in_frames > 0)
++                        out->fade_in_frames--;
++                }
++            }
++        }
+         list_for_each(node, &out->pcm_dev_list) {
+             pcm_device = node_to_item(node, struct pcm_device, stream_list_node);
+             if (pcm_device->pcm) {
+diff --git a/audio/audio_hw.h b/audio/audio_hw.h
+index 7143d55..c5103fd 100644
+--- a/audio/audio_hw.h
++++ b/audio/audio_hw.h
+@@ -252,6 +252,8 @@ struct stream_out {
+     struct compr_config         compr_config;
+     struct compress*            compr;
+     int                         standby;
++    int                         silent_frames;
++    int                         fade_in_frames;
+     unsigned int                sample_rate;
+     audio_channel_mask_t        channel_mask;
+     audio_format_t              format;
+-- 
+2.43.0
+

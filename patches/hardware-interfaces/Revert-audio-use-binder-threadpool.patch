@@ -10,38 +10,31 @@ Quita el threadpool NDK (ABinderProcess_*) del servicio de audio: en este
 dispositivo el vendor HAL se bloquea en ioctl de binder y el threadpool NDK
 con 1 solo hilo provoca el cuelgue de audioserver (TimeCheck timeout).
 
+El include de <android/binder_process.h> se cambia por <android/binder_status.h>
+porque el primero es el que arrastra las llamadas ABinderProcess_* y ademas
+los simbolos binder_status_t y STATUS_OK que usa este fichero. Se mantiene
+libbinder_ndk en shared_libs porque es el modulo que exporta esos headers.
+
 Change-Id: Ib2e3527a999568a11c0e64536bc32fe881a4fc20
 Signed-off-by: lavenly <135024283+lavenly@users.noreply.github.com>
 ---
- audio/common/all-versions/default/service/Android.bp  | 1 -
- audio/common/all-versions/default/service/service.cpp | 3 ---
- 2 files changed, 4 deletions(-)
+ audio/common/all-versions/default/service/service.cpp | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
 
-diff --git a/audio/common/all-versions/default/service/Android.bp b/audio/common/all-versions/default/service/Android.bp
-index 9890be2..1bd6abe 100644
---- a/audio/common/all-versions/default/service/Android.bp
-+++ b/audio/common/all-versions/default/service/Android.bp
-@@ -52,7 +52,6 @@ cc_binary {
-     shared_libs: [
-         "libcutils",
-         "libbinder",
--        "libbinder_ndk",
-         "libhidlbase",
-         "liblog",
-         "libutils",
 diff --git a/audio/common/all-versions/default/service/service.cpp b/audio/common/all-versions/default/service/service.cpp
-index 509d908..92dfed9 100644
+index 509d908..5467992 100644
 --- a/audio/common/all-versions/default/service/service.cpp
 +++ b/audio/common/all-versions/default/service/service.cpp
-@@ -20,7 +20,6 @@
+@@ -20,7 +20,7 @@
  #include <string>
  #include <vector>
  
 -#include <android/binder_process.h>
++#include <android/binder_status.h>
  #include <binder/ProcessState.h>
  #include <cutils/properties.h>
  #include <dlfcn.h>
-@@ -77,10 +76,8 @@ int main(int /* argc */, char* /* argv */ []) {
+@@ -77,10 +77,8 @@ int main(int /* argc */, char* /* argv */ []) {
  
      ::android::ProcessState::initWithDriver("/dev/vndbinder");
  

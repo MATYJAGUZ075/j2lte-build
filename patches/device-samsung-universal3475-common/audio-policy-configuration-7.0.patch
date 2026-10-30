@@ -1,0 +1,96 @@
+diff --git a/configs/audio/audio_policy_configuration.xml b/configs/audio/audio_policy_configuration.xml
+index f2f6517..df1c741 100644
+--- a/configs/audio/audio_policy_configuration.xml
++++ b/configs/audio/audio_policy_configuration.xml
+@@ -1,12 +1,12 @@
+ <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+ <!-- add for Samsung LSI model -->
+ 
+-<audioPolicyConfiguration version="1.0" xmlns:xi="http://www.w3.org/2001/XInclude">
++<audioPolicyConfiguration version="7.0" xmlns:xi="http://www.w3.org/2001/XInclude">
+ 
+     <globalConfiguration speaker_drc_enabled="false"/>
+ 
+     <modules>
+-        <module name="primary" halVersion="3.0">
++        <module name="primary" halVersion="7.0">
+             <attachedDevices>
+                 <item>Earpiece</item>
+                 <item>Speaker</item>
+@@ -18,7 +18,7 @@
+ 
+             <mixPorts>
+                 <!-- Playback(Output) Streams -->
+-                <mixPort name="primary-out" role="source" flags="AUDIO_OUTPUT_FLAG_PRIMARY|AUDIO_OUTPUT_FLAG_DEEP_BUFFER">
++                <mixPort name="primary-out" role="source" flags="AUDIO_OUTPUT_FLAG_PRIMARY AUDIO_OUTPUT_FLAG_DEEP_BUFFER">
+                     <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
+                              samplingRates="48000" channelMasks="AUDIO_CHANNEL_OUT_STEREO"/>
+                 </mixPort>
+@@ -27,7 +27,7 @@
+                 <mixPort name="primary-in" role="sink">
+                     <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
+                              samplingRates="48000"
+-                             channelMasks="AUDIO_CHANNEL_IN_MONO,AUDIO_CHANNEL_IN_STEREO,AUDIO_CHANNEL_IN_VOICE_UPLINK,AUDIO_CHANNEL_IN_VOICE_DNLINK"/>
++                             channelMasks="AUDIO_CHANNEL_IN_MONO AUDIO_CHANNEL_IN_STEREO AUDIO_CHANNEL_IN_VOICE_UPLINK AUDIO_CHANNEL_IN_VOICE_DNLINK"/>
+                 </mixPort>
+             </mixPorts>
+ 
+@@ -65,23 +65,23 @@
+                 <!-- input devices declaration, i.e. source DEVICE PORT -->
+                 <devicePort tagName="Built-In Mic" type="AUDIO_DEVICE_IN_BUILTIN_MIC" role="source">
+                     <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
+-                             samplingRates="8000,11025,12000,16000,22050,24000,32000,44100,48000"
+-                             channelMasks="AUDIO_CHANNEL_IN_MONO,AUDIO_CHANNEL_IN_STEREO,AUDIO_CHANNEL_IN_FRONT_BACK,AUDIO_CHANNEL_IN_VOICE_UPLINK,AUDIO_CHANNEL_IN_VOICE_DNLINK"/>
++                             samplingRates="8000 11025 12000 16000 22050 24000 32000 44100 48000"
++                             channelMasks="AUDIO_CHANNEL_IN_MONO AUDIO_CHANNEL_IN_STEREO AUDIO_CHANNEL_IN_FRONT_BACK AUDIO_CHANNEL_IN_VOICE_UPLINK AUDIO_CHANNEL_IN_VOICE_DNLINK"/>
+                 </devicePort>
+                 <devicePort tagName="Built-In Back Mic" type="AUDIO_DEVICE_IN_BACK_MIC" role="source">
+                     <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
+-                             samplingRates="8000,11025,12000,16000,22050,24000,32000,44100,48000"
+-                             channelMasks="AUDIO_CHANNEL_IN_MONO,AUDIO_CHANNEL_IN_STEREO,AUDIO_CHANNEL_IN_FRONT_BACK,AUDIO_CHANNEL_IN_VOICE_UPLINK,AUDIO_CHANNEL_IN_VOICE_DNLINK"/>
++                             samplingRates="8000 11025 12000 16000 22050 24000 32000 44100 48000"
++                             channelMasks="AUDIO_CHANNEL_IN_MONO AUDIO_CHANNEL_IN_STEREO AUDIO_CHANNEL_IN_FRONT_BACK AUDIO_CHANNEL_IN_VOICE_UPLINK AUDIO_CHANNEL_IN_VOICE_DNLINK"/>
+                 </devicePort>
+                 <devicePort tagName="Wired Headset Mic" type="AUDIO_DEVICE_IN_WIRED_HEADSET" role="source">
+                     <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
+-                             samplingRates="8000,11025,12000,16000,22050,24000,32000,44100,48000"
+-                             channelMasks="AUDIO_CHANNEL_IN_MONO,AUDIO_CHANNEL_IN_STEREO,AUDIO_CHANNEL_IN_FRONT_BACK,AUDIO_CHANNEL_IN_VOICE_UPLINK,AUDIO_CHANNEL_IN_VOICE_DNLINK"/>
++                             samplingRates="8000 11025 12000 16000 22050 24000 32000 44100 48000"
++                             channelMasks="AUDIO_CHANNEL_IN_MONO AUDIO_CHANNEL_IN_STEREO AUDIO_CHANNEL_IN_FRONT_BACK AUDIO_CHANNEL_IN_VOICE_UPLINK AUDIO_CHANNEL_IN_VOICE_DNLINK"/>
+                 </devicePort>
+                 <devicePort tagName="Bt Sco Headset Mic" type="AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET" role="source">
+                     <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
+-                             samplingRates="8000,11025,12000,16000,22050,24000,32000,44100,48000"
+-                             channelMasks="AUDIO_CHANNEL_IN_MONO,AUDIO_CHANNEL_IN_STEREO,AUDIO_CHANNEL_IN_FRONT_BACK,AUDIO_CHANNEL_IN_VOICE_UPLINK,AUDIO_CHANNEL_IN_VOICE_DNLINK"/>
++                             samplingRates="8000 11025 12000 16000 22050 24000 32000 44100 48000"
++                             channelMasks="AUDIO_CHANNEL_IN_MONO AUDIO_CHANNEL_IN_STEREO AUDIO_CHANNEL_IN_FRONT_BACK AUDIO_CHANNEL_IN_VOICE_UPLINK AUDIO_CHANNEL_IN_VOICE_DNLINK"/>
+                 </devicePort>
+             </devicePorts>
+ 
+@@ -108,7 +108,7 @@
+         </module>
+ 
+         <!-- A2dp Audio HAL -->
+-        <xi:include href="a2dp_audio_policy_configuration.xml"/>
++        <xi:include href="a2dp_audio_policy_configuration_7_0.xml"/>
+ 
+         <!-- Usb Audio HAL -->
+         <xi:include href="usb_audio_policy_configuration.xml"/>
+diff --git a/device-common.mk b/device-common.mk
+index 7cb0a0c..0379926 100644
+--- a/device-common.mk
++++ b/device-common.mk
+@@ -19,10 +19,11 @@ DEVICE_PACKAGE_OVERLAYS += $(LOCAL_PATH)/overlay
+ # Android Go / low-RAM defaults (7 optimizaciones) para el J2 de 1 GB.
+ $(call inherit-product, $(LOCAL_PATH)/device-common_go.mk)
+ # Audio policy XML (formato moderno; el .conf legacy ya no se copia en T).
+-# TODO(fase 4): regenerar audio_policy_configuration.xml a version 7.0.
++# version 7.0: el parser de A13 usa espacios como separador de
++# channelMasks/samplingRates cuando la raiz del documento es 7.0/7.1.
+ PRODUCT_COPY_FILES += \
+     frameworks/av/services/audiopolicy/config/audio_policy_volumes.xml:$(TARGET_COPY_OUT_VENDOR)/etc/audio_policy_volumes.xml \
+-    frameworks/av/services/audiopolicy/config/a2dp_audio_policy_configuration.xml:$(TARGET_COPY_OUT_VENDOR)/etc/a2dp_audio_policy_configuration.xml \
++    frameworks/av/services/audiopolicy/config/a2dp_audio_policy_configuration_7_0.xml:$(TARGET_COPY_OUT_VENDOR)/etc/a2dp_audio_policy_configuration_7_0.xml \
+     frameworks/av/services/audiopolicy/config/default_volume_tables.xml:$(TARGET_COPY_OUT_VENDOR)/etc/default_volume_tables.xml \
+     frameworks/av/services/audiopolicy/config/r_submix_audio_policy_configuration.xml:$(TARGET_COPY_OUT_VENDOR)/etc/r_submix_audio_policy_configuration.xml \
+     frameworks/av/services/audiopolicy/config/usb_audio_policy_configuration.xml:$(TARGET_COPY_OUT_VENDOR)/etc/usb_audio_policy_configuration.xml \

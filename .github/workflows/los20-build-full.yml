@@ -506,6 +506,10 @@ jobs:
               system-server) NAME="frameworks/base" ;;
               # adb es un modulo: la ruta real es packages/modules/adb.
               adb) NAME="packages/modules/adb" ;;
+              # El device tree comun tiene un guion en el propio nombre del
+              # repo ("universal3475-common"), asi que tr '-' '/' partiria
+              # en dos y no encontraria el repo.
+              device-samsung-universal3475-common) NAME="device/samsung/universal3475-common" ;;
               *) NAME="$(echo "$CASE" | tr '-' '/')" ;;
             esac
             echo "  aplicando $(basename "$P") -> $NAME"

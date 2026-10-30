@@ -1,0 +1,54 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Fri, 30 Oct 2026 00:00:00 +0000
+Subject: [PATCH] CameraService: make getLegacyParametersLazy more lenient
+
+On some HAL1 setups with the A12-style CameraService reverted codebase,
+initializeShimMetadata can fail and getLegacyParametersLazy returns
+ERROR_INVALID_OPERATION "Unable to initialize legacy parameters".
+CameraX (A13) calls this path and fails to initialize, crashing the
+camera app (Aperture) with CameraAccessException.
+
+Be lenient: if initialization fails or leaves no parameters, return OK
+with empty parameters instead of failing. This allows CameraX to fall
+back to other paths.
+---
+diff --git a/services/camera/libcameraservice/CameraService.cpp b/services/camera/libcameraservice/CameraService.cpp
+index xxxxxxx..yyyyyyy 100644
+--- a/services/camera/libcameraservice/CameraService.cpp
++++ b/services/camera/libcameraservice/CameraService.cpp
+@@ -1098,7 +1098,7 @@
+         /*out*/
+         CameraParameters* parameters) {
+ 
+-    ALOGV("%s: for cameraId: %d", __FUNCTION__, cameraId);
++    ALOGI("%s: for cameraId: %d", __FUNCTION__, cameraId);
+ 
+     Status ret = Status::ok();
+ 
+@@ -1130,8 +1130,11 @@
+     ret = initializeShimMetadata(cameraId);
+     CameraThreadState::restoreCallingIdentity(token);
+     if (!ret.isOk()) {
+-        // Error already logged by callee
+-        return ret;
++        // Be lenient: HAL1 or legacy setup may not support shim metadata
++        // initialization. Continue with empty parameters so CameraX can
++        // fall back to other paths.
++        ALOGW("%s: initializeShimMetadata failed for camera %d: %s, continuing with empty params",
++              __FUNCTION__, cameraId, ret.toString8().string());
+     }
+ 
+     // Check for parameters again
+@@ -1151,9 +1154,10 @@
+         }
+     }
+ 
+-    ALOGE("%s: Parameters were not initialized, or were empty.  Device may not be present.",
++    ALOGW("%s: Parameters were not initialized, or were empty. Returning empty parameters.",
+             __FUNCTION__);
+-    return STATUS_ERROR(ERROR_INVALID_OPERATION, "Unable to initialize legacy parameters");
++    *parameters = CameraParameters();
++    return Status::ok();
+ }
+ 
+ // Can camera service trust the caller based on the calling UID?

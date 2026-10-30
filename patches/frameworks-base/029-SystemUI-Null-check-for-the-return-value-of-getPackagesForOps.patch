@@ -1,0 +1,30 @@
+From: Yuichiro Hanada <yhanada@google.com>
+Date: Tue, 20 Feb 2024 12:34:52 +0900
+Subject: [PATCH] SystemUI: null check for the return value of getPackagesForOps()
+
+AppOpsService.getPackagesForOps() may return null. The caller should
+check it.
+
+On kernels without certain appops state transitions the list can be
+null at startup, causing AppOpsControllerImpl.fetchCurrentActiveOps() to
+throw NullPointerException and SystemUI to enter a crash loop (status
+bar/keyguard lost).
+
+Backport of AOSP commit 42f21d60571b7f132f98c04782a7bbefb24a5bbd
+(Bug: 324329757).
+
+Change-Id: Ifc51678733caf412421c5ea1827668b3698e44e0
+diff --git a/packages/SystemUI/src/com/android/systemui/appops/AppOpsControllerImpl.java b/packages/SystemUI/src/com/android/systemui/appops/AppOpsControllerImpl.java
+index 1876786..8c3ed0b 100644
+--- a/packages/SystemUI/src/com/android/systemui/appops/AppOpsControllerImpl.java
++++ b/packages/SystemUI/src/com/android/systemui/appops/AppOpsControllerImpl.java
+@@ -183,6 +183,9 @@ public class AppOpsControllerImpl extends BroadcastReceiver implements AppOpsCon
+ 
+     private void fetchCurrentActiveOps() {
+         List<AppOpsManager.PackageOps> packageOps = mAppOps.getPackagesForOps(OPS);
++        if (packageOps == null) {
++            return;
++        }
+         for (AppOpsManager.PackageOps op : packageOps) {
+             for (AppOpsManager.OpEntry entry : op.getOps()) {
+                 for (Map.Entry<String, AppOpsManager.AttributedOpEntry> attributedOpEntry :

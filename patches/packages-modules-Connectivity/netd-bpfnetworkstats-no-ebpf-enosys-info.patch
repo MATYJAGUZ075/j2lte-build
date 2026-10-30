@@ -1,0 +1,120 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Fri, 30 Oct 2026 00:00:00 +0000
+Subject: [PATCH] Connectivity: report the missing eBPF support as info in BpfNetworkStats
+
+The kernel of this device has no eBPF support at all, so opening any of
+the traffic stats maps fails with ENOSYS. That is not an error, it just
+means that the per interface network stats cannot be collected, but the
+current code logs it as an error and does it over and over again
+(hundreds of "E BpfNetworkStats: get ifaceStats map fd failed: Function
+not implemented" lines in the log).
+
+Log it as info when the failure is ENOSYS, keeping the error level for
+any other failure.
+
+This complements the patch that does the same in BpfHandler and
+NetdUpdatable.
+---
+diff --git a/service-t/native/libs/libnetworkstats/BpfNetworkStats.cpp b/service-t/native/libs/libnetworkstats/BpfNetworkStats.cpp
+index 9ebef4d..1a4846d 100644
+--- a/service-t/native/libs/libnetworkstats/BpfNetworkStats.cpp
++++ b/service-t/native/libs/libnetworkstats/BpfNetworkStats.cpp
+@@ -16,6 +16,7 @@
+ 
+ #include <inttypes.h>
+ #include <net/if.h>
++#include <stdarg.h>
+ #include <string.h>
+ #include <unordered_set>
+ 
+@@ -44,6 +45,21 @@ using base::Result;
+ // from the config value.
+ static constexpr char const* STATS_MAP_PATH[] = {STATS_MAP_B_PATH, STATS_MAP_A_PATH};
+ 
++// Reports the failure to open an eBPF map. A kernel without eBPF support (no
++// bpf() syscall at all) makes the network stats unavailable, which is not an
++// error condition: report it as informational so the log is not flooded with
++// the very same message over and over.
++static void logMapOpenFailure(const char* format, ...) {
++    va_list args;
++    va_start(args, format);
++    if (errno == ENOSYS) {
++        __android_log_vprint(LOG_INFO, LOG_TAG, format, args);
++    } else {
++        __android_log_vprint(LOG_ERROR, LOG_TAG, format, args);
++    }
++    va_end(args);
++}
++
+ int bpfGetUidStatsInternal(uid_t uid, Stats* stats,
+                            const BpfMap<uint32_t, StatsValue>& appUidStatsMap) {
+     auto statsEntry = appUidStatsMap.readValue(uid);
+@@ -62,7 +78,8 @@ int bpfGetUidStats(uid_t uid, Stats* stats) {
+ 
+     if (!appUidStatsMap.isValid()) {
+         int ret = -errno;
+-        ALOGE("Opening appUidStatsMap(%s) failed: %s", APP_UID_STATS_MAP_PATH, strerror(errno));
++        logMapOpenFailure("Opening appUidStatsMap(%s) failed: %s", APP_UID_STATS_MAP_PATH,
++                           strerror(errno));
+         return ret;
+     }
+     return bpfGetUidStatsInternal(uid, stats, appUidStatsMap);
+@@ -104,13 +121,13 @@ int bpfGetIfaceStats(const char* iface, Stats* stats) {
+     int ret;
+     if (!ifaceStatsMap.isValid()) {
+         ret = -errno;
+-        ALOGE("get ifaceStats map fd failed: %s", strerror(errno));
++        logMapOpenFailure("get ifaceStats map fd failed: %s", strerror(errno));
+         return ret;
+     }
+     BpfMapRO<uint32_t, IfaceValue> ifaceIndexNameMap(IFACE_INDEX_NAME_MAP_PATH);
+     if (!ifaceIndexNameMap.isValid()) {
+         ret = -errno;
+-        ALOGE("get ifaceIndexName map fd failed: %s", strerror(errno));
++        logMapOpenFailure("get ifaceIndexName map fd failed: %s", strerror(errno));
+         return ret;
+     }
+     return bpfGetIfaceStatsInternal(iface, stats, ifaceStatsMap, ifaceIndexNameMap);
+@@ -189,14 +206,14 @@ int parseBpfNetworkStatsDetail(std::vector<stats_line>* lines,
+     BpfMapRO<uint32_t, IfaceValue> ifaceIndexNameMap(IFACE_INDEX_NAME_MAP_PATH);
+     if (!ifaceIndexNameMap.isValid()) {
+         int ret = -errno;
+-        ALOGE("get ifaceIndexName map fd failed: %s", strerror(errno));
++        logMapOpenFailure("get ifaceIndexName map fd failed: %s", strerror(errno));
+         return ret;
+     }
+ 
+     BpfMapRO<uint32_t, uint32_t> configurationMap(CONFIGURATION_MAP_PATH);
+     if (!configurationMap.isValid()) {
+         int ret = -errno;
+-        ALOGE("get configuration map fd failed: %s", strerror(errno));
++        logMapOpenFailure("get configuration map fd failed: %s", strerror(errno));
+         return ret;
+     }
+     auto configuration = configurationMap.readValue(CURRENT_STATS_MAP_CONFIGURATION_KEY);
+@@ -209,7 +226,7 @@ int parseBpfNetworkStatsDetail(std::vector<stats_line>* lines,
+     BpfMap<StatsKey, StatsValue> statsMap(statsMapPath);
+     if (!statsMap.isValid()) {
+         int ret = -errno;
+-        ALOGE("get stats map fd failed: %s, path: %s", strerror(errno), statsMapPath);
++        logMapOpenFailure("get stats map fd failed: %s, path: %s", strerror(errno), statsMapPath);
+         return ret;
+     }
+ 
+@@ -266,14 +283,14 @@ int parseBpfNetworkStatsDev(std::vector<stats_line>* lines) {
+     BpfMapRO<uint32_t, IfaceValue> ifaceIndexNameMap(IFACE_INDEX_NAME_MAP_PATH);
+     if (!ifaceIndexNameMap.isValid()) {
+         ret = -errno;
+-        ALOGE("get ifaceIndexName map fd failed: %s", strerror(errno));
++        logMapOpenFailure("get ifaceIndexName map fd failed: %s", strerror(errno));
+         return ret;
+     }
+ 
+     BpfMapRO<uint32_t, StatsValue> ifaceStatsMap(IFACE_STATS_MAP_PATH);
+     if (!ifaceStatsMap.isValid()) {
+         ret = -errno;
+-        ALOGE("get ifaceStats map fd failed: %s", strerror(errno));
++        logMapOpenFailure("get ifaceStats map fd failed: %s", strerror(errno));
+         return ret;
+     }
+     return parseBpfNetworkStatsDevInternal(lines, ifaceStatsMap, ifaceIndexNameMap);

@@ -1,0 +1,50 @@
+diff --git a/netd/BpfHandler.cpp b/netd/BpfHandler.cpp
+index 6ae26c3..112d8b6 100644
+--- a/netd/BpfHandler.cpp
++++ b/netd/BpfHandler.cpp
+@@ -53,7 +53,16 @@ static Status attachProgramToCgroup(const char* programPath, const unique_fd& cg
+     unique_fd cgroupProg(retrieveProgram(programPath));
+     if (cgroupProg == -1) {
+         int ret = errno;
+-        ALOGE("Failed to get program from %s: %s", programPath, strerror(ret));
++        if (ret == ENOSYS) {
++            // El kernel no implementa eBPF (llego en Linux 4.x). En el Exynos
++            // 3475 el kernel es 3.10, asi que el syscall bpf() no existe y
++            // devuelve ENOSYS. No es un fallo del servicio ni del programa:
++            // es una caracteristica del kernel, y se informa como tal en vez
++            // de reportarlo como error.
++            ALOGI("bpf() is not supported by this kernel, skipping %s", programPath);
++        } else {
++            ALOGE("Failed to get program from %s: %s", programPath, strerror(ret));
++        }
+         return statusFromErrno(ret, "cgroup program get failed");
+     }
+     if (android::bpf::attachProgram(type, cgroupProg, cgroupFd)) {
+diff --git a/netd/NetdUpdatable.cpp b/netd/NetdUpdatable.cpp
+index f0997fc..67db65c 100644
+--- a/netd/NetdUpdatable.cpp
++++ b/netd/NetdUpdatable.cpp
+@@ -19,6 +19,7 @@
+ #include "NetdUpdatable.h"
+ 
+ #include <android-base/logging.h>
++#include <errno.h>
+ #include <netdutils/Status.h>
+ 
+ #include "NetdUpdatablePublic.h"
+@@ -30,7 +31,14 @@ int libnetd_updatable_init(const char* cg2_path) {
+     android::net::gNetdUpdatable = android::net::NetdUpdatable::getInstance();
+     android::netdutils::Status ret = android::net::gNetdUpdatable->mBpfHandler.init(cg2_path);
+     if (!android::netdutils::isOk(ret)) {
+-        LOG(ERROR) << __func__ << ": BPF handler init failed";
++        if (ret.code() == ENOSYS) {
++            // El kernel no tiene eBPF: no es un fallo, es que las funciones
++            // que dependen de eBPF (contabilidad de trafico por UID y reglas
++            // de firewall por UID) no estan disponibles en este hardware.
++            LOG(INFO) << __func__ << ": eBPF not supported by this kernel, skipping BPF features";
++        } else {
++            LOG(ERROR) << __func__ << ": BPF handler init failed";
++        }
+         return -ret.code();
+     }
+     return 0;

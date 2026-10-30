@@ -1,0 +1,24 @@
+diff --git a/apex/apex.go b/apex/apex.go
+index f12c517..d74d333 100644
+--- a/apex/apex.go
++++ b/apex/apex.go
+@@ -2235,6 +2235,19 @@ func (a *apexBundle) GenerateAndroidBuildActions(ctx android.ModuleContext) {
+ 		a.linkToSystemLib = false
+ 	}
+ 
++	// A "flattened" APEX is installed as a plain directory inside /system instead of
++	// as a payload. The shared library that would be linked from /system is then
++	// left as an absolute symlink inside the very same partition
++	// (/system/apex/<name>/lib/libX.so -> /system/lib/libX.so). On this device the
++	// inode of that symlink comes out corrupted when the ext4 image of /system is
++	// generated (ext4_lookup: "deleted inode referenced"), so the linker is unable
++	// to resolve the library and the process loading it (system_server, via the
++	// adbd APEX) goes into a crash loop. Copying the real library into the APEX
++	// removes every symlink from the APEXes and with them the problem.
++	if !forced && a.properties.ApexType == flattenedApex {
++		a.linkToSystemLib = false
++	}
++
+ 	// We also don't want the optimization for host APEXes, because it doesn't make sense.
+ 	if ctx.Host() {
+ 		a.linkToSystemLib = false

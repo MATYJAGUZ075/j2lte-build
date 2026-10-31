@@ -1,0 +1,55 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 00:00:00 +0000
+Subject: [PATCH] device: habilitar el HAL de gatekeeper software (AOSP)
+
+El dispositivo no tiene TEE de gatekeeper, por lo que no existe ninguna
+implementacion del HAL android.hardware.gatekeeper@1.0. Sin el HAL,
+gatekeeperd responde "has no HAL to talk to" y el framework no puede
+guardar ningun credential de bloqueo:
+
+  java.lang.IllegalStateException: Fail to enroll user password when creating SP for user 0
+    at SyntheticPasswordManager.createPasswordBasedSyntheticPassword(SyntheticPasswordManager.java:834)
+    at SyntheticPasswordManager.initializeSyntheticPasswordLocked(...)
+
+LockSettingsService.setLockCredentialInternal -> initializeSyntheticPasswordLocked
+falla por esa excepcion, asi que el PIN/patron/clave nunca se aplican
+(el aviso de "configurado" aparece, pero el bloqueo sigue en "deslizar").
+
+Se habilita el servicio software de AOSP
+(hardware/interfaces/gatekeeper/1.0/software), que implementa el HAL con
+scrypt en espacio de usuario. El fragmento VINTF que trae el propio
+paquete (android.hardware.gatekeeper@1.0-service.software.xml) registra
+la HAL en el manifest del vendor.
+
+Se anade tambien el file_contexts para el binario, ya que el contexto
+AOSP solo cubre la variante no-software del servicio.
+
+diff --git a/device-common.mk b/device-common.mk
+index 7cb0a0c..ebbbed5 100644
+--- a/device-common.mk
++++ b/device-common.mk
+@@ -92,6 +92,15 @@ PRODUCT_PACKAGES += \
+ PRODUCT_PACKAGES += \
+     android.hardware.keymaster@3.0-impl \
+     android.hardware.keymaster@3.0-service
++# Gatekeeper (software) — sin este HAL, gatekeeperd responde "has no HAL to
++# talk to" y SyntheticPasswordManager.createPasswordBasedSyntheticPassword()
++# falla con "Fail to enroll user password when creating SP". Como consecuencia
++# LockSettingsService no puede guardar ningun credential (PIN, patron, clave):
++# el usuario ve el aviso de "configurado" pero el bloqueo sigue en "deslizar".
++# La implementacion software de AOSP (scrypt en espacio de usuario) es
++# suficiente para este dispositivo, que no tiene TEE de gatekeeper.
++PRODUCT_PACKAGES += \
++    android.hardware.gatekeeper@1.0-service.software
+ # Lights — FIX-024: android.hardware.light@2.0-service.samsung NO existe en
+ # hardware/samsung lineage-20 (sin dir lights). LIMITACIÓN: sin HAL de lights
+ # hasta portar/crear uno (no crítico para boot).
+diff --git a/sepolicy/vendor/file_contexts b/sepolicy/vendor/file_contexts
+index 7ceb0ea..2665385 100644
+--- a/sepolicy/vendor/file_contexts
++++ b/sepolicy/vendor/file_contexts
+@@ -168,3 +168,4 @@
+ /(vendor|system/vendor)/bin/hw/android\.hardware\.light@2\.0-service\.samsung               u:object_r:hal_light_default_exec:s0
+ /(vendor|system/vendor)/bin/hw/android\.hardware\.biometrics\.fingerprint@2\.1-service\.samsung u:object_r:hal_fingerprint_default_exec:s0
+ /(vendor|system/vendor)/bin/hw/android\.hardware\.power@1\.0-service\.exynos                u:object_r:hal_power_default_exec:s0
++/(vendor|system/vendor)/bin/hw/android\.hardware\.gatekeeper@1\.0-service\.software         u:object_r:hal_gatekeeper_default_exec:s0

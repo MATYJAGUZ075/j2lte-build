@@ -1,0 +1,46 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 00:00:00 +0000
+Subject: [PATCH] SystemUI: escalar el padding del icono de bloqueo con la densidad
+
+El icono de candado de la pantalla de bloqueo (LockIconView) se ve diminuto
+en este dispositivo.
+
+Causa raiz: lock_icon_padding esta definido en pixeles fijos (48px), un
+valor que en AOSP solo es correcto para pantallas xhdpi (320dpi). El
+LockIconView, en cambio, si escala con la densidad: su radio es
+36 * (density / 160) px.
+
+Medido on-device (density 240 / hdpi):
+
+    Lock Icon View Parameters:
+        Center in px (x, y)= (270, 795)
+        Radius in pixels: 54.0
+        Drawable padding: 48
+    Lock Icon View actual measurements:
+        width=108 height=108
+
+Con 48px de padding por lado sobre una vista de 108px quedan solo
+108 - 96 = 12px utiles para el drawable, asi que el candado se renderiza
+a 12px en vez de 24dp (36px en hdpi).
+
+El fix es definir el padding en dp en lugar de px: 24dp equivale a los
+48px originales en xhdpi (320dpi), de modo que el comportamiento en
+dispositivos xhdpi no cambia, y en pantallas de menor densidad el area
+del drawable se ajusta correctamente.
+
+Referencia: el propio recurso "min_lock_icon_padding" (48dp) ya existe
+en el mismo archivo para el caso density-independent.
+
+diff --git a/packages/SystemUI/res/values/dimens.xml b/packages/SystemUI/res/values/dimens.xml
+index ceebab2..8f6c4c5 100644
+--- a/packages/SystemUI/res/values/dimens.xml
++++ b/packages/SystemUI/res/values/dimens.xml
+@@ -563,7 +563,7 @@
+     <integer name="notification_panel_layout_gravity">0x31</integer><!-- center_horizontal|top -->
+ 
+     <!-- Padding for the lock icon on the keyguard. In pixels - should not scale with display size. -->
+-    <dimen name="lock_icon_padding">48px</dimen>
++    <dimen name="lock_icon_padding">24dp</dimen>
+ 
+     <!-- The size of the gesture span needed to activate the "pull" notification expansion -->
+     <dimen name="pull_span_min">25dp</dimen>

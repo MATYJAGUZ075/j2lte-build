@@ -1,30 +1,32 @@
 From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
-Date: Fri, 30 Oct 2026 00:00:00 +0000
-Subject: [PATCH] MediaRouter: always enable A2DP for Bluetooth routes
+Date: Sat, 31 Oct 2026 00:00:00 +0000
+Subject: [PATCH] MediaRouter: activar A2DP al seleccionar la ruta BT sin esperar playback
 
-In some cases MediaRouter skips calling setBluetoothA2dpOn when playback
-is not considered active, causing A2DP to not be routed/started even
-though the Bluetooth audio route is selected. This results in no audio
-on Bluetooth headphones (first connect can timeout/fail) and requires
-re-connecting/pairing again to get audio.
+MediaRouter solo llama a setBluetoothA2dpOn() cuando isPlaybackActive()
+es true. Si el usuario selecciona la ruta Bluetooth antes de que la
+reproduccion este activa (por ejemplo al conectar unos auriculares y
+elegir la ruta BT, o cuando la app multimedia todavia no ha|reportado
+sesion), la llamada nunca se hace: el A2DP no se activa, no hay audio por
+Bluetooth y hay que desconectar y volver a conectar los auriculares.
 
-Always call setBluetoothA2dpOn(true) when selecting/enabling a
-Bluetooth live audio route.
+Se elimina el gate de isPlaybackActive() de la seleccion de ruta, de
+modo que la ruta de audio Bluetooth se activa en cuanto se selecciona.
+Se mantiene el resto de la condicion (ruta BT presente, tipo LIVE_AUDIO
+y ruta Bluetooth o default) y se sigue pasando route.isBluetooth() como
+estado de A2DP, para no forzar A2DP cuando la ruta seleccionada es la
+default (altavoz).
+
 ---
 diff --git a/media/java/android/media/MediaRouter.java b/media/java/android/media/MediaRouter.java
-index xxxxxxx..yyyyyyy 100644
+index 7d57734d..3e88928d 100644
 --- a/media/java/android/media/MediaRouter.java
 +++ b/media/java/android/media/MediaRouter.java
-@@ -1076,10 +1076,9 @@
+@@ -1074,7 +1074,7 @@ public class MediaRouter {
+             return;
+         }
  
-         if (sStatic.isPlaybackActive() && sStatic.mBluetoothA2dpRoute != null
+-        if (sStatic.isPlaybackActive() && sStatic.mBluetoothA2dpRoute != null
++        if (sStatic.mBluetoothA2dpRoute != null
                  && (types & ROUTE_TYPE_LIVE_AUDIO) != 0
--                && (route.isBluetooth() || route.isDefault())) {
-+                ) {
+                 && (route.isBluetooth() || route.isDefault())) {
              try {
--                sStatic.mMediaRouterService.setBluetoothA2dpOn(sStatic.mClient,
--                        route.isBluetooth());
-+                sStatic.mMediaRouterService.setBluetoothA2dpOn(sStatic.mClient, true);
-             } catch (RemoteException e) {
-                 Log.e(TAG, "Error changing Bluetooth A2DP state", e);
-             }

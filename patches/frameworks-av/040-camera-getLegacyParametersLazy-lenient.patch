@@ -1,5 +1,5 @@
 From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
-Date: Fri, 30 Oct 2026 00:00:00 +0000
+Date: Sat, 31 Oct 2026 00:00:00 +0000
 Subject: [PATCH] CameraService: make getLegacyParametersLazy more lenient
 
 On some HAL1 setups with the A12-style CameraService reverted codebase,
@@ -13,33 +13,33 @@ with empty parameters instead of failing. This allows CameraX to fall
 back to other paths.
 ---
 diff --git a/services/camera/libcameraservice/CameraService.cpp b/services/camera/libcameraservice/CameraService.cpp
-index xxxxxxx..yyyyyyy 100644
 --- a/services/camera/libcameraservice/CameraService.cpp
 +++ b/services/camera/libcameraservice/CameraService.cpp
-@@ -1098,7 +1098,7 @@
+@@ -1048,8 +1048,6 @@
          /*out*/
          CameraParameters* parameters) {
  
 -    ALOGV("%s: for cameraId: %d", __FUNCTION__, cameraId);
-+    ALOGI("%s: for cameraId: %d", __FUNCTION__, cameraId);
- 
+-
      Status ret = Status::ok();
  
-@@ -1130,8 +1130,11 @@
+     if (parameters == NULL) {
+@@ -1080,8 +1078,12 @@
      ret = initializeShimMetadata(cameraId);
      CameraThreadState::restoreCallingIdentity(token);
      if (!ret.isOk()) {
 -        // Error already logged by callee
 -        return ret;
-+        // Be lenient: HAL1 or legacy setup may not support shim metadata
-+        // initialization. Continue with empty parameters so CameraX can
-+        // fall back to other paths.
++        // HAL1 setups with the legacy (reverted) CameraService may not be able
++        // to initialize the shim metadata. That is not fatal for the caller:
++        // continue with empty parameters so CameraX can fall back to other
++        // paths instead of failing the whole camera initialization.
 +        ALOGW("%s: initializeShimMetadata failed for camera %d: %s, continuing with empty params",
 +              __FUNCTION__, cameraId, ret.toString8().string());
      }
  
      // Check for parameters again
-@@ -1151,9 +1154,10 @@
+@@ -1101,9 +1103,10 @@
          }
      }
  

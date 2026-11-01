@@ -1,0 +1,420 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Sun, 01 Nov 2026 00:00:00 +0000
+Subject: [PATCH] Connectivity: tolerar la ausencia de eBPF en BpfNetMaps
+
+El kernel de este dispositivo (3.10) no implementa eBPF, por lo que todas
+las operaciones de BpfNetMaps fallan con ENOSYS (el syscall bpf() llego en
+Linux 4.x). Eso provocaba decenas de errores por arranque:
+
+- "E NetworkPolicy: Cannot open uid counter set map" / errores al anadir
+  las reglas de firewall por UID, porque BpfNetMaps.maybeThrow lanzaba
+  ServiceSpecificException con ENOSYS.
+- "E NetworkStats: problem reading network stats" y "Unable to swap active
+  stats map: Function not implemented" por el mismo motivo.
+- "am_wtf: Fail to set UidCounterSet: Null bpf map", que es un Log.wtf
+  por un mapa que sencillamente no existe en este kernel.
+
+Con este parche:
+
+- maybeThrow() trata ENOSYS como un no-op: se avisa una sola vez con
+  Log.w y se sigue, en lugar de lanzar la excepcion.
+- Los mapas de BPF que no se pueden abrir se comprueban antes de usarse,
+  para no provocar NullPointerException.
+- Los Log.wtf de los mapas inexistentes pasan a Log.w.
+- El JNI y TrafficController informan del fallo como informacion cuando
+  el errno es ENOSYS, y como error en cualquier otro caso.
+
+Los ficheros tocados son disjuntos de los otros parches de eBPF, asi que
+no hay conflictos al aplicarlos.
+
+Note: el logging pasa por ALOGI/ALOGE para que el format string se
+mantenga literal en el punto de llamada (el build usa
+-Werror=format-security).
+
+---
+diff --git a/service-t/src/com/android/server/net/NetworkStatsService.java b/service-t/src/com/android/server/net/NetworkStatsService.java
+index 4f0f3411a5..e4cdbedd55 100644
+--- a/service-t/src/com/android/server/net/NetworkStatsService.java
++++ b/service-t/src/com/android/server/net/NetworkStatsService.java
+@@ -720,7 +720,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
+                 return new BpfMap<U32, U8>(UID_COUNTERSET_MAP_PATH, BpfMap.BPF_F_RDWR,
+                         U32.class, U8.class);
+             } catch (ErrnoException e) {
+-                Log.wtf(TAG, "Cannot open uid counter set map: " + e);
++                Log.w(TAG, "Cannot open uid counter set map: " + e);
+                 return null;
+             }
+         }
+@@ -731,7 +731,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
+                 return new BpfMap<CookieTagMapKey, CookieTagMapValue>(COOKIE_TAG_MAP_PATH,
+                         BpfMap.BPF_F_RDWR, CookieTagMapKey.class, CookieTagMapValue.class);
+             } catch (ErrnoException e) {
+-                Log.wtf(TAG, "Cannot open cookie tag map: " + e);
++                Log.w(TAG, "Cannot open cookie tag map: " + e);
+                 return null;
+             }
+         }
+@@ -742,7 +742,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
+                 return new BpfMap<StatsMapKey, StatsMapValue>(STATS_MAP_A_PATH,
+                         BpfMap.BPF_F_RDWR, StatsMapKey.class, StatsMapValue.class);
+             } catch (ErrnoException e) {
+-                Log.wtf(TAG, "Cannot open stats map A: " + e);
++                Log.w(TAG, "Cannot open stats map A: " + e);
+                 return null;
+             }
+         }
+@@ -753,7 +753,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
+                 return new BpfMap<StatsMapKey, StatsMapValue>(STATS_MAP_B_PATH,
+                         BpfMap.BPF_F_RDWR, StatsMapKey.class, StatsMapValue.class);
+             } catch (ErrnoException e) {
+-                Log.wtf(TAG, "Cannot open stats map B: " + e);
++                Log.w(TAG, "Cannot open stats map B: " + e);
+                 return null;
+             }
+         }
+@@ -764,7 +764,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
+                 return new BpfMap<UidStatsMapKey, StatsMapValue>(APP_UID_STATS_MAP_PATH,
+                         BpfMap.BPF_F_RDWR, UidStatsMapKey.class, StatsMapValue.class);
+             } catch (ErrnoException e) {
+-                Log.wtf(TAG, "Cannot open app uid stats map: " + e);
++                Log.w(TAG, "Cannot open app uid stats map: " + e);
+                 return null;
+             }
+         }
+@@ -1709,7 +1709,10 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
+ 
+     private void setKernelCounterSet(int uid, int set) {
+         if (mUidCounterSetMap == null) {
+-            Log.wtf(TAG, "Fail to set UidCounterSet: Null bpf map");
++            // El kernel de este dispositivo no tiene eBPF, asi que el mapa no
++            // se pudo abrir. No es un error del servicio: el contador por UID
++            // simplemente no esta disponible.
++            Log.w(TAG, "Fail to set UidCounterSet: Null bpf map");
+             return;
+         }
+ 
+@@ -2401,6 +2404,10 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
+ 
+     private <K extends StatsMapKey, V extends StatsMapValue> void deleteStatsMapTagData(
+             IBpfMap<K, V> statsMap, int uid) {
++        if (statsMap == null) {
++            // Sin eBPF no hay mapa de stats: no hay nada que borrar.
++            return;
++        }
+         try {
+             statsMap.forEach((key, value) -> {
+                 if (key.uid == uid) {
+@@ -2421,39 +2428,47 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
+      * @param uid
+      */
+     private void deleteKernelTagData(int uid) {
+-        try {
+-            mCookieTagMap.forEach((key, value) -> {
+-                // If SkDestroyListener deletes the socket tag while this code is running,
+-                // forEach will either restart iteration from the beginning or return null,
+-                // depending on when the deletion happens.
+-                // If it returns null, continue iteration to delete the data and in fact it would
+-                // just iterate from first key because BpfMap#getNextKey would return first key
+-                // if the current key is not exist.
+-                if (value != null && value.uid == uid) {
+-                    try {
+-                        mCookieTagMap.deleteEntry(key);
+-                    } catch (ErrnoException e) {
+-                        logErrorIfNotErrNoent(e, "Failed to delete data(cookie = " + key + ")");
++        // Sin eBPF no hay mapa de cookie tags: no hay nada que borrar.
++        if (mCookieTagMap != null) {
++            try {
++                mCookieTagMap.forEach((key, value) -> {
++                    // If SkDestroyListener deletes the socket tag while this code is running,
++                    // forEach will either restart iteration from the beginning or return null,
++                    // depending on when the deletion happens.
++                    // If it returns null, continue iteration to delete the data and in fact it
++                    // would just iterate from first key because BpfMap#getNextKey would return
++                    // first key if the current key is not exist.
++                    if (value != null && value.uid == uid) {
++                        try {
++                            mCookieTagMap.deleteEntry(key);
++                        } catch (ErrnoException e) {
++                            logErrorIfNotErrNoent(
++                                    e, "Failed to delete data(cookie = " + key + ")");
++                        }
+                     }
+-                }
+-            });
+-        } catch (ErrnoException e) {
+-            Log.e(TAG, "Failed to delete tag data from cookie tag map", e);
++                });
++            } catch (ErrnoException e) {
++                Log.e(TAG, "Failed to delete tag data from cookie tag map", e);
++            }
+         }
+ 
+         deleteStatsMapTagData(mStatsMapA, uid);
+         deleteStatsMapTagData(mStatsMapB, uid);
+ 
+-        try {
+-            mUidCounterSetMap.deleteEntry(new U32(uid));
+-        } catch (ErrnoException e) {
+-            logErrorIfNotErrNoent(e, "Failed to delete tag data from uid counter set map");
++        if (mUidCounterSetMap != null) {
++            try {
++                mUidCounterSetMap.deleteEntry(new U32(uid));
++            } catch (ErrnoException e) {
++                logErrorIfNotErrNoent(e, "Failed to delete tag data from uid counter set map");
++            }
+         }
+ 
+-        try {
+-            mAppUidStatsMap.deleteEntry(new UidStatsMapKey(uid));
+-        } catch (ErrnoException e) {
+-            logErrorIfNotErrNoent(e, "Failed to delete tag data from app uid stats map");
++        if (mAppUidStatsMap != null) {
++            try {
++                mAppUidStatsMap.deleteEntry(new UidStatsMapKey(uid));
++            } catch (ErrnoException e) {
++                logErrorIfNotErrNoent(e, "Failed to delete tag data from app uid stats map");
++            }
+         }
+     }
+ 
+diff --git a/service/jni/com_android_server_BpfNetMaps.cpp b/service/jni/com_android_server_BpfNetMaps.cpp
+index 7b1f59ca22..5ea04b4d84 100644
+--- a/service/jni/com_android_server_BpfNetMaps.cpp
++++ b/service/jni/com_android_server_BpfNetMaps.cpp
+@@ -19,6 +19,7 @@
+ #include "TrafficController.h"
+ 
+ #include <bpf_shared.h>
++#include <errno.h>
+ #include <jni.h>
+ #include <log/log.h>
+ #include <nativehelper/JNIHelp.h>
+@@ -26,6 +27,7 @@
+ #include <nativehelper/ScopedPrimitiveArray.h>
+ #include <netjniutils/netjniutils.h>
+ #include <net/if.h>
++#include <stdlib.h>
+ #include <vector>
+ 
+ 
+@@ -37,12 +39,24 @@ using UidOwnerMatchType::HAPPY_BOX_MATCH;
+ 
+ static android::net::TrafficController mTc;
+ 
++// El kernel de este dispositivo (3.10) no tiene soporte de eBPF, asi que
++// todas las operaciones que dependen de bpf() fallan con ENOSYS. Eso no es
++// un fallo del servicio sino una caracteristica del kernel, por lo que se
++// informa como informacion en lugar de como error.
++static void logBpfFailure(const char* func, int code) {
++    if (abs(code) == ENOSYS) {
++        ALOGI("%s failed: eBPF is not supported by this kernel (error code = %d)", func, code);
++    } else {
++        ALOGE("%s failed, error code = %d", func, code);
++    }
++}
++
+ namespace android {
+ 
+ static void native_init(JNIEnv* env, jobject clazz) {
+   Status status = mTc.start();
+    if (!isOk(status)) {
+-    ALOGE("%s failed, error code = %d", __func__, status.code());
++    logBpfFailure(__func__, status.code());
+   }
+ }
+ 
+@@ -51,7 +65,7 @@ static jint native_addNaughtyApp(JNIEnv* env, jobject clazz, jint uid) {
+   Status status = mTc.updateUidOwnerMap(appUids, PENALTY_BOX_MATCH,
+       TrafficController::IptOp::IptOpInsert);
+   if (!isOk(status)) {
+-    ALOGE("%s failed, error code = %d", __func__, status.code());
++    logBpfFailure(__func__, status.code());
+   }
+   return (jint)status.code();
+ }
+@@ -61,7 +75,7 @@ static jint native_removeNaughtyApp(JNIEnv* env, jobject clazz, jint uid) {
+   Status status = mTc.updateUidOwnerMap(appUids, PENALTY_BOX_MATCH,
+       TrafficController::IptOp::IptOpDelete);
+   if (!isOk(status)) {
+-    ALOGE("%s failed, error code = %d", __func__, status.code());
++    logBpfFailure(__func__, status.code());
+   }
+   return (jint)status.code();
+ }
+@@ -71,7 +85,7 @@ static jint native_addNiceApp(JNIEnv* env, jobject clazz, jint uid) {
+   Status status = mTc.updateUidOwnerMap(appUids, HAPPY_BOX_MATCH,
+       TrafficController::IptOp::IptOpInsert);
+   if (!isOk(status)) {
+-    ALOGE("%s failed, error code = %d", __func__, status.code());
++    logBpfFailure(__func__, status.code());
+   }
+   return (jint)status.code();
+ }
+@@ -81,7 +95,7 @@ static jint native_removeNiceApp(JNIEnv* env, jobject clazz, jint uid) {
+   Status status = mTc.updateUidOwnerMap(appUids, HAPPY_BOX_MATCH,
+       TrafficController::IptOp::IptOpDelete);
+   if (!isOk(status)) {
+-    ALOGD("%s failed, error code = %d", __func__, status.code());
++    logBpfFailure(__func__, status.code());
+   }
+   return (jint)status.code();
+ }
+@@ -90,7 +104,7 @@ static jint native_setChildChain(JNIEnv* env, jobject clazz, jint childChain, jb
+   auto chain = static_cast<ChildChain>(childChain);
+   int res = mTc.toggleUidOwnerMap(chain, enable);
+   if (res) {
+-    ALOGE("%s failed, error code = %d", __func__, res);
++    logBpfFailure(__func__, res);
+   }
+   return (jint)res;
+ }
+@@ -113,7 +127,7 @@ static jint native_replaceUidChain(JNIEnv* env, jobject clazz, jstring name, jbo
+     std::vector<int32_t> data ((int32_t *)&uids[0], (int32_t*)&uids[size]);
+     int res = mTc.replaceUidOwnerMap(chainName, isAllowlist, data);
+     if (res) {
+-      ALOGE("%s failed, error code = %d", __func__, res);
++      logBpfFailure(__func__, res);
+     }
+     return (jint)res;
+ }
+@@ -126,7 +140,7 @@ static jint native_setUidRule(JNIEnv* env, jobject clazz, jint childChain, jint
+ 
+     int res = mTc.changeUidOwnerRule(chain, uid, rule, fType);
+     if (res) {
+-      ALOGE("%s failed, error code = %d", __func__, res);
++      logBpfFailure(__func__, res);
+     }
+     return (jint)res;
+ }
+@@ -154,7 +168,7 @@ static jint native_addUidInterfaceRules(JNIEnv* env, jobject clazz, jstring ifNa
+     std::vector<int32_t> data ((int32_t *)&uids[0], (int32_t*)&uids[size]);
+     Status status = mTc.addUidInterfaceRules(ifIndex, data);
+     if (!isOk(status)) {
+-        ALOGE("%s failed, error code = %d", __func__, status.code());
++        logBpfFailure(__func__, status.code());
+     }
+     return (jint)status.code();
+ }
+@@ -170,7 +184,7 @@ static jint native_removeUidInterfaceRules(JNIEnv* env, jobject clazz, jintArray
+     std::vector<int32_t> data ((int32_t *)&uids[0], (int32_t*)&uids[size]);
+     Status status = mTc.removeUidInterfaceRules(data);
+     if (!isOk(status)) {
+-        ALOGE("%s failed, error code = %d", __func__, status.code());
++        logBpfFailure(__func__, status.code());
+     }
+     return (jint)status.code();
+ }
+@@ -178,7 +192,7 @@ static jint native_removeUidInterfaceRules(JNIEnv* env, jobject clazz, jintArray
+ static jint native_swapActiveStatsMap(JNIEnv* env, jobject clazz) {
+     Status status = mTc.swapActiveStatsMap();
+     if (!isOk(status)) {
+-        ALOGD("%s failed, error code = %d", __func__, status.code());
++        logBpfFailure(__func__, status.code());
+     }
+     return (jint)status.code();
+ }
+diff --git a/service/native/TrafficController.cpp b/service/native/TrafficController.cpp
+index 4923b006f5..77f38db808 100644
+--- a/service/native/TrafficController.cpp
++++ b/service/native/TrafficController.cpp
+@@ -15,6 +15,7 @@
+  */
+ 
+ #define LOG_TAG "TrafficController"
++#include <errno.h>
+ #include <inttypes.h>
+ #include <linux/if_ether.h>
+ #include <linux/in.h>
+@@ -483,8 +484,15 @@ int TrafficController::toggleUidOwnerMap(ChildChain chain, bool enable) {
+     uint32_t key = UID_RULES_CONFIGURATION_KEY;
+     auto oldConfigure = mConfigurationMap.readValue(key);
+     if (!oldConfigure.ok()) {
+-        ALOGE("Cannot read the old configuration from map: %s",
+-              oldConfigure.error().message().c_str());
++        // El kernel 3.10 de este dispositivo no tiene eBPF, asi que el mapa
++        // no existe y leerlo falla con ENOSYS. Eso no es un error del
++        // servicio: las reglas por UID simplemente no estan disponibles.
++        if (abs(oldConfigure.error().code()) == ENOSYS) {
++            ALOGI("eBPF is not supported by this kernel, cannot toggle the UID owner map");
++        } else {
++            ALOGE("Cannot read the old configuration from map: %s",
++                  oldConfigure.error().message().c_str());
++        }
+         return -oldConfigure.error().code();
+     }
+     Status res;
+@@ -533,8 +541,15 @@ Status TrafficController::swapActiveStatsMap() {
+     uint32_t key = CURRENT_STATS_MAP_CONFIGURATION_KEY;
+     auto oldConfigure = mConfigurationMap.readValue(key);
+     if (!oldConfigure.ok()) {
+-        ALOGE("Cannot read the old configuration from map: %s",
+-              oldConfigure.error().message().c_str());
++        // El kernel 3.10 de este dispositivo no tiene eBPF, asi que el mapa
++        // no existe y leerlo falla con ENOSYS. Eso no es un error del
++        // servicio: las estadisticas por UID simplemente no estan disponibles.
++        if (abs(oldConfigure.error().code()) == ENOSYS) {
++            ALOGI("eBPF is not supported by this kernel, cannot swap the active stats map");
++        } else {
++            ALOGE("Cannot read the old configuration from map: %s",
++                  oldConfigure.error().message().c_str());
++        }
+         return Status(oldConfigure.error().code(), oldConfigure.error().message());
+     }
+ 
+diff --git a/service/src/com/android/server/BpfNetMaps.java b/service/src/com/android/server/BpfNetMaps.java
+index c006bc605f..5b51c37def 100644
+--- a/service/src/com/android/server/BpfNetMaps.java
++++ b/service/src/com/android/server/BpfNetMaps.java
+@@ -16,6 +16,7 @@
+ 
+ package com.android.server;
+ 
++import static android.system.OsConstants.ENOSYS;
+ import static android.system.OsConstants.EOPNOTSUPP;
+ 
+ import android.net.INetd;
+@@ -40,6 +41,7 @@ public class BpfNetMaps {
+     // Use legacy netd for releases before T.
+     private static final boolean USE_NETD = !SdkLevel.isAtLeastT();
+     private static boolean sInitialized = false;
++    private static boolean sLoggedMissingEbpf = false;
+ 
+     /**
+      * Initializes the class if it is not already initialized. This method will open maps but not
+@@ -68,6 +70,17 @@ public class BpfNetMaps {
+ 
+     private void maybeThrow(final int err, final String msg) {
+         if (err != 0) {
++            if (Math.abs(err) == ENOSYS) {
++                // El kernel no tiene soporte de eBPF (bpf() llego en Linux 4.x).
++                // Las funciones que dependen de eBPF no estan disponibles en
++                // este hardware, asi que no es un error: solo se avisa una vez
++                // y se sigue como si la operacion hubiera sido un no-op.
++                if (!sLoggedMissingEbpf) {
++                    sLoggedMissingEbpf = true;
++                    Log.w(TAG, msg + ": eBPF is not supported by this kernel, ignoring");
++                }
++                return;
++            }
+             throw new ServiceSpecificException(err, msg + ": " + Os.strerror(err));
+         }
+     }
+@@ -150,7 +163,17 @@ public class BpfNetMaps {
+             final int[] uids) {
+         final int err = native_replaceUidChain(chainName, isAllowlist, uids);
+         if (err != 0) {
+-            Log.e(TAG, "replaceUidChain failed: " + Os.strerror(-err));
++            if (Math.abs(err) == ENOSYS) {
++                // El kernel no soporta eBPF: la cadena de firewall por UID no
++                // se puede aplicar, pero no es un error del servicio.
++                if (!sLoggedMissingEbpf) {
++                    sLoggedMissingEbpf = true;
++                    Log.w(TAG, "replaceUidChain failed: eBPF is not supported by this kernel, "
++                            + "ignoring");
++                }
++            } else {
++                Log.e(TAG, "replaceUidChain failed: " + Os.strerror(-err));
++            }
+         }
+         return -err;
+     }

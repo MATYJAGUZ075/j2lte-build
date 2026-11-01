@@ -1,0 +1,46 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Sun, 01 Nov 2026 00:00:00 +0000
+Subject: [PATCH] frameworks/libs/net: no reportar error si SO_COOKIE no existe
+
+SO_COOKIE se introdujo en Linux 4.6. El kernel de este dispositivo es 3.10,
+asi que getsockopt(SO_COOKIE) falla con ENOPROTOOPT y BpfHandler registraba
+un error por cada socket (20 lineas "E BpfHandler: Failed to get socket
+cookie" en el log de arranque).
+
+Eso no es un error del servicio: el tagged traffic por UID no puede
+funcionar en este kernel. Se informa como informacion y se mantiene el
+comportamiento de devolver NONEXISTENT_COOKIE.
+
+Note: el logging pasa por ALOGI/ALOGE para que el format string se
+mantenga literal en el punto de llamada (el build usa
+-Werror=format-security).
+
+---
+diff --git a/common/native/bpf_headers/include/bpf/BpfUtils.h b/common/native/bpf_headers/include/bpf/BpfUtils.h
+index 7801c3e..f0e5e97 100644
+--- a/common/native/bpf_headers/include/bpf/BpfUtils.h
++++ b/common/native/bpf_headers/include/bpf/BpfUtils.h
+@@ -16,6 +16,7 @@
+ 
+ #pragma once
+ 
++#include <errno.h>
+ #include <linux/if_ether.h>
+ #include <linux/pfkeyv2.h>
+ #include <net/if.h>
+@@ -48,7 +49,14 @@ static inline uint64_t getSocketCookie(int sockFd) {
+     int res = getsockopt(sockFd, SOL_SOCKET, SO_COOKIE, &sock_cookie, &cookie_len);
+     if (res < 0) {
+         res = -errno;
+-        ALOGE("Failed to get socket cookie: %s\n", strerror(errno));
++        if (errno == ENOPROTOOPT || errno == EOPNOTSUPP) {
++            // SO_COOKIE se introdujo en Linux 4.6. En kernels mas antiguos
++            // getsockopt() devuelve ENOPROTOOPT y el tagged traffic por UID
++            // no puede funcionar, pero eso no es un error del servicio.
++            ALOGI("SO_COOKIE is not supported by this kernel, socket cookie unavailable\n");
++        } else {
++            ALOGE("Failed to get socket cookie: %s\n", strerror(errno));
++        }
+         errno = -res;
+         // 0 is an invalid cookie. See sock_gen_cookie.
+         return NONEXISTENT_COOKIE;

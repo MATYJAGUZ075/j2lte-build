@@ -1,29 +1,38 @@
 From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
-Date: Sat, 31 Oct 2026 00:00:00 +0000
-Subject: [PATCH] Connectivity: report the missing eBPF support as info in BpfNetworkStats
+Date: Sun, 01 Nov 2026 00:00:00 +0000
+Subject: [PATCH] Connectivity: degradar sin eBPF en lugar de fallar al leer
+ las estadisticas de red
 
-The kernel of this device has no eBPF support at all, so opening any of
-the traffic stats maps fails with ENOSYS. That is not an error, it just
-means that the per interface network stats cannot be collected, but the
-current code logs it as an error and does it over and over again
-(hundreds of "E BpfNetworkStats: get ifaceStats map fd failed: Function
-not implemented" lines in the log).
+El kernel de este dispositivo (3.10) no soporta eBPF, asi que abrir los
+mapas de estadisticas falla con ENOSYS. El codigo lo reportaba como error
+y ademas hacia fallar toda la lectura, de modo que el servicio terminaba
+registrando "problem reading network stats" una y otra vez.
 
-Log it as info when the failure is ENOSYS, keeping the error level for
-any other failure.
+Ahora, cuando el error es ENOSYS, se informa como informacion y la lectura
+devuelve estadisticas vacias, dejando que el framework siga funcionando.
+Para cualquier otro error se conserva el comportamiento original.
 
-This complements the patch that does the same in BpfHandler and
-NetdUpdatable.
+Este parche sustituye al anterior con el mismo nombre, que solo cambiaba
+el nivel del log.
 
-Note: the logging goes through ALOGI/ALOGE so that the format string
-stays a literal at the call site (the build uses -Werror=format-security).
+Note: el logging pasa por ALOGI/ALOGE para que el format string se
+mantenga literal en el punto de llamada (el build usa
+-Werror=format-security).
 
 ---
 diff --git a/service-t/native/libs/libnetworkstats/BpfNetworkStats.cpp b/service-t/native/libs/libnetworkstats/BpfNetworkStats.cpp
-index 9ebef4d6d2..628e6da9b4 100644
+index 9ebef4d6d2..c7350739fb 100644
 --- a/service-t/native/libs/libnetworkstats/BpfNetworkStats.cpp
 +++ b/service-t/native/libs/libnetworkstats/BpfNetworkStats.cpp
-@@ -44,6 +44,21 @@ using base::Result;
+@@ -14,6 +14,7 @@
+  * limitations under the License.
+  */
+ 
++#include <errno.h>
+ #include <inttypes.h>
+ #include <net/if.h>
+ #include <string.h>
+@@ -44,6 +45,28 @@ using base::Result;
  // from the config value.
  static constexpr char const* STATS_MAP_PATH[] = {STATS_MAP_B_PATH, STATS_MAP_A_PATH};
  
@@ -42,10 +51,17 @@ index 9ebef4d6d2..628e6da9b4 100644
 +        }                                                                               \
 +    } while (0)
 +
++// El kernel de este dispositivo (3.10) no tiene eBPF, asi que abrir los mapas
++// falla con ENOSYS. En ese caso las estadisticas no existen: se devuelven
++// vacias en lugar de fallar, para que el framework siga funcionando.
++static bool isEbpfUnsupported(int err) {
++    return err == ENOSYS || err == -ENOSYS;
++}
++
  int bpfGetUidStatsInternal(uid_t uid, Stats* stats,
                             const BpfMap<uint32_t, StatsValue>& appUidStatsMap) {
      auto statsEntry = appUidStatsMap.readValue(uid);
-@@ -62,7 +77,8 @@ int bpfGetUidStats(uid_t uid, Stats* stats) {
+@@ -62,7 +85,8 @@ int bpfGetUidStats(uid_t uid, Stats* stats) {
  
      if (!appUidStatsMap.isValid()) {
          int ret = -errno;
@@ -55,7 +71,7 @@ index 9ebef4d6d2..628e6da9b4 100644
          return ret;
      }
      return bpfGetUidStatsInternal(uid, stats, appUidStatsMap);
-@@ -104,13 +120,13 @@ int bpfGetIfaceStats(const char* iface, Stats* stats) {
+@@ -104,13 +128,13 @@ int bpfGetIfaceStats(const char* iface, Stats* stats) {
      int ret;
      if (!ifaceStatsMap.isValid()) {
          ret = -errno;
@@ -71,12 +87,16 @@ index 9ebef4d6d2..628e6da9b4 100644
          return ret;
      }
      return bpfGetIfaceStatsInternal(iface, stats, ifaceStatsMap, ifaceIndexNameMap);
-@@ -189,14 +205,14 @@ int parseBpfNetworkStatsDetail(std::vector<stats_line>* lines,
+@@ -189,18 +213,32 @@ int parseBpfNetworkStatsDetail(std::vector<stats_line>* lines,
      BpfMapRO<uint32_t, IfaceValue> ifaceIndexNameMap(IFACE_INDEX_NAME_MAP_PATH);
      if (!ifaceIndexNameMap.isValid()) {
          int ret = -errno;
 -        ALOGE("get ifaceIndexName map fd failed: %s", strerror(errno));
 +        LOG_MAP_OPEN_FAILURE("get ifaceIndexName map fd failed: %s", strerror(errno));
++        if (isEbpfUnsupported(ret)) {
++            lines->clear();
++            return 0;
++        }
          return ret;
      }
  
@@ -85,10 +105,24 @@ index 9ebef4d6d2..628e6da9b4 100644
          int ret = -errno;
 -        ALOGE("get configuration map fd failed: %s", strerror(errno));
 +        LOG_MAP_OPEN_FAILURE("get configuration map fd failed: %s", strerror(errno));
++        if (isEbpfUnsupported(ret)) {
++            lines->clear();
++            return 0;
++        }
          return ret;
      }
      auto configuration = configurationMap.readValue(CURRENT_STATS_MAP_CONFIGURATION_KEY);
-@@ -209,7 +225,8 @@ int parseBpfNetworkStatsDetail(std::vector<stats_line>* lines,
+     if (!configuration.ok()) {
++        int ret = -configuration.error().code();
++        if (isEbpfUnsupported(ret)) {
++            ALOGI("eBPF is not supported by this kernel, no network stats available");
++            lines->clear();
++            return 0;
++        }
+         ALOGE("Cannot read the old configuration from map: %s",
+               configuration.error().message().c_str());
+         return -configuration.error().code();
+@@ -209,7 +247,8 @@ int parseBpfNetworkStatsDetail(std::vector<stats_line>* lines,
      BpfMap<StatsKey, StatsValue> statsMap(statsMapPath);
      if (!statsMap.isValid()) {
          int ret = -errno;
@@ -98,12 +132,16 @@ index 9ebef4d6d2..628e6da9b4 100644
          return ret;
      }
  
-@@ -266,14 +283,14 @@ int parseBpfNetworkStatsDev(std::vector<stats_line>* lines) {
+@@ -266,14 +305,22 @@ int parseBpfNetworkStatsDev(std::vector<stats_line>* lines) {
      BpfMapRO<uint32_t, IfaceValue> ifaceIndexNameMap(IFACE_INDEX_NAME_MAP_PATH);
      if (!ifaceIndexNameMap.isValid()) {
          ret = -errno;
 -        ALOGE("get ifaceIndexName map fd failed: %s", strerror(errno));
 +        LOG_MAP_OPEN_FAILURE("get ifaceIndexName map fd failed: %s", strerror(errno));
++        if (isEbpfUnsupported(ret)) {
++            lines->clear();
++            return 0;
++        }
          return ret;
      }
  
@@ -112,6 +150,10 @@ index 9ebef4d6d2..628e6da9b4 100644
          ret = -errno;
 -        ALOGE("get ifaceStats map fd failed: %s", strerror(errno));
 +        LOG_MAP_OPEN_FAILURE("get ifaceStats map fd failed: %s", strerror(errno));
++        if (isEbpfUnsupported(ret)) {
++            lines->clear();
++            return 0;
++        }
          return ret;
      }
      return parseBpfNetworkStatsDevInternal(lines, ifaceStatsMap, ifaceIndexNameMap);

@@ -2,10 +2,13 @@
 # Fix makekdebugevents.py: TabError, escape sequences, IndentationError
 set -euo pipefail
 
-FILE="bsd/kern/makekdebugevents.py"
+FILE="ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py"
 
 if [[ ! -f "$FILE" ]]; then
     echo "ERROR: File not found: $FILE"
+    echo "Current directory: $(pwd)"
+    echo "Files in ios-port/:"
+    ls -la ios-port/ 2>/dev/null || echo "ios-port not found"
     exit 1
 fi
 
@@ -17,9 +20,7 @@ sed -i '' $'s/\t/    /g' "$FILE"
 # 2. Fix invalid escape sequence \s -> \\s
 sed -i '' 's/\\s/\\\\s/g' "$FILE"
 
-# 3. Fix indentation after 'for' statements - use sed to fix the line after 'for ...:'
-# The issue is line 24: after 'for line in codes:' there's a tab instead of 4 spaces
-# We'll fix any line that follows a 'for ...:' line and doesn't have proper indentation
+# 3. Fix indentation after 'for' statements
 awk '
 /^[[:space:]]*for [^;]*:[[:space:]]*$/ {
     print

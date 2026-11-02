@@ -69,7 +69,8 @@ jobs:
       
       - name: Patch makekdebugevents.py (fix tabs, indentation, escape)
         run: |
-          patch -p1 < ios-port/makekdebugevents.patch
+          cd ios-port/xnu-4570.71.2-source
+          patch -p1 < ../../makekdebugevents.patch
       
       - name: Build XNU 4570 ARMv7 J2
         working-directory: ios-port/xnu-4570.71.2-source

@@ -69,9 +69,10 @@ jobs:
       
       - name: Fix makekdebugevents.py indentation (TabError)
         run: |
-          sed -i '' 's/^\t/    /g' ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py
-          # Also fix the invalid escape sequence warning
-          sed -i '' 's/\\s/\\\\s/g' ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py
+          # Fix TabError: replace all tabs with 4 spaces
+          sed -i '' $'s/\t/    /g' ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py
+          # Fix invalid escape sequence \s -> \\s
+          sed -i '' 's/\\\\s/\\\\\\\\s/g' ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py
       
       - name: Build XNU 4570 ARMv7 J2
         working-directory: ios-port/xnu-4570.71.2-source

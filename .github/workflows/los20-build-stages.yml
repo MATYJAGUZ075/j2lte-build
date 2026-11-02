@@ -69,7 +69,6 @@ jobs:
       
       - name: Fix makekdebugevents.py (TabError + IndentationError + escape)
         run: |
-          # Fix makekdebugevents.py: TabError, escape sequences, IndentationError
           FILE="ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py"
           
           # 1. Replace all tabs with 4 spaces
@@ -78,12 +77,19 @@ jobs:
           # 2. Fix invalid escape sequence \s -> \\s
           sed -i '' 's/\\s/\\\\s/g' "$FILE"
           
-          # 3. Fix indentation after 'for' statements using sed
-          # Fix lines after 'for ...:' that don't have proper indentation
-          sed -i '' -e '/^[[:space:]]*for [^;]*:[[:space:]]*$/{
-              n
-              s/^[[:space:]]*/    /
-          }' "$FILE"
+          # 3. Fix indentation after 'for' statements using awk
+          awk '
+          /^[[:space:]]*for [^;]*:[[:space:]]*$/ {
+              print
+              getline nextline
+              if (nextline ~ /^[[:space:]]*[^[:space:]]/ && nextline !~ /^[[:space:]]{4}/) {
+                  sub(/^[[:space:]]*/, "    ", nextline)
+              }
+              print nextline
+              next
+          }
+          { print }
+          ' "$FILE" > "$FILE.tmp" && mv "$FILE.tmp" "$FILE"
           
           echo "Fixed makekdebugevents.py"
       

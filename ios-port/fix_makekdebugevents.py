@@ -3,7 +3,7 @@
 import sys
 import os
 
-FILEPATH = 'bsd/kern/makekdebugevents.py'
+FILEPATH = 'ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py'
 
 def main():
     if not os.path.exists(FILEPATH):

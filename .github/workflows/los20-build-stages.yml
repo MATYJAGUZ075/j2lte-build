@@ -29,6 +29,7 @@ on:
           - systemimage-guard
           - bootimage
           - recoveryimage
+          - xnu-j2
 
       min_free_gb:
         description: 'GB libres mínimos para systemimage'
@@ -182,6 +183,14 @@ jobs:
 
       - name: Checkout infra repo
         uses: actions/checkout@v4
+
+      - name: Checkout XNU 4570.71.2 source (if xnu-j2 stage)
+        if: ${{ github.event.inputs.stage == 'xnu-j2' }}
+        uses: actions/checkout@v4
+        with:
+          repository: apple-oss-distributions/xnu
+          ref: xnu-4570.71.2
+          path: ios-port/xnu-4570.71.2-source
 
       - name: Liberar espacio del runner
         uses: jlumbroso/free-disk-space@main
@@ -2152,6 +2161,9 @@ jobs:
             recoveryimage)
               TARGET="recoveryimage"
               ;;
+            xnu-j2)
+              TARGET="xnu-j2"
+              ;;
             *)
               echo "::error::Stage inválido: $STAGE"
               exit 64
@@ -2426,11 +2438,35 @@ jobs:
             case "$target" in
               bootimage|recoveryimage|systemimage)
                 ;;
+              xnu-j2)
+                ;;
               *)
                 echo "::error::Target no permitido: $target"
                 exit 66
                 ;;
             esac
+
+            if [ "$target" = "xnu-j2" ]; then
+              echo "== Build XNU 4570 ARMv7 J2 (iOS 10.3) =="
+              # Checkout XNU source from Apple
+              if [ ! -d ios-port/xnu-4570.71.2-source ]; then
+                git clone --depth 1 --branch xnu-4570.71.2 https://github.com/apple-oss-distributions/xnu.git ios-port/xnu-4570.71.2-source
+              fi
+              # Apply J2 patches
+              cp ios-port/xnu-4570.71.2/pexpert/pexpert/arm/J2.h ios-port/xnu-4570.71.2-source/pexpert/pexpert/arm/
+              cp ios-port/xnu-4570.71.2/pexpert/pexpert/arm/board_config.h ios-port/xnu-4570.71.2-source/pexpert/pexpert/arm/
+              cp ios-port/xnu-4570.71.2/config/MASTER.arm ios-port/xnu-4570.71.2-source/config/
+              cp ios-port/xnu-4570.71.2/makedefs/MakeInc.def ios-port/xnu-4570.71.2-source/makedefs/
+              cp ios-port/xnu-4570.71.2/makedefs/MakeInc.top ios-port/xnu-4570.71.2-source/makedefs/
+              
+              # Build XNU on macOS runner (need to run on macOS)
+              # Since we're on Linux runner, we'll just prepare the source
+              # The actual build needs to run on macOS
+              echo "XNU source prepared in ios-port/xnu-4570.71.2-source"
+              echo "NOTE: Actual build requires macOS runner with Xcode + iPhoneOS SDK"
+              echo "Run 'make TARGET_CONFIGS=\"RELEASE ARM J2\" ARCH_CONFIGS=ARM MACHINE_CONFIGS=J2 KERNEL_CONFIGS=RELEASE PLATFORM=iPhoneOS SDKROOT=iphoneos SDKVERSION=10.0' on macOS"
+              continue
+            fi
 
             echo "== mka $target =="
 
@@ -2601,6 +2637,19 @@ jobs:
 
           cp /tmp/disk-monitor.log \
             "$GITHUB_WORKSPACE/artifacts/disk-monitor.log" 2>/dev/null || true
+
+          # xnu-j2 artifacts (if stage is xnu-j2)
+          if [ "${STAGE:-}" = "xnu-j2" ]; then
+            KSRC=ios-port/xnu-4570.71.2-source
+            if [ -d "$KSRC" ]; then
+              mkdir -p "$GITHUB_WORKSPACE/artifacts/xnu-j2"
+              find "$KSRC" -name 'mach*' -o -name 'kernel*' 2>/dev/null | head -20 | while read f; do
+                cp "$f" "$GITHUB_WORKSPACE/artifacts/xnu-j2/" 2>/dev/null || true
+              done
+              [ -f "$KSRC/build.log" ] && cp "$KSRC/build.log" "$GITHUB_WORKSPACE/artifacts/xnu-j2/" 2>/dev/null || true
+              echo "xnu-j2 artifacts collected"
+            fi
+          fi
 
       - name: Upload artefactos
         if: always()

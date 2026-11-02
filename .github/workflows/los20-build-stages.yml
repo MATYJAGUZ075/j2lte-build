@@ -69,42 +69,17 @@ jobs:
       
       - name: Fix makekdebugevents.py (TabError + IndentationError + escape)
         run: |
-          FILE="ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py"
-          
-          echo "Checking file: $FILE"
-          ls -la "$FILE"
-          
-          # 1. Replace all tabs with 4 spaces
-          sed -i '' $'s/\t/    /g' "$FILE"
-          
-          # 2. Fix invalid escape sequence \s -> \\s
-          sed -i '' 's/\\s/\\\\s/g' "$FILE"
-          
-          # 3. Fix indentation after 'for' statements using awk
-          awk '
-          /^[[:space:]]*for [^;]*:[[:space:]]*$/ {
-              print
-              getline nextline
-              if (nextline ~ /^[[:space:]]*[^[:space:]]/ && nextline !~ /^[[:space:]]{4}/) {
-                  sub(/^[[:space:]]*/, "    ", nextline)
-              }
-              print nextline
-              next
-          }
-          { print }
-          ' "$FILE" > "$FILE.tmp" && mv "$FILE.tmp" "$FILE"
-          
-          # 4. Make the script executable (make tries to execute it directly)
-          chmod +x "$FILE"
+          cd ios-port/xnu-4570.71.2-source
+          patch -p1 < ../../ios-port/makekdebugevents.patch
           
           # Verify the fix
-          if grep -q $'\t' "$FILE"; then
+          if grep -q $'\t' "bsd/kern/makekdebugevents.py"; then
             echo "WARNING: Tabs still present after fix!"
           else
             echo "OK: No tabs found"
           fi
           
-          if grep -q '\\s' "$FILE" && ! grep -q '\\\\s' "$FILE"; then
+          if grep -q '\\s' "bsd/kern/makekdebugevents.py" && ! grep -q '\\\\s' "bsd/kern/makekdebugevents.py"; then
             echo "WARNING: Unescaped \\s still present!"
           else
             echo "OK: Escape sequences fixed"

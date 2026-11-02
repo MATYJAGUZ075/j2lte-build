@@ -9,11 +9,6 @@ def main():
     if not os.path.exists(FILEPATH):
         print(f"ERROR: File not found: {FILEPATH}")
         print(f"Current directory: {os.getcwd()}")
-        print(f"Files in current dir: {os.listdir('.')}")
-        if os.path.exists('ios-port'):
-            print(f"ios-port contents: {os.listdir('ios-port')}")
-        if os.path.exists('ios-port/xnu-4570.71.2-source/bsd/kern'):
-            print(f"kern contents: {os.listdir('ios-port/xnu-4570.71.2-source/bsd/kern')}")
         return 1
     
     print(f"Fixing {FILEPATH}")

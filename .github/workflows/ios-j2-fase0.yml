@@ -5,6 +5,8 @@
 #
 # Clones XNU 4570.71.2 from apple-oss-distributions, applies J2 patches,
 # builds kernel with MACHINE_CONFIG=J2 (ARMv7, 4KB pages, Cortex-A7).
+#
+# Based on los20-build-stages.yml structure.
 
 name: "iOS J2 Port - Fase 0: XNU 4570 ARMv7 Build"
 

@@ -67,17 +67,9 @@ jobs:
         run: |
           find ios-port/xnu-4570.71.2-source -name "*.py" -exec sed -i '' '1s|^#!/usr/bin/python$|#!/usr/bin/env python3|' {} \;
       
-      - name: Fix makekdebugevents.py (TabError + IndentationError + escape)
+- name: Fix makekdebugevents.py (TabError + IndentationError + escape)
         run: |
-          # Single comprehensive fix using sed/awk
-          # 1. Replace all tabs with 4 spaces
-          # 2. Fix invalid escape sequence \s -> \\s
-          # 3. Fix indentation after 'for' statements
-          sed -i '' \
-            -e $'s/\t/    /g' \
-            -e 's/\\\\s/\\\\\\\\s/g' \
-            -e '/^[[:space:]]*for [^;]*:[[:space:]]*$/{n;s/^[[:space:]]*/    /}' \
-            ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py
+          bash ios-port/fix_makekdebugevents.sh
       
       - name: Build XNU 4570 ARMv7 J2
         working-directory: ios-port/xnu-4570.71.2-source

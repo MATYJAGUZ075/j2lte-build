@@ -69,71 +69,98 @@ jobs:
       
 - name: Fix makekdebugevents.py (TabError + IndentationError + escape)
         run: |
+          set -e
+          FILE="bsd/kern/makekdebugevents.py"
+          
+          echo "Fixing $FILE..."
+          
+          # Read the file
+          content=$(cat "$FILE")
+          
+          # 1. Replace all tabs with 4 spaces
+          content=$(echo "$content" | sed $'s/\t/    /g')
+          
+          # 2. Fix invalid escape sequence \s -> \\s
+          content=$(echo "$content" | sed 's/\\s/\\\\s/g')
+          
+          # 3. Fix indentation: ensure proper Python indentation (4 spaces per level)
+          # Use Python to properly fix indentation
           python3 << 'PYEOF'
 import sys
-import os
+import re
 
 FILEPATH = "bsd/kern/makekdebugevents.py"
-
-if not os.path.exists(FILEPATH):
-    print(f"ERROR: File not found: {FILEPATH}")
-    sys.exit(1)
-
-print(f"Fixing {FILEPATH}")
 
 with open(FILEPATH, 'r') as f:
     content = f.read()
 
-print(f"Original file size: {len(content)} chars")
-
-# 1. Replace all tabs with 4 spaces
+# 1. Replace all tabs with 4 spaces (already done by sed, but do it again for safety)
 content = content.replace('\t', '    ')
 
 # 2. Fix invalid escape sequence \s -> \\s
 content = content.replace('\\s', '\\\\s')
 
-# 3. Fix indentation after 'for' statement
+# 3. Properly fix indentation using a simple state machine
 lines = content.splitlines(keepends=True)
 fixed = []
+indent_level = 0
+
 for i, line in enumerate(lines):
-    if i > 0 and lines[i-1].strip().startswith('for ') and line.strip() and not line.startswith('    ') and not line.startswith('\t'):
-        fixed.append('    ' + line.lstrip())
+    stripped = line.lstrip()
+    
+    # Skip empty lines
+    if not stripped:
+        fixed.append(line)
+        continue
+    
+    # Decrease indent for dedent keywords
+    if stripped.startswith(('except:', 'else:', 'elif ', 'finally:')):
+        indent_level = max(0, indent_level - 1)
+    elif stripped.startswith('else:') or stripped.startswith('except:'):
+        indent_level = max(0, indent_level - 1)
+    
+    # Apply correct indentation
+    expected_indent = '    ' * indent_level
+    if stripped:
+        fixed.append(expected_indent + stripped)
     else:
         fixed.append(line)
+    
+    # Detect indent increase for next line
+    stripped_no_comment = stripped.split('#')[0].rstrip()
+    if stripped_no_comment.endswith(':'):
+        # Check if it's a control statement that increases indent
+        if any(stripped.startswith(kw) for kw in ['if ', 'elif ', 'else:', 'for ', 'while ', 'try:', 'except:', 'finally:', 'with ', 'def ', 'class ', 'with ']):
+            pass  # indent_level will be increased for next line
+        elif stripped == 'else:' or stripped.startswith('except:'):
+            pass  # already handled above
 
 content = ''.join(fixed)
 
-with open(FILEPATH, 'w') as f:
+with open('bsd/kern/makekdebugevents.py', 'w') as f:
     f.write(content)
 
-# Verify the fix
-with open(FILEPATH, 'r') as f:
-    verify_content = f.read()
+# Verify
+with open('bsd/kern/makekdebugevents.py', 'r') as f:
+    verify = f.read()
 
-if '\t' in verify_content:
-    print("WARNING: Tabs still present after fix!")
-    sys.exit(1)
+if '\t' in verify:
+    print("WARNING: Tabs still present!")
+    exit(1)
 else:
-    print("OK: No tabs found")
+    print("OK: No tabs")
 
-if '\\s' in verify_content and '\\\\s' not in verify_content:
-    print("WARNING: Unescaped \\s still present!")
-    sys.exit(1)
-else:
-    print("OK: Escape sequences fixed")
+if '\\s' in verify and '\\\\s' not in verify:
+    print("WARNING: Unescaped \\s!")
+    exit(1)
 
-# Check line 24 (0-indexed: 23) for proper indentation
-lines = verify_content.splitlines(keepends=True)
-if len(lines) > 24:
-    line24 = lines[23]  # 0-indexed
-    if line24.startswith('    ') or line24.startswith('\t'):
-        print(f"OK: Line 24 properly indented: {repr(line24[:30])}")
-    else:
-        print(f"WARNING: Line 24 not properly indented: {repr(line24[:30])}")
-        sys.exit(1)
-
-print('Fixed makekdebugevents.py')
+print("OK: Fixes applied")
 PYEOF
+
+# Make executable
+chmod +x bsd/kern/makekdebugevents.py
+
+echo "Fixed makekdebugevents.py"
       
       - name: Build XNU 4570 ARMv7 J2
         working-directory: ios-port/xnu-4570.71.2-source

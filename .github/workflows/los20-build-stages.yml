@@ -67,10 +67,11 @@ jobs:
         run: |
           find ios-port/xnu-4570.71.2-source -name "*.py" -exec sed -i '' '1s|^#!/usr/bin/python$|#!/usr/bin/env python3|' {} \;
       
-      - name: Fix makekdebugevents.py (TabError + IndentationError + escape)
+- name: Fix makekdebugevents.py (TabError + IndentationError + escape)
         run: |
+          set -e
           cd ios-port/xnu-4570.71.2-source
-          patch -p1 < ../../ios-port/makekdebugevents.patch || { echo "Patch failed!"; exit 1; }
+          patch -p1 < ../../ios-port/makekdebugevents.patch
           
           # Verify the fix
           if grep -q $'\t' "bsd/kern/makekdebugevents.py"; then

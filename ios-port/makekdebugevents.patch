@@ -1,0 +1,48 @@
+--- a/bsd/kern/makekdebugevents.py
++++ b/bsd/kern/makekdebugevents.py
+@@ -20,11 +20,11 @@
+ 
+ # scan file to generate internal table
+ with open(trace_code_file, 'rt') as codes:
+-	for line in codes:
+-		m = id_name_pattern.match(line)
+-		if m:
+-			code_table += [(int(m.group(1),base=16), m.group(2))]
+-
++    for line in codes:
++        m = id_name_pattern.match(line)
++        if m:
++            code_table += [(int(m.group(1),base=16), m.group(2))]
++
+ # emit typedef:
+ print "typedef struct {"
+ print "        uint32_t   id;"
+@@ -32,10 +32,10 @@
+ 
+ # emit structure declaration and sorted initialization:
+ print "kd_event_t kd_events[] = {"
+-for mapping in sorted(code_table, key=lambda x: x[0]):
+-        print "        {0x%x, \"%s\"}," % mapping
++for mapping in sorted(code_table, key=lambda x: x[0]):
++        print "        {0x%x, \"%s\"}," % mapping
+ print "};"
+ 
+ # emit typedef:
+ print "typedef struct {"
+@@ -45,10 +45,10 @@
+ # 
+ # Here's the KdInfo struct that the kernel debugger will use to locate
+ # the structures we've set up.  We have to do it this way because the
+-# kernel doesn't have a symbol table to find things with.
+-# So we have to tell it where everything is.
++# kernel doesn't have a symbol table to find things with.
++# So we have to tell it where everything is.
+ print "typedef struct {"
+ print "        uint32_t    version;"
+ print "        uint32_t    count;"
+@@ -57,4 +57,4 @@
+ print "        uint32_t    start;"
+ print "        uint32_t    end;"
+ print "} KdInfo;"
+-print "KdInfo kd_info = { 1, %d, kd_events, 0x%x, 0x%x };" % (len(code_table), id(kd_events), id(kd_info))
++print "KdInfo kd_info = { 1, %d, kd_events, 0x%x, 0x%x };" % (len(code_table), id(kd_events), id(kd_info))

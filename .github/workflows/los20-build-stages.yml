@@ -73,8 +73,8 @@ jobs:
           sed -i '' $'s/\t/    /g' ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py
           # Fix invalid escape sequence \s -> \\s
           sed -i '' 's/\\s/\\\\s/g' ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py
-          # Fix indentation after 'for' statement - ensure proper 4-space indent
-          python3 -c "
+          # Fix indentation after 'for' statement
+          python3 << 'PYEOF'
 import sys
 with open('ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py', 'r') as f:
     lines = f.readlines()
@@ -87,7 +87,7 @@ for i, line in enumerate(lines):
 with open('ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py', 'w') as f:
     f.writelines(fixed)
 print('Fixed indentation')
-"
+PYEOF
       
       - name: Build XNU 4570 ARMv7 J2
         working-directory: ios-port/xnu-4570.71.2-source

@@ -71,20 +71,25 @@ jobs:
         run: |
           set -e
           cd ios-port/xnu-4570.71.2-source
-          patch -p1 < ../../ios-port/makekdebugevents.patch
+          patch -p1 < ../../ios-port/patches/makekdebugevents.patch || { echo "Patch failed!"; exit 1; }
           
           # Verify the fix
           if grep -q $'\t' "bsd/kern/makekdebugevents.py"; then
             echo "WARNING: Tabs still present after fix!"
+            exit 1
           else
             echo "OK: No tabs found"
           fi
           
           if grep -q '\\s' "bsd/kern/makekdebugevents.py" && ! grep -q '\\\\s' "bsd/kern/makekdebugevents.py"; then
             echo "WARNING: Unescaped \\s still present!"
+            exit 1
           else
             echo "OK: Escape sequences fixed"
           fi
+          
+          # 4. Make the script executable (make tries to execute it directly)
+          chmod +x bsd/kern/makekdebugevents.py
           
           echo "Fixed makekdebugevents.py"
       

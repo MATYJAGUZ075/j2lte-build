@@ -70,7 +70,7 @@ jobs:
       - name: Fix makekdebugevents.py (TabError + IndentationError + escape)
         run: |
           cd ios-port/xnu-4570.71.2-source
-          patch -p1 < ../../ios-port/makekdebugevents.patch
+          patch -p1 < ../../ios-port/makekdebugevents.patch || { echo "Patch failed!"; exit 1; }
           
           # Verify the fix
           if grep -q $'\t' "bsd/kern/makekdebugevents.py"; then

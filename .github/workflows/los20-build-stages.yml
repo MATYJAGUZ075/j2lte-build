@@ -80,9 +80,7 @@ with open('ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py', 'r') as 
     lines = f.readlines()
 fixed = []
 for i, line in enumerate(lines):
-    # Fix line 23: 'for' statement needs proper indent on next line
     if i > 0 and lines[i-1].strip().startswith('for ') and line.strip() and not line.startswith('    ') and not line.startswith('\t'):
-        # Ensure 4-space indent after for statement
         fixed.append('    ' + line.lstrip())
     else:
         fixed.append(line)

@@ -74,43 +74,82 @@ jobs:
           echo "Checking file: $FILE"
           ls -la "$FILE"
           
-          # 1. Replace all tabs with 4 spaces
-          sed -i '' $'s/\t/    /g' "$FILE"
-          
-          # 2. Fix invalid escape sequence \s -> \\s
-          sed -i '' 's/\\s/\\\\s/g' "$FILE"
-          
-          # 3. Fix indentation after 'for' statements using awk (most reliable)
-          awk '
-          /^[[:space:]]*for [^;]*:[[:space:]]*$/ {
-              print
-              getline nextline
-              if (nextline ~ /^[[:space:]]*[^[:space:]]/ && nextline !~ /^[[:space:]]{4}/) {
-                  sub(/^[[:space:]]*/, "    ", nextline)
-              }
-              print nextline
-              next
-          }
-          { print }
-          ' "$FILE" > "$FILE.tmp" && mv "$FILE.tmp" "$FILE"
-          
-          # Verify the fix
-          if grep -q $'\t' "$FILE"; then
-            echo "WARNING: Tabs still present after fix!"
-          else
-            echo "OK: No tabs found"
-          fi
-          
-          if grep -q '\\s' "$FILE" && ! grep -q '\\\\s' "$FILE"; then
-            echo "WARNING: Unescaped \\s still present!"
-          else
-            echo "OK: Escape sequences fixed"
-          fi
-          
-          # Check line 24
-          sed -n '24p' "$FILE" | head -c 30 | xargs -I {} echo "Line 24: {}"
-          
-          echo "Fixed makekdebugevents.py"
+          # Use Python to fix all issues at once (most reliable)
+          python3 << 'PYEOF'
+import sys
+import os
+
+FILEPATH = "ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py"
+
+if not os.path.exists(FILEPATH):
+    print(f"ERROR: File not found: {FILEPATH}")
+    sys.exit(1)
+
+print(f"Fixing {FILEPATH}")
+
+with open(FILEPATH, 'r') as f:
+    content = f.read()
+
+print(f"Original file size: {len(content)} chars")
+
+# 1. Replace all tabs with 4 spaces
+content = content.replace('\t', '    ')
+
+# 2. Fix invalid escape sequence \s -> \\s
+content = content.replace('\\s', '\\\\s')
+
+# 3. Fix indentation - normalize all indentation to 4 spaces per level
+lines = content.splitlines(keepends=True)
+fixed = []
+indent_level = 0
+for i, line in enumerate(lines):
+    stripped = line.lstrip()
+    
+    # Detect dedent keywords
+    if stripped.startswith(('except:', 'else:', 'elif ', 'finally:')):
+        indent_level = max(0, indent_level - 1)
+    elif stripped.startswith('else:') or stripped.startswith('except:'):
+        indent_level = max(0, indent_level - 1)
+    
+    # Calculate expected indent
+    expected_indent = '    ' * indent_level
+    
+    # Apply correct indentation
+    if stripped:
+        fixed.append(expected_indent + stripped)
+    else:
+        fixed.append(line)
+    
+    # Detect indent increase
+    if stripped.endswith(':'):
+        # Check if it's a control statement that increases indent
+        if any(stripped.startswith(kw) for kw in ['if ', 'elif ', 'else:', 'for ', 'while ', 'try:', 'except:', 'finally:', 'with ', 'def ', 'class ', 'with ']):
+            indent_level += 1
+        # Handle 'else:' and 'except:' which don't increase indent but the next line should be indented
+        elif stripped == 'else:' or stripped.startswith('except:'):
+            indent_level += 1
+
+content = ''.join(fixed)
+
+with open(FILEPATH, 'w') as f:
+    f.write(content)
+
+# Verify the fix
+with open(FILEPATH, 'r') as f:
+    verify_content = f.read()
+
+if '\t' in verify_content:
+    print("WARNING: Tabs still present after fix!")
+else:
+    print("OK: No tabs found")
+
+if '\\s' in verify_content and '\\\\s' not in verify_content:
+    print("WARNING: Unescaped \\s still present!")
+else:
+    print("OK: Escape sequences fixed")
+
+print('Fixed makekdebugevents.py')
+PYEOF
       
       - name: Build XNU 4570 ARMv7 J2
         working-directory: ios-port/xnu-4570.71.2-source

@@ -63,6 +63,10 @@ jobs:
           echo "DSTROOT=${BUILD_DIR}/dst" >> $GITHUB_ENV
           echo "SYMROOT=${BUILD_DIR}/sym" >> $GITHUB_ENV
       
+      - name: Fix python shebangs in XNU
+        run: |
+          find ios-port/xnu-4570.71.2-source -name "*.py" -exec sed -i '' '1s|^#!/usr/bin/python$|#!/usr/bin/env python3|' {} \;
+      
       - name: Build XNU 4570 ARMv7 J2
         working-directory: ios-port/xnu-4570.71.2-source
         env:

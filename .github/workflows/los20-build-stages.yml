@@ -67,11 +67,9 @@ jobs:
         run: |
           find ios-port/xnu-4570.71.2-source -name "*.py" -exec sed -i '' '1s|^#!/usr/bin/python$|#!/usr/bin/env python3|' {} \;
       
-      - name: Patch makekdebugevents.py (fix tabs, indentation, escape)
+      - name: Fix makekdebugevents.py (TabError + IndentationError + escape)
         run: |
-          cp ios-port/makekdebugevents.patch ios-port/xnu-4570.71.2-source/
-          cd ios-port/xnu-4570.71.2-source
-          patch -p1 < makekdebugevents.patch
+          bash ios-port/fix_makekdebugevents.sh
       
       - name: Build XNU 4570 ARMv7 J2
         working-directory: ios-port/xnu-4570.71.2-source

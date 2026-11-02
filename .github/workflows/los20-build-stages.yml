@@ -69,7 +69,7 @@ jobs:
       
       - name: Patch makekdebugevents.py (fix tabs, indentation, escape)
         run: |
-          cp ../../makekdebugevents.patch ios-port/xnu-4570.71.2-source/
+          cp ios-port/makekdebugevents.patch ios-port/xnu-4570.71.2-source/
           cd ios-port/xnu-4570.71.2-source
           patch -p1 < makekdebugevents.patch
       

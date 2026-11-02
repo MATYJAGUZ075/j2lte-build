@@ -91,6 +91,9 @@ jobs:
           { print }
           ' "$FILE" > "$FILE.tmp" && mv "$FILE.tmp" "$FILE"
           
+          # 4. Ensure script is executable (make tries to execute it directly)
+          chmod +x "$FILE"
+          
           echo "Fixed makekdebugevents.py"
       
       - name: Build XNU 4570 ARMv7 J2

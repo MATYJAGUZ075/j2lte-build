@@ -1,3 +1,11 @@
+# iOS J2 Port - Fase 0: XNU 4570 ARMv7 Build
+#
+# Builds XNU 4570.71.2 (iOS 10.3) for Exynos 3475 (SM-J200M / j2lte)
+# on macOS runner using Apple's iPhoneOS SDK.
+#
+# Clones XNU 4570.71.2 from apple-oss-distributions, applies J2 patches,
+# builds kernel with MACHINE_CONFIG=J2 (ARMv7, 4KB pages, Cortex-A7).
+
 name: "iOS J2 Port - Fase 0: XNU 4570 ARMv7 Build"
 
 on:

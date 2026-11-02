@@ -67,34 +67,68 @@ jobs:
         run: |
           find ios-port/xnu-4570.71.2-source -name "*.py" -exec sed -i '' '1s|^#!/usr/bin/python$|#!/usr/bin/env python3|' {} \;
       
-      - name: Fix makekdebugevents.py (TabError + IndentationError + escape)
+- name: Fix makekdebugevents.py (TabError + IndentationError + escape)
         run: |
-          FILE="ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py"
-          
-          # 1. Replace all tabs with 4 spaces
-          sed -i '' $'s/\t/    /g' "$FILE"
-          
-          # 2. Fix invalid escape sequence \s -> \\s
-          sed -i '' 's/\\s/\\\\s/g' "$FILE"
-          
-          # 3. Fix indentation after 'for' statements using awk
-          awk '
-          /^[[:space:]]*for [^;]*:[[:space:]]*$/ {
-              print
-              getline nextline
-              if (nextline ~ /^[[:space:]]*[^[:space:]]/ && nextline !~ /^[[:space:]]{4}/) {
-                  sub(/^[[:space:]]*/, "    ", nextline)
-              }
-              print nextline
-              next
-          }
-          { print }
-          ' "$FILE" > "$FILE.tmp" && mv "$FILE.tmp" "$FILE"
-          
-          # 4. Ensure script is executable (make tries to execute it directly)
-          chmod +x "$FILE"
-          
-          echo "Fixed makekdebugevents.py"
+          python3 << 'PYEOF'
+import sys
+import os
+
+FILEPATH = 'ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py'
+
+if not os.path.exists(FILEPATH):
+    print(f"ERROR: File not found: {FILEPATH}")
+    sys.exit(1)
+
+print(f"Fixing {FILEPATH}")
+
+with open(FILEPATH, 'r') as f:
+    content = f.read()
+
+# 1. Replace all tabs with 4 spaces
+content = content.replace('\t', '    ')
+
+# 2. Fix invalid escape sequence \s -> \\s
+content = content.replace('\\s', '\\\\s')
+
+# 3. Fix indentation after 'for' statement
+lines = content.splitlines(keepends=True)
+fixed = []
+for i, line in enumerate(lines):
+    if i > 0 and lines[i-1].strip().startswith('for ') and line.strip() and not line.startswith('    ') and not line.startswith('\t'):
+        fixed.append('    ' + line.lstrip())
+    else:
+        fixed.append(line)
+
+content = ''.join(fixed)
+
+with open(FILEPATH, 'w') as f:
+    f.write(content)
+
+# Verify the fix
+with open(FILEPATH, 'r') as f:
+    verify_content = f.read()
+
+if '\t' in verify_content:
+    print("WARNING: Tabs still present after fix!")
+else:
+    print("OK: No tabs found")
+
+if '\\s' in verify_content and '\\\\s' not in verify_content:
+    print("WARNING: Unescaped \\s still present!")
+else:
+    print("OK: Escape sequences fixed")
+
+# Check line 24 (0-indexed: 23) for proper indentation
+lines = verify_content.splitlines(keepends=True)
+if len(lines) > 24:
+    line24 = lines[23]  # 0-indexed
+    if line24.startswith('    ') or line24.startswith('\t'):
+        print(f"OK: Line 24 properly indented: {repr(line24[:30])}")
+    else:
+        print(f"WARNING: Line 24 not properly indented: {repr(line24[:30])}")
+
+print('Fixed makekdebugevents.py')
+PYEOF
       
       - name: Build XNU 4570 ARMv7 J2
         working-directory: ios-port/xnu-4570.71.2-source

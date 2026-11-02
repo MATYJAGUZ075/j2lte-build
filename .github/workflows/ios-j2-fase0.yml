@@ -15,10 +15,10 @@ jobs:
     timeout-minutes: 120
     
     steps:
-      - name: Checkout j2lte-build (ios-port-fase0 branch)
+      - name: Checkout j2lte-build (experiment/ios-port branch)
         uses: actions/checkout@v4
         with:
-          ref: ios-port-fase0
+          ref: experiment/ios-port
           fetch-depth: 0
       
       - name: Checkout XNU 4570.71.2 source

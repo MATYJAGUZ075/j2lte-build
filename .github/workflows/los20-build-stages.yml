@@ -69,7 +69,7 @@ jobs:
       
       - name: Fix makekdebugevents.py (TabError + IndentationError + escape)
         run: |
-          bash ios-port/fix_makekdebugevents.sh
+          python3 ios-port/fix_makekdebugevents.py
       
       - name: Build XNU 4570 ARMv7 J2
         working-directory: ios-port/xnu-4570.71.2-source

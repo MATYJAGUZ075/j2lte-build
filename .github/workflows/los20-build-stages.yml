@@ -67,12 +67,29 @@ jobs:
         run: |
           find ios-port/xnu-4570.71.2-source -name "*.py" -exec sed -i '' '1s|^#!/usr/bin/python$|#!/usr/bin/env python3|' {} \;
       
-      - name: Fix makekdebugevents.py indentation (TabError)
+- name: Fix makekdebugevents.py indentation (TabError + IndentationError)
         run: |
           # Fix TabError: replace all tabs with 4 spaces
           sed -i '' $'s/\t/    /g' ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py
           # Fix invalid escape sequence \s -> \\s
-          sed -i '' 's/\\\\s/\\\\\\\\s/g' ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py
+          sed -i '' 's/\\s/\\\\s/g' ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py
+          # Fix indentation after 'for' statement - ensure proper 4-space indent
+          python3 -c "
+import sys
+with open('ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py', 'r') as f:
+    lines = f.readlines()
+fixed = []
+for i, line in enumerate(lines):
+    # Fix line 23: 'for' statement needs proper indent on next line
+    if i > 0 and lines[i-1].strip().startswith('for ') and line.strip() and not line.startswith('    ') and not line.startswith('\t'):
+        # Ensure 4-space indent after for statement
+        fixed.append('    ' + line.lstrip())
+    else:
+        fixed.append(line)
+with open('ios-port/xnu-4570.71.2-source/bsd/kern/makekdebugevents.py', 'w') as f:
+    f.writelines(fixed)
+print('Fixed indentation')
+"
       
       - name: Build XNU 4570 ARMv7 J2
         working-directory: ios-port/xnu-4570.71.2-source

@@ -1,0 +1,24 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 00:00:00 +0000
+Subject: [PATCH] BootReceiver: no marcar como WTF la ausencia del pipe de ftrace
+
+El kernel de este dispositivo no soporta instancias de tracing
+("/sys/kernel/tracing/instances"), por lo que el pipe de KFENCE/KASAN no
+existe. BootReceiver lo abria al arrancar y registraba un Slog.wtf, que
+ademas de ser un error real dispara el mecanismo de "wtf" del sistema.
+Ahora se registra como aviso simple y se sigue sin listener.
+
+--- a/services/core/java/com/android/server/BootReceiver.java
++++ b/services/core/java/com/android/server/BootReceiver.java
+@@ -161,7 +161,10 @@ public class BootReceiver extends BroadcastReceiver {
+         try {
+             tracefd = Os.open(ERROR_REPORT_TRACE_PIPE, O_RDONLY, 0600);
+         } catch (ErrnoException e) {
+-            Slog.wtf(TAG, "Could not open " + ERROR_REPORT_TRACE_PIPE, e);
++            // El pipe de ftrace solo existe si el kernel soporta instancias de
++            // tracing ("/sys/kernel/tracing/instances"). Este kernel no las
++            // tiene, asi que no hay listener de KFENCE/KASAN: no es un error.
++            Slog.w(TAG, "Could not open " + ERROR_REPORT_TRACE_PIPE + ": " + e.getMessage());
+             return;
+         }
+ 

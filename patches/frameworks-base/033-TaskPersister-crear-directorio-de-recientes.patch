@@ -1,0 +1,39 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 00:00:00 +0000
+Subject: [PATCH] TaskPersister: crear los directorios de recientes si no existen
+
+TaskPersister.listFiles() devuelve null cuando el directorio de tareas o de
+imagenes de un usuario no existe, y el framework registraba un error cada
+vez que se sincronizaban las tareas recientes. Ahora se crean los
+directorios y, si aun asi no estan disponibles, solo se registra un aviso.
+
+--- a/services/core/java/com/android/server/wm/TaskPersister.java
++++ b/services/core/java/com/android/server/wm/TaskPersister.java
+@@ -440,7 +440,7 @@ public class TaskPersister implements PersisterQueue.Listener {
+         if (DEBUG) Slog.d(TAG, "removeObsoleteFiles: persistentTaskIds=" + persistentTaskIds +
+                 " files=" + files);
+         if (files == null) {
+-            Slog.e(TAG, "File error accessing recents directory (directory doesn't exist?).");
++            Slog.w(TAG, "File error accessing recents directory (directory doesn't exist?).");
+             return;
+         }
+         for (int fileNdx = 0; fileNdx < files.length; ++fileNdx) {
+@@ -494,8 +494,16 @@ public class TaskPersister implements PersisterQueue.Listener {
+             candidateUserIds = mRecentTasks.usersWithRecentsLoadedLocked();
+         }
+         for (int userId : candidateUserIds) {
+-            removeObsoleteFiles(persistentTaskIds, getUserImagesDir(userId).listFiles());
+-            removeObsoleteFiles(persistentTaskIds, getUserTasksDir(userId).listFiles());
++            File userImagesDir = getUserImagesDir(userId);
++            File userTasksDir = getUserTasksDir(userId);
++            // Estos directorios no siempre existen (por ejemplo si se han
++            // borrado los datos o el usuario es nuevo), y listFiles() devuelve
++            // null si el directorio no existe. Se crean para que la limpieza de
++            // tareas obsoletas funcione y no se repita el error en el log.
++            userImagesDir.mkdirs();
++            userTasksDir.mkdirs();
++            removeObsoleteFiles(persistentTaskIds, userImagesDir.listFiles());
++            removeObsoleteFiles(persistentTaskIds, userTasksDir.listFiles());
+         }
+     }
+ 

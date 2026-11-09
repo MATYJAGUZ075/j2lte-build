@@ -1,0 +1,36 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 00:00:00 +0000
+Subject: [PATCH] sdp: liberar el bloque de control cuando falla la conexion L2CAP
+
+Cuando el servidor SDP del auricular rechaza o no responde a la peticion de
+canal L2CAP (PSM 0x0001), el modulo SDP dejaba el bloque de control en el
+estado SDP_STATE_CONN_SETUP para siempre. sdpu_get_active_ccb_cid() sigue
+devolviendo ese bloque como una conexion SDP activa, de modo que todas las
+siguientes busquedas SDP para ese peer se quedan esperando en
+SDP_STATE_CONN_PEND sin abrir nunca el canal.
+
+El resultado es que la apertura de A2DP se queda esperando en el estado
+OPENING hasta que caduca el tiempo de espera de 30 s del cliente
+("Failed to connect A2DP device"), sin llegar ni a intentar el descubrimiento
+SDP. Ahora, en ese caso, se libera el bloque con la misma ruta de limpieza
+que usa el error de L2CAP, de forma que el fallo se informa y los siguientes
+intentos vuelven a intentarlo.
+
+--- a/system/stack/sdp/sdp_main.cc
++++ b/system/stack/sdp/sdp_main.cc
+@@ -162,6 +162,15 @@ static void sdp_connect_cfm(uint16_t l2cap_cid, uint16_t result) {
+     p_ccb->con_state = SDP_STATE_CFG_SETUP;
+   } else {
+     LOG(ERROR) << __func__ << ": invoked with non OK status";
++    // Si la conexion L2CAP con el servidor SDP del peer falla, el bloque de
++    // control se queda en SDP_STATE_CONN_SETUP para siempre. En ese estado
++    // sdpu_get_active_ccb_cid() lo sigue devolviendo como una conexion SDP
++    // activa, asi que todas las siguientes busquedas SDP para ese peer se
++    // quedan esperando (SDP_STATE_CONN_PEND) sin abrir nunca el canal, y la
++    // apertura de A2DP se queda colgada hasta que caduca el tiempo de espera
++    // de 30 s ("Failed to connect A2DP device"). Se libera el bloque igual
++    // que en la ruta de error de L2CAP (sdp_on_l2cap_error).
++    sdp_disconnect(p_ccb, SDP_CFG_FAILED);
+   }
+ }
+ 

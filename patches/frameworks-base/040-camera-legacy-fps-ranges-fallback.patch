@@ -1,0 +1,53 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 00:00:00 +0000
+Subject: [PATCH] camera: no fallar al abrir camaras cuyo HAL no informa de los rangos de FPS
+
+El HAL de camara de este dispositivo no publica "preview-fps-range-values" en la
+camara frontal, por lo que LegacyMetadataMapper.mapControlAe() lanzaba un
+AssertionError ("Supported FPS ranges cannot be null.") y la apertura de la camara
+fallaba con CameraAccessExceptionCompat (10002), lo que hacia que la app de
+camara se cerrara.
+
+Ahora, si el HAL no informa de los rangos, se construye una lista alternativa con
+los FPS de preview soportados, con el rango de preview actual o, en ultimo caso,
+con un rango por defecto de 15 fps.
+
+--- a/core/java/android/hardware/camera2/legacy/LegacyMetadataMapper.java
++++ b/core/java/android/hardware/camera2/legacy/LegacyMetadataMapper.java
+@@ -414,8 +414,34 @@ public class LegacyMetadataMapper {
+          */
+         {
+             List<int[]> fpsRanges = p.getSupportedPreviewFpsRange();
+-            if (fpsRanges == null) {
+-                throw new AssertionError("Supported FPS ranges cannot be null.");
++            if (fpsRanges == null || fpsRanges.size() <= 0) {
++                // Algunos HAL de camara no informan de los rangos de FPS soportados
++                // ("preview-fps-range-values"); en este dispositivo la camara
++                // frontal no los publica. Antes esto lanzaba un AssertionError que
++                // hacia fallar la apertura de la camara, asi que se construye una
++                // lista alternativa: primero con los FPS de preview soportados,
++                // despues con el rango de preview actual y, en ultimo caso, con un
++                // rango por defecto.
++                Log.w(TAG, "No supported preview FPS ranges reported by the HAL, "
++                        + "using a fallback list");
++                fpsRanges = new ArrayList<int[]>();
++                List<Integer> previewFrameRates = p.getSupportedPreviewFrameRates();
++                if (previewFrameRates != null) {
++                    for (Integer fps : previewFrameRates) {
++                        if (fps != null && fps > 0) {
++                            fpsRanges.add(new int[] { fps, fps });
++                        }
++                    }
++                }
++                if (fpsRanges.size() <= 0) {
++                    int[] currentRange = new int[2];
++                    p.getPreviewFpsRange(currentRange);
++                    if (currentRange[0] > 0 && currentRange[1] >= currentRange[0]) {
++                        fpsRanges.add(currentRange);
++                    } else {
++                        fpsRanges.add(new int[] { 15000, 15000 });
++                    }
++                }
+             }
+             int rangesSize = fpsRanges.size();
+             if (rangesSize <= 0) {

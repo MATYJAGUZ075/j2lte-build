@@ -1,0 +1,54 @@
+From: MATYJAGUZ075 <155926881+MATYJAGUZ075@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 00:00:00 -0300
+Subject: [PATCH] adb: enlazar libcutils_sockets estaticamente en libadb_pairing_server
+
+El bootloop del sistema viene de aqui:
+
+  java.lang.UnsatisfiedLinkError: dlopen failed: library "libcutils.so" not
+  found: needed by /apex/com.android.adbd/lib/libadb_pairing_server.so in
+  namespace com_android_adbd
+
+libadb_pairing_server.so declara DT_NEEDED libcutils.so, pero el namespace
+com_android_adbd es AISLADO y su lista de librerias permitidas
+(link.default.shared_libs, que sale del manifiesto del apex) no incluye
+libcutils.so: no se puede tomar de /system/lib. Solo queda el directorio del
+propio apex, y ahi el enlace (o copia) de libcutils.so es un punto unico de
+fallo: si no resuelve, no hay plan B y system_server muere en cada arranque.
+
+AOSP 13 resuelve esto con library_linking_strategy=prefer_static (el apex
+adbd enlaza libcutils de forma estatica), pero este arbol de build no
+soporta ese mecanismo: build/soong no lo implementa y el enlace dinamico se
+queda.
+
+La solucion es la misma que ya usa AOSP 13 en el resto del modulo adb: enlazar
+libcutils_sockets de forma estatica. pairing_server.cpp solo usa dos simbolos
+de libcutils (socket_get_local_port y socket_inaddr_any_server) y ambos
+estan en libcutils_sockets, que existe como .a en el arbol. Asi
+libadb_pairing_server.so deja de depender de libcutils.so en runtime y el
+namespace aislado ya no tiene nada que resolver.
+
+---
+--- a/pairing_connection/Android.bp
++++ b/pairing_connection/Android.bp
+@@ -149,11 +149,20 @@
+ 
+     static_libs: [
+         "libbase",
++        // Enlaza estaticamente los helpers de socket: libcutils es una libreria
++        // del sistema y NO es resoluble desde el namespace aislado
++        // com_android_adbd (no esta en link.default.shared_libs del manifiesto
++        // del apex), por lo que la dependencia dinamica provocaba:
++        //   UnsatisfiedLinkError: dlopen failed: library "libcutils.so" not
++        //   found: needed by /apex/com.android.adbd/lib/libadb_pairing_server.so
++        //   in namespace com_android_adbd
++        // AOSP 13 lo evita con library_linking_strategy=prefer_static, que este
++        // arbol de build no soporta.
++        "libcutils_sockets",
+     ],
+     shared_libs: [
+         "libcrypto",
+         "libcrypto_utils",
+-        "libcutils",
+         "liblog",
+         "libadb_pairing_auth",
+         "libadb_pairing_connection",

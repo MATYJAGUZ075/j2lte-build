@@ -1,0 +1,23 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 00:00:00 +0000
+Subject: [PATCH] lights: no registrar como error una luz que el HAL no implementa
+
+El HAL de luces de este dispositivo no implementa todas las luces que le pide
+el framework (por ejemplo la luz 2, de bateria), asi que el JNI registraba un
+error cada vez que se le pedia esa luz. Es una situacion normal, asi que se
+registra como aviso.
+
+--- a/services/core/jni/com_android_server_lights_LightsService.cpp
++++ b/services/core/jni/com_android_server_lights_LightsService.cpp
+@@ -112,7 +112,10 @@ static void processReturn(
+         case Status::SUCCESS:
+             break;
+         case Status::LIGHT_NOT_SUPPORTED:
+-            ALOGE("Light requested not available on this device. %d", type);
++            // El HAL de luces de este dispositivo no implementa todas las luces
++            // que le pide el framework (por ejemplo la luz 2, de bateria), asi
++            // que esto es una situacion normal y no un error.
++            ALOGW("Light requested not available on this device. %d", type);
+             break;
+         case Status::BRIGHTNESS_NOT_SUPPORTED:
+             ALOGE("Brightness parameter not supported on this device: %d",

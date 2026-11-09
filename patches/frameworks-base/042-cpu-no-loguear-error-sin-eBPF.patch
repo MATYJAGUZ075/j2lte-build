@@ -1,0 +1,23 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 00:00:00 +0000
+Subject: [PATCH] batterystats: no registrar como error la falta de datos de frecuencia de CPU
+
+La lectura del tiempo por estado de frecuencia de la CPU se hace con eBPF, y
+este kernel (3.10) no lo soporta, asi que la llamada falla siempre y el
+framework registraba un error cada vez que recolectaba estadisticas de
+bateria. Se registra como aviso: es una limitacion del kernel.
+
+--- a/core/jni/com_android_internal_os_KernelSingleProcessCpuThreadReader.cpp
++++ b/core/jni/com_android_internal_os_KernelSingleProcessCpuThreadReader.cpp
+@@ -71,7 +71,10 @@ public:
+     size_t getCpuFrequencyCount() {
+         std::optional<std::vector<std::vector<uint32_t>>> cpuFreqs = android::bpf::getCpuFreqs();
+         if (!cpuFreqs) {
+-            ALOGE("Cannot obtain CPU frequency count");
++            // Sin eBPF (este kernel es 3.10 y no lo soporta) no hay forma de
++            // obtener el tiempo por estado de frecuencia de la CPU: es una
++            // limitacion del kernel, no un error del sistema.
++            ALOGW("Cannot obtain CPU frequency count");
+             return 0;
+         }
+ 

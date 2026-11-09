@@ -1,0 +1,27 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 00:00:00 +0000
+Subject: [PATCH] libprocessgroup: no registrar como error el fallo al abrir el cgroup de otro UID
+
+En este dispositivo el cgroup de otros UID no se puede abrir por permisos
+(el kernel 3.10 no tiene la disposicion de cgroups v2 que espera A13), asi que
+ActivityManager registra un error cada vez que mata un proceso de otro
+usuario. El proceso concreto ya se mata igualmente, asi que esto se registra
+como aviso, igual que el aviso que ya se emite en el mismo punto.
+
+--- a/libprocessgroup/processgroup.cpp
++++ b/libprocessgroup/processgroup.cpp
+@@ -443,8 +443,12 @@ static int KillProcessGroup(uid_t uid, int initialPid, int signal, int retries,
+     }
+ 
+     if (processes < 0) {
+-        PLOG(ERROR) << "Error encountered killing process cgroup uid " << uid << " pid "
+-                    << initialPid;
++        // En este dispositivo el cgroup de otros UID no se puede abrir por
++        // permisos (el kernel 3.10 no tiene la disposicion de cgroups v2 que
++        // espera A13). El proceso concreto ya se ha matado, asi que esto no es
++        // un error: la causa concreta ya se ha avisado mas arriba.
++        PLOG(WARNING) << "Error encountered killing process cgroup uid " << uid << " pid "
++                      << initialPid;
+         return -1;
+     }
+ 

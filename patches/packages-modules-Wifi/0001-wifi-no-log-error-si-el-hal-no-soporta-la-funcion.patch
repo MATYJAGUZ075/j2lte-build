@@ -1,0 +1,22 @@
+--- a/service/java/com/android/server/wifi/WifiVendorHal.java
++++ b/service/java/com/android/server/wifi/WifiVendorHal.java
+@@ -148,6 +148,19 @@ public class WifiVendorHal {
+         Thread cur = Thread.currentThread();
+         StackTraceElement[] trace = cur.getStackTrace();
+ 
++        if (status.code == WifiStatusCode.ERROR_NOT_SUPPORTED) {
++            // ERROR_NOT_SUPPORTED significa que el HAL no implementa esta
++            // funcion opcional, no que haya un fallo real. El HAL WiFi de
++            // Broadcom de este dispositivo no soporta link layer stats y se
++            // registraba un error cada pocos segundos (1128 veces en el log
++            // del arranque), inundando el logcat.
++            mLog.trace("% failed %")
++                    .c(niceMethodName(trace, 3))
++                    .c(status.toString())
++                    .flush();
++            return false;
++        }
++
+         mLog.err("% failed %")
+                 .c(niceMethodName(trace, 3))
+                 .c(status.toString())

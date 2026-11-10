@@ -1,0 +1,27 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Tue, 10 Nov 2026 00:00:00 +0000
+Subject: [PATCH] framework: no loguear como error la falta del proveedor de setupwizard
+
+En el logcat aparecian 1607 lineas de error:
+
+  E/ActivityThread: Failed to find provider info for com.google.android.setupwizard.partner
+
+El ROM no incluye el paquete "partner" de Google, pero una app (el asistente de
+configuracion de LineageOS) sigue declarando ese proveedor, asi que cada intento
+de enlazarlo genera un error. No es un fallo real: el Framework ya lo registraba
+como aviso en el caso equivalente de usuario bloqueado.
+
+Se baja a aviso, que es lo que corresponde a un proveedor opcional que no esta
+instalado.
+
+--- a/core/java/android/app/ActivityThread.java
++++ b/core/java/android/app/ActivityThread.java
+@@ -7089,7 +7089,7 @@ public final class ActivityThread extends ClientTransactionHandler
+         }
+         if (holder == null) {
+             if (UserManager.get(c).isUserUnlocked(userId)) {
+-                Slog.e(TAG, "Failed to find provider info for " + auth);
++                Slog.w(TAG, "Failed to find provider info for " + auth);
+             } else {
+                 Slog.w(TAG, "Failed to find provider info for " + auth + " (user not unlocked)");
+             }

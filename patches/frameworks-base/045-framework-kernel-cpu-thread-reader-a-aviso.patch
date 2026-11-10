@@ -1,0 +1,25 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Tue, 10 Nov 2026 00:00:00 +0000
+Subject: [PATCH] framework: no loguear como error la lectura de time_in_state inexistente
+
+El kernel de este dispositivo (3.10 de Samsung) no tiene /proc/self/time_in_state,
+asi que KernelCpuThreadReader no puede inicializarse y lo registrava como error
+en cada arranque:
+
+  E/KernelCpuThreadReader: Failed to initialize KernelCpuThreadReader
+  java.nio.file.NoSuchFileException: /proc/self/time_in_state
+
+Es una limitacion del kernel, no un fallo del framework (la clase ya devuelve null
+y sigue funcionando sin esas lecturas). Se baja a aviso.
+
+--- a/core/java/com/android/internal/os/KernelCpuThreadReader.java
++++ b/core/java/com/android/internal/os/KernelCpuThreadReader.java
+@@ -155,7 +155,7 @@ public class KernelCpuThreadReader {
+                     DEFAULT_INITIAL_TIME_IN_STATE_PATH,
+                     new Injector());
+         } catch (IOException e) {
+-            Slog.e(TAG, "Failed to initialize KernelCpuThreadReader", e);
++            Slog.w(TAG, "Failed to initialize KernelCpuThreadReader", e);
+             return null;
+         }
+     }

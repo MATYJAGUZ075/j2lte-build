@@ -1,0 +1,44 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Tue, 10 Nov 2026 00:00:00 +0000
+Subject: [PATCH] camera: no fallar cuando el HAL no publica la distancia focal
+
+Con el parche anterior (rangos de FPS y paso de compensacion) la app de camara
+seguia cerrandose al abrirse, esta vez por otro parametro que la camara frontal
+no publica. El volcado del HAL (dumpsys media.camera) muestra que la camara
+trasera si que publica todos los parametros, pero la frontal devuelve un
+conjunto vacio porque el HAL no logra inicializarla (/dev/video102,
+VIDIOC_S_INPUT), y de ahi vienen los parametros que faltan:
+
+  Caused by: java.lang.NullPointerException: Attempt to invoke virtual method
+    'java.lang.String java.lang.String.trim()' on a null object reference
+      at java.lang.Float.parseFloat(Float.java:455)
+      at android.hardware.Camera$Parameters.getFloat(Camera.java:4066)
+      at android.hardware.Camera$Parameters.getFocalLength(Camera.java:4066)
+      at android.hardware.camera2.legacy.LegacyMetadataMapper.mapLens(LegacyMetadataMapper.java:749)
+
+Se protege la lectura de la distancia focal y, si el HAL no la informa, se usa
+3.5 mm, que es un valor valido para la distancia focal de la camara de un movil.
+
+--- a/core/java/android/hardware/camera2/legacy/LegacyMetadataMapper.java
++++ b/core/java/android/hardware/camera2/legacy/LegacyMetadataMapper.java
+@@ -746,7 +746,19 @@ public class LegacyMetadataMapper {
+             }
+         }
+ 
+-        float[] focalLengths = new float[] { p.getFocalLength() };
++        float focalLength;
++        try {
++            focalLength = p.getFocalLength();
++        } catch (RuntimeException e) {
++            // El HAL de camara de este dispositivo no publica "focal-length":
++            // Camera.getFloat() hace Float.parseFloat(null) y revienta con
++            // NullPointerException al crear las caracteristicas de la camara,
++            // lo que hacia fallar la apertura con una InitializationException
++            // de CameraX. Se usa una distancia focal tipica de camara de movil.
++            Log.w(TAG, "No focal length reported by the HAL, using a fallback value");
++            focalLength = 3.5f;
++        }
++        float[] focalLengths = new float[] { focalLength };
+         m.set(LENS_INFO_AVAILABLE_FOCAL_LENGTHS, focalLengths);
+     }
+ 

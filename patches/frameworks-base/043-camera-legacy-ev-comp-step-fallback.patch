@@ -1,0 +1,51 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Tue, 10 Nov 2026 00:00:00 +0000
+Subject: [PATCH] camera: no fallar cuando el HAL no publica el paso de compensacion de exposicion
+
+Tras arreglar los rangos de FPS (parche anterior), la app de camara seguia
+cerrandose al abrirse. El motivo es otro parametro que este HAL no publica:
+"exposure-compensation-step". Camera.getExposureCompensationStep() llama a
+Camera.getFloat(), que hace Float.parseFloat(mParameters.get(name)); si el HAL no
+devuelve el valor, se parsea null y revienta con NullPointerException:
+
+  Caused by: java.lang.NullPointerException: Attempt to invoke virtual method
+    'java.lang.String java.lang.String.trim()' on a null object reference
+      at java.lang.Float.parseFloat(Float.java:455)
+      at android.hardware.Camera$Parameters.getFloat(Camera.java:4707)
+      at android.hardware.Camera$Parameters.getExposureCompensationStep(Camera.java:4146)
+      at android.hardware.camera2.legacy.LegacyMetadataMapper.mapControlAe(LegacyMetadataMapper.java:508)
+      at android.hardware.camera2.legacy.LegacyMetadataMapper.mapCharacteristicsFromParameters(LegacyMetadataMapper.java:190)
+      at android.hardware.camera2.CameraManager.getCameraCharacteristics(CameraManager.java:617)
+
+Eso tumba la inicializacion de CameraX y produce:
+
+  FATAL EXCEPTION: main
+  Process: org.lineageos.aperture
+  java.lang.RuntimeException: Unable to start activity ... CameraActivity
+    ... Caused by: androidx.camera.core.InitializationException
+
+Ahora el paso de compensacion se lee con proteccion: si el HAL no lo publica, se
+usa 0.1 (un decimo de EV), que es un valor valido para camera2, y la camara puede
+abrirse.
+
+--- a/core/java/android/hardware/camera2/legacy/LegacyMetadataMapper.java
++++ b/core/java/android/hardware/camera2/legacy/LegacyMetadataMapper.java
+@@ -505,7 +505,17 @@ public class LegacyMetadataMapper {
+          * control.aeCompensationStep
+          */
+         {
+-            float step = p.getExposureCompensationStep();
++            float step;
++            try {
++                step = p.getExposureCompensationStep();
++            } catch (NullPointerException | NumberFormatException e) {
++                // El HAL de camara de este dispositivo no publica
++                // "exposure-compensation-step": Camera.getFloat() hace
++                // Float.parseFloat(null) y revienta con NullPointerException al
++                // crear las caracteristicas de la camara, lo que hacia fallar la
++                // apertura con un error de inicializacion de CameraX.
++                step = 0.1f;
++            }
+ 
+             m.set(CONTROL_AE_COMPENSATION_STEP, ParamsUtils.createRational(step));
+         }

@@ -1,0 +1,45 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Tue, 10 Nov 2026 00:00:00 +0000
+Subject: [PATCH] framework: no morir al arrancar si el APEX de AdServices no esta disponible
+
+Al flashear una build nueva sin wipe, el estado de /data/apex puede quedar
+inconsistente y el APEX "com.android.adservices" no se monta. Entonces la clase
+com.android.server.adservices.AdServicesManagerService$Lifecycle no aparece en el
+classpath de system_server y el arranque muere con:
+
+  java.lang.RuntimeException: Failed to create service
+    com.android.server.adservices.AdServicesManagerService$Lifecycle from class loader
+    ...: service class not found
+      at com.android.server.SystemServiceManager.loadClassFromLoader(SystemServiceManager.java:190)
+      at com.android.server.SystemServer.startOtherServices(SystemServer.java:2604)
+      at com.android.server.SystemServer.run(SystemServer.java:940)
+
+Como system_server es un servicio critico, el sistema entra en bucle de reinicios
+(bootloop): en /data/system/dropbox aparecen varios "system_server_crash" seguidos.
+
+El propio mensaje de AOSP indica que habria que comprobar la disponibilidad del
+servicio antes de arrancarlo. Aqui se hace: si el servicio no se puede crear, se
+registra un aviso y el arranque continua. El sandbox de privacidad (AdServices)
+queda sin servicio, pero el equipo arranca y se puede usar con normalidad.
+
+--- a/services/java/com/android/server/SystemServer.java
++++ b/services/java/com/android/server/SystemServer.java
+@@ -2601,7 +2601,17 @@ public final class SystemServer implements Dumpable {
+ 
+         // AdServicesManagerService (PP API service)
+         t.traceBegin("StartAdServicesManagerService");
+-        mSystemServiceManager.startService(AD_SERVICES_MANAGER_SERVICE_CLASS);
++        try {
++            mSystemServiceManager.startService(AD_SERVICES_MANAGER_SERVICE_CLASS);
++        } catch (RuntimeException e) {
++            // El servicio vive en el APEX com.android.adservices. Si el estado de
++            // /data/apex queda inconsistente (por ejemplo, al flashear una build
++            // nueva sin wipe), el APEX no se monta, su clase no aparece en el
++            // classpath de system_server y esto provocaba un bucle de reinicios
++            // del sistema entero. El servicio no es imprescindible para arrancar,
++            // asi que se registra y se sigue arrancando.
++            Slog.w(TAG, "AdServicesManagerService not available, skipping", e);
++        }
+         t.traceEnd();
+ 
+         if (safeMode) {

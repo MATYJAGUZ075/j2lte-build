@@ -1,0 +1,60 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 16:05:00 +0000
+Subject: [PATCH] framework: adjuntar el dispositivo A2DP al modulo aunque no declare formato codificado
+
+Al conectar unos auriculares Bluetooth con codec AAC, el AudioPolicyManager
+registraba:
+
+  E/APM::HwModule: createDevice: could not find HW module for device 0080
+                    address 41:42:AE:27:9B:84
+
+0080 es AUDIO_DEVICE_OUT_BLUETOOTH_A2DP. El stack de Bluetooth notifica el codec
+activo (AAC) y el APM lo pasa como "formato codificado" al buscar un modulo
+capaz de atender ese dispositivo:
+
+  HwModuleCollection::getModuleForDeviceType() solo devuelve un modulo si el
+  puerto del dispositivo declara ese formato codificado.
+
+El modulo "a2dp" de la politica de audio (el que usa el HAL legacy de
+Bluetooth) solo declara PCM, de modo que ningun modulo encajaba, el
+dispositivo se quedaba sin adjuntar a ningun modulo y el APM no lo tenia
+disponible: el audio no se ruteaba a los auriculares y sonaba en el altavoz.
+
+Aqui, si no hay ningun modulo que soporte el formato codificado, se reintenta
+la busqueda como PCM. Antes de este cambio ese caso terminaba en error y el
+dispositivo se perdia; ahora se adjunta al modulo que declare ese tipo de
+dispositivo y el APM puede routear el audio.
+
+--- a/services/audiopolicy/common/managerdefinitions/src/HwModule.cpp
++++ b/services/audiopolicy/common/managerdefinitions/src/HwModule.cpp
+@@ -389,7 +389,20 @@ sp<DeviceDescriptor> HwModuleCollection::createDevice(const audio_devices_t type
+                                                       const audio_format_t encodedFormat) const
+ {
+     std::string tagName = {};
+-    sp<HwModule> hwModule = getModuleForDeviceType(type, encodedFormat, &tagName);
++    audio_format_t deviceFormat = encodedFormat;
++    sp<HwModule> hwModule = getModuleForDeviceType(type, deviceFormat, &tagName);
++    if (hwModule == 0 && encodedFormat != AUDIO_FORMAT_DEFAULT) {
++        // Ningun modulo de la politica declara el formato codificado (por
++        // ejemplo, el modulo "a2dp" que usa el HAL legacy de Bluetooth solo
++        // trabaja en PCM). Antes el dispositivo se rechazaba y no se adjuntaba
++        // a ningun modulo, con lo que el audio no se ruteaba al auricular
++        // Bluetooth. Si no hay soporte para el formato codificado, se reintenta
++        // como PCM.
++        ALOGW("%s: no HW module for device %04x with encoded format %04x, retrying as PCM",
++              __FUNCTION__, type, encodedFormat);
++        deviceFormat = AUDIO_FORMAT_DEFAULT;
++        hwModule = getModuleForDeviceType(type, deviceFormat, &tagName);
++    }
+     if (hwModule == 0) {
+         ALOGE("%s: could not find HW module for device %04x address %s", __FUNCTION__, type,
+               address);
+@@ -398,7 +411,7 @@ sp<DeviceDescriptor> HwModuleCollection::createDevice(const audio_devices_t type
+ 
+     sp<DeviceDescriptor> device = new DeviceDescriptor(type, tagName, address);
+     device->setName(name);
+-    device->setEncodedFormat(encodedFormat);
++    device->setEncodedFormat(deviceFormat);
+     device->setDynamic();
+     // Add the device to the list of dynamic devices
+     hwModule->addDynamicDevice(device);

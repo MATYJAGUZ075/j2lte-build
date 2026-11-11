@@ -1,0 +1,171 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 23:10:00 +0000
+Subject: [PATCH] camera: no reventar si el HAL de camara no publica un parametro
+
+La camara frontal de este dispositivo no se puede inicializar (el HAL de
+Samsung falla con VIDIOC_S_INPUT sobre /dev/video102) y por eso publica un
+conjunto de parametros vacio. Al crear las caracteristicas de camara2, el
+framework leia esos parametros con Camera.Parameters y reventaba:
+
+  Caused by: java.lang.NullPointerException: Attempt to invoke virtual method
+    'java.lang.String java.lang.String.trim()' on a null object reference
+      at java.lang.Float.parseFloat(Float.java:455)
+      at android.hardware.Camera$Parameters.getFocalLength(Camera.java:4066)
+      at android.hardware.camera2.legacy.LegacyMetadataMapper.mapLens(...)
+
+Con CameraX (la app de camara) eso es una InitializationException y la app se
+cierra al abrirse.
+
+Hasta ahora cada parametro que faltaba se tapaba con un parche especifico en
+LegacyMetadataMapper (rangos de FPS, paso de compensacion de exposicion,
+distancia focal). Aqui se arregla en el origen: Camera.Parameters no debe
+reventar cuando el HAL no publica un parametro.
+
+- getInt(), getFocalLength(), getHorizontalViewAngle() y
+  getVerticalViewAngle(): devuelven el valor por defecto (-1.0 para la
+  distancia focal y los angulos, que es lo que documenta la propia clase)
+  cuando el parametro no existe.
+- getFloat() con valor por defecto: tambien captura el caso null.
+- Los helpers que devuelven listas (split(), splitInt(), splitSize(),
+  splitRange()) devuelven una lista vacia en lugar de null, para que los
+  consumidores que iteran sobre ellas no reventen.
+
+Con esto, un HAL que no publica algun parametro ya no tumba la app.
+
+--- a/core/java/android/hardware/Camera.java
++++ b/core/java/android/hardware/Camera.java
+@@ -3166,7 +3166,14 @@ public class Camera {
+          * @return the int value of the parameter
+          */
+         public int getInt(String key) {
+-            return Integer.parseInt(mMap.get(key));
++            String value = mMap.get(key);
++            if (value == null) {
++                // El HAL de camara puede no publicar este parametro (por
++                // ejemplo, si la camara no se pudo inicializar). Antes
++                // Integer.parseInt(null) reventaba con NullPointerException.
++                return 0;
++            }
++            return Integer.parseInt(value);
+         }
+ 
+         /**
+@@ -4063,7 +4070,14 @@ public class Camera {
+          *         doesn't report focal length information.
+          */
+         public float getFocalLength() {
+-            return Float.parseFloat(get(KEY_FOCAL_LENGTH));
++            String value = get(KEY_FOCAL_LENGTH);
++            if (value == null) {
++                // El HAL no informa de la distancia focal: se devuelve -1.0,
++                // que es el valor documentado para "no informado". Antes
++                // Float.parseFloat(null) reventaba con NullPointerException.
++                return -1.0f;
++            }
++            return Float.parseFloat(value);
+         }
+ 
+         /**
+@@ -4073,7 +4087,11 @@ public class Camera {
+          *         doesn't report view angle information.
+          */
+         public float getHorizontalViewAngle() {
+-            return Float.parseFloat(get(KEY_HORIZONTAL_VIEW_ANGLE));
++            String value = get(KEY_HORIZONTAL_VIEW_ANGLE);
++            if (value == null) {
++                return -1.0f;
++            }
++            return Float.parseFloat(value);
+         }
+ 
+         /**
+@@ -4083,7 +4101,11 @@ public class Camera {
+          *         doesn't report view angle information.
+          */
+         public float getVerticalViewAngle() {
+-            return Float.parseFloat(get(KEY_VERTICAL_VIEW_ANGLE));
++            String value = get(KEY_VERTICAL_VIEW_ANGLE);
++            if (value == null) {
++                return -1.0f;
++            }
++            return Float.parseFloat(value);
+         }
+ 
+         /**
+@@ -4652,7 +4674,10 @@ public class Camera {
+         // Splits a comma delimited string to an ArrayList of String.
+         // Return null if the passing string is null or the size is 0.
+         private ArrayList<String> split(String str) {
+-            if (str == null) return null;
++            // Si el HAL no publica el parametro se devuelve una lista vacia en
++            // lugar de null: los consumidores iteran sobre la lista y con null
++            // reventaban con NullPointerException.
++            if (str == null) return new ArrayList<String>();
+ 
+             TextUtils.StringSplitter splitter = new TextUtils.SimpleStringSplitter(',');
+             splitter.setString(str);
+@@ -4666,7 +4691,7 @@ public class Camera {
+         // Splits a comma delimited string to an ArrayList of Integer.
+         // Return null if the passing string is null or the size is 0.
+         private ArrayList<Integer> splitInt(String str) {
+-            if (str == null) return null;
++            if (str == null) return new ArrayList<Integer>();
+ 
+             TextUtils.StringSplitter splitter = new TextUtils.SimpleStringSplitter(',');
+             splitter.setString(str);
+@@ -4674,7 +4699,6 @@ public class Camera {
+             for (String s : splitter) {
+                 substrings.add(Integer.parseInt(s));
+             }
+-            if (substrings.size() == 0) return null;
+             return substrings;
+         }
+ 
+@@ -4704,8 +4728,12 @@ public class Camera {
+         // Returns the value of a float parameter.
+         private float getFloat(String key, float defaultValue) {
+             try {
+-                return Float.parseFloat(mMap.get(key));
+-            } catch (NumberFormatException ex) {
++                String value = mMap.get(key);
++                if (value == null) {
++                    return defaultValue;
++                }
++                return Float.parseFloat(value);
++            } catch (NumberFormatException | NullPointerException ex) {
+                 return defaultValue;
+             }
+         }
+@@ -4722,7 +4750,7 @@ public class Camera {
+         // Splits a comma delimited string to an ArrayList of Size.
+         // Return null if the passing string is null or the size is 0.
+         private ArrayList<Size> splitSize(String str) {
+-            if (str == null) return null;
++            if (str == null) return new ArrayList<Size>();
+ 
+             TextUtils.StringSplitter splitter = new TextUtils.SimpleStringSplitter(',');
+             splitter.setString(str);
+@@ -4731,7 +4759,6 @@ public class Camera {
+                 Size size = strToSize(s);
+                 if (size != null) sizeList.add(size);
+             }
+-            if (sizeList.size() == 0) return null;
+             return sizeList;
+         }
+ 
+@@ -4755,10 +4782,13 @@ public class Camera {
+         // Example string: "(10000,26623),(10000,30000)". Return null if the
+         // passing string is null or the size is 0.
+         private ArrayList<int[]> splitRange(String str) {
+-            if (str == null || str.charAt(0) != '('
++            if (str == null) {
++                return new ArrayList<int[]>();
++            }
++            if (str.charAt(0) != '('
+                     || str.charAt(str.length() - 1) != ')') {
+                 Log.e(TAG, "Invalid range list string=" + str);
+-                return null;
++                return new ArrayList<int[]>();
+             }
+ 
+             ArrayList<int[]> rangeList = new ArrayList<int[]>();

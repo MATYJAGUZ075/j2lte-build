@@ -1,0 +1,50 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 23:15:00 +0000
+Subject: [PATCH] camera: no exponer la camara frontal que el HAL no puede iniciar
+
+En este dispositivo la camara frontal no se puede inicializar: el HAL de
+Samsung falla al abrirla y publica un conjunto de parametros vacio:
+
+  E/SecCameraHardware: FLiteV4l2 init: error -1, VIDIOC_S_INPUT
+  E/SecCameraHardware: initCamera X: error(-1), /dev/video102
+  E/SecCameraHardware: createInstance: error, camera cannot be initialiezed
+
+En dumpsys media.camera se ve que la camara 0 (trasera) publica sus 59
+parametros (focal-length 3.3, tamanos, modos...) y la camara 1 (frontal) no
+publica ninguno. Al crear las caracteristicas de esa camara, el framework
+reventaba (Float.parseFloat(null) al leer focal-length) y con CameraX la app
+de camara terminaba con InitializationException y se cerraba al abrirse.
+
+Los parches del framework (rangos de FPS, paso de compensacion, distancia
+focal) evitan el reventon, pero la camara frontal seguiria sin poder
+funcionar: sin parametros no hay tamanos de preview ni de captura.
+
+Aqui el wrapper solo expone la camara trasera, que es la que funciona. La
+frontal queda fuera de la lista de camaras del provider, asi que la app
+funciona con normalidad en lugar de fallar al abrirse.
+
+--- a/camera/CameraWrapper.cpp
++++ b/camera/CameraWrapper.cpp
+@@ -102,7 +102,21 @@ static int camera_get_number_of_cameras(void)
+     ALOGV("%s", __FUNCTION__);
+     if (check_vendor_module())
+         return 0;
+-    return gVendorModule->get_number_of_cameras();
++    int num_cameras = gVendorModule->get_number_of_cameras();
++    // La camara frontal (id "1") no se puede inicializar en este dispositivo:
++    // el HAL de Samsung falla con VIDIOC_S_INPUT al abrir /dev/video102 y
++    // publica un conjunto de parametros vacio (ni focal-length, ni tamanos,
++    // ni modos). Al crear las caracteristicas de esa camara, el framework
++    // reventaba y la app de camara se cerraba al abrirse.
++    //
++    // Se expone solo la camara trasera (id "0"), que si funciona. Si el HAL
++    // llegara a inicializar la frontal, se volverian a exponer todas.
++    if (num_cameras > 1) {
++        ALOGW("%s: exposing only the rear camera, the front one cannot be "
++              "initialized by the vendor HAL", __FUNCTION__);
++        return 1;
++    }
++    return num_cameras;
+ }
+ 
+ static int camera_get_camera_info(int camera_id, struct camera_info *info)

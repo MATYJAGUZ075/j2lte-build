@@ -510,6 +510,11 @@ jobs:
               # repo ("universal3475-common"), asi que tr '-' '/' partiria
               # en dos y no encontraria el repo.
               device-samsung-universal3475-common) NAME="device/samsung/universal3475-common" ;;
+              # El launcher de LOS20 es Trebuchet (LineageOS/android_packages_apps_Trebuchet,
+              # paquete com.android.launcher3). NO existe packages/apps/Launcher3 en el
+              # manifest de LOS20: un parche ahi aborta el build con
+              # "(omitido: packages/apps/Launcher3 no es un repo)".
+              packages-apps-Trebuchet) NAME="packages/apps/Trebuchet" ;;
               *) NAME="$(echo "$CASE" | tr '-' '/')" ;;
             esac
             echo "  aplicando $(basename "$P") -> $NAME"
@@ -525,7 +530,7 @@ jobs:
             DONE=0
             for T in $CANDS; do
               if [ ! -d "$HOME/los20/$T" ]; then
-                echo "    (omitido: $T no es un repo)"
+                echo "    (omitido: $T no es un repo sincronizado por el manifest)"
                 continue
               fi
               if git -C "$T" apply --check "$P" 2>/tmp/apply-err.txt; then
@@ -552,6 +557,14 @@ jobs:
             if [ "$DONE" != "1" ]; then
               echo "--- archivos que toca el parche ---"
               grep '^diff --git' "$P" | head -10 || true
+              echo "--- repos candidatos y su estado ---"
+              for T in $CANDS; do
+                if [ -d "$HOME/los20/$T" ]; then
+                  echo "    $T: sincronizado (no aplica el parche)"
+                else
+                  echo "    $T: NO sincronizado por el manifest"
+                fi
+              done
               echo "::error::el parche $P no aplica sobre ninguno de: $CANDS"
               exit 1
             fi
@@ -560,6 +573,7 @@ jobs:
           echo "=== parches aplicados: $APPLIED ==="
           git -C system/netd --no-pager diff --stat || true
           git -C frameworks/base --no-pager diff --stat || true
+          git -C packages/apps/Trebuchet --no-pager diff --stat || true
       # ============================================================
       # PODAS POST-SYNC (sincronizadas desde los20-build-stages.yml)
       # ============================================================

@@ -1,0 +1,83 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Wed, 12 Nov 2026 23:30:00 +0000
+Subject: [PATCH] launcher: no fallar si AppWidgetManager no esta disponible
+
+En este ROM el launcher es Trebuchet (LineageOS/android_packages_apps_Trebuchet,
+paquete com.android.launcher3), no packages/apps/Launcher3: por eso el parche
+anterior no aplicaba y abortaba el build en el paso "Parches de framework".
+
+El parpadeo del movil era un crash-loop del launcher:
+
+  FATAL EXCEPTION: launcher-loader
+  java.lang.NullPointerException: Attempt to invoke virtual method
+    'java.util.List android.appwidget.AppWidgetManager.getInstalledProvidersForProfile(
+      android.os.UserHandle)' on a null object reference
+      at com.android.launcher3.widget.WidgetManagerHelper.allWidgetsSteam(
+        WidgetManagerHelper.java:127)
+
+Causa: AppWidgetManager.getInstance(context) devuelve null cuando el servicio
+"appwidget" no esta publicado (el device tree no declaraba el feature
+android.software.app_widgets, asi que SystemServer no arrancaba
+AppWidgetService). Con AppWidgetManager a null, cualquier acceso a widgets
+revienta el proceso del launcher y el home screen entra en bucle.
+
+Aqui se comprueba null en todos los usos de AppWidgetManager, de forma que si
+el servicio no esta disponible el launcher arranca igualmente, sin widgets y
+sin crash. El fix de raiz (declarar el feature) esta en el parche 053 del
+device tree.
+
+---
+diff --git a/src/com/android/launcher3/widget/WidgetManagerHelper.java b/src/com/android/launcher3/widget/WidgetManagerHelper.java
+index 15fa844..7b55d9d 100644
+--- a/src/com/android/launcher3/widget/WidgetManagerHelper.java
++++ b/src/com/android/launcher3/widget/WidgetManagerHelper.java
+@@ -61,6 +61,9 @@ public class WidgetManagerHelper {
+         if (appWidgetId <= LauncherAppWidgetInfo.CUSTOM_WIDGET_ID) {
+             return CustomWidgetManager.INSTANCE.get(mContext).getWidgetProvider(appWidgetId);
+         }
++        if (mAppWidgetManager == null) {
++            return null;
++        }
+         AppWidgetProviderInfo info = mAppWidgetManager.getAppWidgetInfo(appWidgetId);
+         return info == null ? null : LauncherAppWidgetProviderInfo.fromProviderInfo(mContext, info);
+     }
+@@ -78,6 +81,10 @@ public class WidgetManagerHelper {
+             return allWidgetsSteam(mContext).collect(Collectors.toList());
+         }
+ 
++        if (mAppWidgetManager == null) {
++            return Collections.emptyList();
++        }
++
+         return mAppWidgetManager.getInstalledProvidersForPackage(
+                 packageUser.mPackageName, packageUser.mUser);
+     }
+@@ -93,6 +100,9 @@ public class WidgetManagerHelper {
+         if (appWidgetId <= LauncherAppWidgetInfo.CUSTOM_WIDGET_ID) {
+             return true;
+         }
++        if (mAppWidgetManager == null) {
++            return false;
++        }
+         return mAppWidgetManager.bindAppWidgetIdIfAllowed(
+                 appWidgetId, info.getProfile(), info.provider, options);
+     }
+@@ -114,12 +124,18 @@ public class WidgetManagerHelper {
+      * Returns if a AppWidgetProvider has marked a widget restored
+      */
+     public boolean isAppWidgetRestored(int appWidgetId) {
++        if (mAppWidgetManager == null) {
++            return false;
++        }
+         return !WidgetsModel.GO_DISABLE_WIDGETS && mAppWidgetManager.getAppWidgetOptions(
+                 appWidgetId).getBoolean(WIDGET_OPTION_RESTORE_COMPLETED);
+     }
+ 
+     private static Stream<AppWidgetProviderInfo> allWidgetsSteam(Context context) {
+         AppWidgetManager awm = context.getSystemService(AppWidgetManager.class);
++        if (awm == null) {
++            return Stream.empty();
++        }
+         return Stream.concat(
+                 UserCache.INSTANCE.get(context)
+                         .getUserProfiles()

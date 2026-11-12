@@ -1,6 +1,7 @@
 --- a/device-common.mk
 +++ b/device-common.mk
-@@ -1,11 +1,14 @@
+@@ -158,13 +158,16 @@
+ # provocaba el bloqueo infinito de PowerManagerService.
  # Permissions
  PRODUCT_COPY_FILES += \
 +    frameworks/native/data/etc/android.hardware.bluetooth.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.bluetooth.xml \
@@ -16,3 +17,4 @@
 +    frameworks/native/data/etc/android.software.app_widgets.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.software.app_widgets.xml
  # ramdisk
  PRODUCT_PACKAGES += \
+     init.power.rc \

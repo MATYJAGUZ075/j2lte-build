@@ -1,0 +1,44 @@
+diff --git a/device.mk b/device.mk
+index 87b311d..c34cf6d 100644
+--- a/device.mk
++++ b/device.mk
+@@ -184,14 +184,9 @@ PRODUCT_COPY_FILES += \
+ PRODUCT_COPY_FILES += \
+     $(LOCAL_PATH)/init/zram.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/j2lte-zram.rc
+ 
+-# Daemon MTP de Samsung (ya esta en el vendor como /vendor/bin/mtpd).
+-#
+-# Es el que habla con el driver f_mtp_samsung (CONFIG_USB_ANDROID_SAMSUNG_MTP
+-# en el kernel) a traves de /dev/usb_mtp_gadget, y el que sirve el protocolo
+-# MTP por el socket /dev/socket/mtp. Sin el servicio, la funcion mtp del
+-# gadget no sirve nada.
+-PRODUCT_COPY_FILES += \
+-    $(LOCAL_PATH)/init/usb-mtp.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/j2lte-mtpd.rc
++# MTP: lo sirve el MtpService de Android 13 contra el driver f_mtp de Google
++# (nodo /dev/mtp_usb, ioctls AOSP). Ya no se instala el daemon mtpd de Samsung
++# (/vendor/bin/mtpd): el kernel usa CONFIG_USB_ANDROID_SAMSUNG_MTP=n (FIX-058).
+ 
+ # Ajuste termico de la CPU: governor interactive reactivo, techo de 1196000 con
+ # guardarrail termico y valores conservadores.
+diff --git a/init/usb-mtp.rc b/init/usb-mtp.rc
+deleted file mode 100644
+index fd6a4e8..0000000
+--- a/init/usb-mtp.rc
++++ /dev/null
+@@ -1,16 +0,0 @@
+-# Daemon MTP de Samsung.
+-#
+-# El driver del kernel (f_mtp_samsung, CONFIG_USB_ANDROID_SAMSUNG_MTP) expone
+-# /dev/usb_mtp_gadget, y el daemon /vendor/bin/mtpd (que ya viene en el
+-# vendor) es el que habla con el y sirve el protocolo MTP.
+-#
+-# El init.universal3475.rc del device tree ya deja los permisos:
+-#   chmod 0660 /dev/usb_mtp_gadget
+-#   chown system mtp /dev/usb_mtp_gadget
+-#   mkdir /dev/socket/mtp 0770 system mtp
+-#
+-# Sin este servicio el daemon no arranca y la funcion mtp no sirve nada.
+-service mtpd /vendor/bin/mtpd
+-    class core
+-    user system
+-    group system mtp

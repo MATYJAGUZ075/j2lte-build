@@ -1,0 +1,29 @@
+diff --git a/arch/arm/configs/lineage-j2lte_defconfig b/arch/arm/configs/lineage-j2lte_defconfig
+index 30093a3..dbad645 100644
+--- a/arch/arm/configs/lineage-j2lte_defconfig
++++ b/arch/arm/configs/lineage-j2lte_defconfig
+@@ -2958,16 +2958,14 @@ CONFIG_USB_U_SERIAL=y
+ # CONFIG_USB_G_PRINTER is not set
+ CONFIG_USB_G_ANDROID=y
+ CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE=y
+-# MTP de Samsung: expone /dev/usb_mtp_gadget, que es lo que habla con el
+-# daemon /vendor/bin/mtpd (que ya viene en el vendor) por el socket
+-# /dev/socket/mtp. El init del device tree ya deja los permisos de ambos:
+-#   chmod 0660 /dev/usb_mtp_gadget
+-#   chown system mtp /dev/usb_mtp_gadget
+-#   mkdir /dev/socket/mtp 0770 system mtp
+-#
+-# Sin esto el g_android no expone la funcion mtp y no hay forma de poner el
+-# telefono en "Transferencia de archivos".
+-CONFIG_USB_ANDROID_SAMSUNG_MTP=y
++# MTP de Google/AOSP (FIX-058): sin CONFIG_USB_ANDROID_SAMSUNG_MTP,
++# android.c incluye f_mtp.c (no f_mtp_samsung.c). Ese driver registra
++# /dev/mtp_usb con los ioctls de AOSP (MTP_SEND_FILE, MTP_RECEIVE_FILE,
++# MTP_SEND_FILE_WITH_HEADER) que usa el MtpService de Android 13; el
++# /dev/usb_mtp_gadget de Samsung y el daemon /vendor/bin/mtpd no hacen falta.
++# Enforcing: la plataforma ya da mediaprovider -> mtp_device chr_file rw y
++# /system/etc/ueventd.rc fija /dev/mtp_usb 0660 root:mtp.
++# CONFIG_USB_ANDROID_SAMSUNG_MTP is not set
+ # CONFIG_USB_LOCK_SUPPORT_FOR_MDM is not set
+ CONFIG_USB_DUN_SUPPORT=y
+ CONFIG_USB_NCM_SUPPORT_MTU_CHANGE=y

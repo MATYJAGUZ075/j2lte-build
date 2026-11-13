@@ -95,7 +95,7 @@ toma ese lock por su cuenta (Mutex no reentrante).
  
 --- a/camera/Camera2Wrapper.cpp
 +++ b/camera/Camera2Wrapper.cpp
-@@ -654,6 +654,64 @@
+@@ -654,6 +654,63 @@
   * so this function will always only be called once per camera instance
   */
  
@@ -147,8 +147,7 @@ toma ese lock por su cuenta (Mutex no reentrante).
 +    if (params != NULL)
 +        free(params);
 +
-+    if (device->common.close != NULL)
-+        device->common.close(device);
++    camera2_device_close(device);
 +
 +    if (!usable)
 +        ALOGW("%s: la camara %s se abrio pero el HAL no publico parametros validos",

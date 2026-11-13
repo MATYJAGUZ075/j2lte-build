@@ -1,0 +1,17 @@
+diff --git a/sepolicy/vendor/gpsd.te b/sepolicy/vendor/gpsd.te
+index dc70e26..d82af10 100644
+--- a/sepolicy/vendor/gpsd.te
++++ b/sepolicy/vendor/gpsd.te
+@@ -33,7 +33,11 @@ allow gpsd gps_device:chr_file { setattr rw_file_perms };
+ allow gpsd gps_data_file:dir rw_dir_perms;
+ allow gpsd gps_data_file:fifo_file create_file_perms;
+ 
+-allow gpsd sysfs_wake_lock:file rw_file_perms;
++# Wakelocks: A13 usa /sys/power/wake_lock (sysfs_wake_lock) y binder al
++# servicio de suspension (system_suspend_server). Sin esto, con SELinux en
++# enforcing gpsd no puede adquirir el wakelock y el GPS se corta apagando
++# la pantalla.
++wakelock_use(gpsd)
+ 
+ allow gpsd sensorservice_service:service_manager find;
+ 

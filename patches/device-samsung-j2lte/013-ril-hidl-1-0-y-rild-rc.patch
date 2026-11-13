@@ -1,0 +1,111 @@
+--- a/device.mk
++++ b/device.mk
+@@ -94,19 +94,11 @@
+     init.target.rc
+ 
+ # Radio
+-# TODO(fase 5): bloque RIL completo pendiente de re-trabajo. En T desapareció
+-# TARGET_PROCESS_SDK_VERSION_OVERRIDE; el modelo objetivo es el del porte
+-# Exynos7420: radio@1.2-1.4 + config + TARGET_USES_VND_SECRIL contra el blob
+-# libsec-ril.so (tss310).
+-# C-1 (22/08): bloque Q neutralizado para el primer build.
+-# android.hardware.radio.deprecated@1.0 fue eliminado de AOSP en R y puede no
+-# existir como modulo en LOS 20 -> riesgo "missing module".
+-PRODUCT_PACKAGES += \
+-    libprotobuf-cpp-full \
+-    modemloader \
+-    libxml2
+-
+-# PRODUCT_COPY_FILES rild.rc se restaura en fase 5 junto al nuevo bloque RIL.
++# FIX-061: el bloque RIL (rild + libril + libsecril-client + rild.rc con los
++# sockets que libsec-ril.so necesita) vive en
++# device/samsung/universal3475-common/device-common.mk. Antes estaba
++# neutralizado aqui ("fase 5") y sin el no se registraba IRadio, la app de
++# telefono entraba en ANR y gpsd se quedaba sin NMEA.
+ 
+ # Vendor security patch level (vendor blobs from G550FYXXU1CRF1)
+ # Declarado via VENDOR_SECURITY_PATCH en BoardConfig.mk.
+diff --git a/manifest.xml b/manifest.xml
+index 1f3ece1..4027250 100644
+--- a/manifest.xml
++++ b/manifest.xml
+@@ -229,60 +229,25 @@
+          instala su propio fragment VINTF con override="true". Declarar el HIDL
+          ademas provocaria el conflicto de version mayor que se vio con USB. -->
+ 
+-    <!-- Radio: rild legacy + libsec-ril (tss310).
+-         TODO(fase 5): re-trabajo completo hacia radio@1.2-1.4 estilo 7420;
+-         radio.deprecated@1.0 se elimina cuando eso ocurra.
+-
+-         FIX-041: se retira la declaracion de android.hardware.radio@1.1 porque
+-         NO hay ninguna implementacion de IRadio en este arbol: el rild que
+-         corre es el legacy de Samsung (vendor.ril-daemon, libsec-ril.so sobre
+-         /dev/ttyS0), que no habla HIDL.
+-
+-         Medido en el telefono con este arbol:
+-
+-           E init: Control message: Could not find
+-                   'android.hardware.radio@1.1::IRadio/slot1' for
+-                   ctl.interface_start from pid: 2257 (/system/bin/hwservicemanager)
+-             (se repite CADA SEGUNDO, en bucle)
+-           W HidlServiceManagement: Waited one second for
+-                   android.hardware.radio@1.1::IRadio/slot1
+-           W libc: Unable to set property "ctl.interface_start" to
+-                   "android.hardware.radio@1.1::IRadio/slot1": error code: 0x20
+-
+-         El coste real no es el reintento, es la app de telefono:
+-
+-           E ActivityManager: ANR in com.android.phone
+-           I Watchdog: Interesting Java process com.android.phone died. Pid 4279
+-           I Watchdog: Interesting Java process com.android.phone started. Pid 4731
+-           E ActivityManager: ANR in com.android.phone
+-           I Watchdog: Interesting Java process com.android.phone died. Pid 4731
+-           I Watchdog: Interesting Java process com.android.phone started. Pid 4883
+-
+-         O sea: la app de telefono se cuelga, el watchdog la mata y la reinicia
+-         una vez por minuto desde el arranque. En un equipo de 880 MB eso es CPU
+-         y RAM que no hay.
+-
+-         Con el HAL declarado y sin implementacion el framework no tiene a quien
+-         preguntar, igual que paso con audio, keymaster, configstore y power.
+-         Se retira la declaracion; el rild legacy sigue corriendo igual, y la
+-         limitacion de no tener IRadio es del port, no de la declaracion.
+-
+-         Con la entrada retirada, dumpsys | grep -c IRadio debe dar 0 y la app
+-         de telefono no debe volver a hacer ANR. -->
+-
+-    <!--FIX-RADIO   <hal format="hidl"> -->
+-    <!--FIX-RADIO       <name>android.hardware.radio</name> -->
+-    <!--FIX-RADIO       <transport>hwbinder</transport> -->
+-    <!--FIX-RADIO       <version>1.1</version> -->
+-    <!--FIX-RADIO       <interface> -->
+-    <!--FIX-RADIO           <name>IRadio</name> -->
+-    <!--FIX-RADIO           <instance>slot1</instance> -->
+-    <!--FIX-RADIO       </interface> -->
+-    <!--FIX-RADIO       <interface> -->
+-    <!--FIX-RADIO           <name>ISap</name> -->
+-    <!--FIX-RADIO           <instance>slot1</instance> -->
+-    <!--FIX-RADIO       </interface> -->
+-    <!--FIX-RADIO   </hal> -->
++    <!-- Radio: rild legacy (HIDL) + libsec-ril (tss310).
++         FIX-061: se declara exactamente lo que registra libril de
++         hardware/samsung: android.hardware.radio@1.0::IRadio/slot1. Antes
++         estaba declarado 1.1 mientras el servicio registraba 1.0, asi que
++         hwservicemanager rechazaba el registro, RILJ no encontraba IRadio y
++         com.android.phone entraba en ANR (FIX-041 lo habia retirado del todo).
++         RILJ en A13 negocia 1.6 -> ... -> 1.0, y el 1.0 sirve.
++         ISap no se declara: se registra por el socket sap_uim_socket1, que
++         define el rild.rc del common; declararlo en VINTF solo anadiria un
++         reintento de ctl.interface_start si el registro tardara. -->
++    <hal format="hidl">
++        <name>android.hardware.radio</name>
++        <transport>hwbinder</transport>
++        <version>1.0</version>
++        <interface>
++            <name>IRadio</name>
++            <instance>slot1</instance>
++        </interface>
++    </hal>
+     <!-- Sensors: wrapper HIDL de A13 (android.hardware.sensors@1.0-impl
+          + @1.0-service) sobre el blob sensors.universal3475.so.
+ 

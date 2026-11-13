@@ -1,0 +1,43 @@
+diff --git a/device-common.mk b/device-common.mk
+index 7cb0a0c..bb73106 100644
+--- a/device-common.mk
++++ b/device-common.mk
+@@ -165,6 +165,38 @@ PRODUCT_COPY_FILES += \
+     frameworks/native/data/etc/android.hardware.usb.host.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.usb.host.xml \
+     frameworks/native/data/etc/android.hardware.wifi.direct.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.wifi.direct.xml \
+     frameworks/native/data/etc/android.hardware.wifi.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.wifi.xml
++# Radio — rild legacy con HIDL IRadio 1.0 sobre el blob libsec-ril.so (tss310).
++#
++# FIX-061: el bloque RIL se habia neutralizado en el port a T ("fase 5") y sin
++# el el telefono arranca sin radio: rild corre pero nadie registra
++# android.hardware.radio@1.0::IRadio/slot1 (el rild.rc de AOSP no crea los
++# sockets que el blob de Samsung espera, y el manifest declaraba 1.1 mientras
++# libril registra 1.0), asi que RILJ no puede hablar con el modem y la app de
++# telefono entra en ANR. Ademas gpsd recibe el NMEA via RIL: libsecril-client
++# se conecta al socket /dev/socket/rild, sin el no hay fixes.
++#
++# rild + libril (hardware/samsung lineage-20; libril se construye por
++# BOARD_PROVIDES_LIBRIL=true + BOARD_MODEM_TYPE=tss310) exponen IRadio 1.0.
++# cbd se instala como blob de vendor/samsung y no necesita modulo.
++PRODUCT_PACKAGES += \
++    libprotobuf-cpp-full \
++    libsecril-client \
++    modemloader \
++    libxml2 \
++    rild \
++    libril \
++    libreference-ril \
++    libsecril-client-sap \
++    android.hardware.radio@1.1 \
++    android.hardware.radio.deprecated@1.0
++
++# rild.rc propio (no el de AOSP): crea los sockets rild/rild-debug/sap_uim_socket1
++# que libsec-ril.so y libsecril-client usan, y arranca rild con -c 1 -l.
++# El override sobre el rc de AOSP (mismo destino) es el mismo que usaba el
++# arbol de 17.1.
++PRODUCT_COPY_FILES += \
++    $(LOCAL_PATH)/configs/init/rild.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/rild.rc
++
+ # ramdisk
+ PRODUCT_PACKAGES += \
+     init.power.rc \

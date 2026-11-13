@@ -1,0 +1,67 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 17:46:00 +0000
+Subject: [PATCH] fimc-is: permitir reabrir el nodo del sensor FIMC
+
+Este parche es el que lleva el kernel de LOS19 (samsungexynos3475), donde la
+camara frontal del J2 funciona, y que falta en nuestro fork: ahi el HAL de
+Samsung abre dos veces el nodo FIMC de captura (ss0/ss1) y el kernel
+devolvia -EMFILE ("already open"), dejando la camara frontal sin
+inicializar (error VIDIOC_S_INPUT al abrir /dev/video102) y con un conjunto
+de parametros vacio.
+
+Se contabilizan las aperturas con open_count: la segunda y siguientes
+devuelven OK y el cierre real se hace cuando el contador llega a cero.
+
+Referencia: diff entre el kernel de LOS19 y el nuestro solo difiere en
+fimc-is-device-sensor.c/.h en este punto.
+
+---
+diff --git a/drivers/media/platform/exynos/fimc-is/fimc-is-device-sensor.c b/drivers/media/platform/exynos/fimc-is/fimc-is-device-sensor.c
+index 68a5c14..a605cdb 100755
+--- a/drivers/media/platform/exynos/fimc-is/fimc-is-device-sensor.c
++++ b/drivers/media/platform/exynos/fimc-is/fimc-is-device-sensor.c
+@@ -1153,9 +1153,9 @@ int fimc_is_sensor_open(struct fimc_is_device_sensor *device,
+ 	pdata = device->pdata;
+ 
+ 	if (test_bit(FIMC_IS_SENSOR_OPEN, &device->state)) {
+-		merr("already open", device);
+-		ret = -EMFILE;
+-		goto p_err;
++		merr("already open, allowing for Android 12 compat", device);
++		device->open_count++;
++		return 0;
+ 	}
+ 
+ 	clear_bit(FIMC_IS_SENSOR_MCLK_ON, &device->state);
+@@ -1218,6 +1218,7 @@ int fimc_is_sensor_open(struct fimc_is_device_sensor *device,
+ 	device->dtp_check = true;
+ #endif
+ 
++	device->open_count = 1;
+ 	set_bit(FIMC_IS_SENSOR_OPEN, &device->state);
+ 
+ p_err:
+@@ -1244,6 +1245,11 @@ int fimc_is_sensor_close(struct fimc_is_device_sensor *device)
+ 		goto p_err;
+ 	}
+ 
++	device->open_count--;
++	if (device->open_count > 0) {
++		return 0;
++	}
++
+ 	/* for mediaserver force close */
+ 	ischain = device->ischain;
+ 	if (ischain) {
+diff --git a/drivers/media/platform/exynos/fimc-is/fimc-is-device-sensor.h b/drivers/media/platform/exynos/fimc-is/fimc-is-device-sensor.h
+index 7dc3cf9..83c872e 100755
+--- a/drivers/media/platform/exynos/fimc-is/fimc-is-device-sensor.h
++++ b/drivers/media/platform/exynos/fimc-is/fimc-is-device-sensor.h
+@@ -194,6 +194,7 @@ struct fimc_is_device_sensor {
+ 	bool						request_cam_qos;
+ 	bool						request_int_qos;
+ 	bool						request_mif_qos;
++	int						open_count;
+ };
+ 
+ int fimc_is_sensor_open(struct fimc_is_device_sensor *device,

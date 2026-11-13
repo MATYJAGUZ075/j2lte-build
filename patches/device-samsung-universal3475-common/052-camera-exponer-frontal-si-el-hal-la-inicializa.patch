@@ -1,0 +1,180 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 17:45:00 +0000
+Subject: [PATCH] camera: exponer la camara frontal solo si el HAL la inicializa
+
+El parche 051 dejo la camara frontal oculta porque el HAL de Samsung no
+conseguia abrir /dev/video102 (nodo FIMC de captura frontal) y publicaba un
+conjunto de parametros vacio, lo que reventaba el framework de Android 13.
+
+La causa real estaba en el KERNEL, no en el HAL: el kernel de LOS19 (donde la
+camara frontal si funciona) trae un parche en
+drivers/media/platform/exynos/fimc-is/fimc-is-device-sensor.c que permite
+volver a abrir el nodo del sensor FIMC ("already open, allowing for Android
+12 compat"); el nuestro devuelve -EMFILE cuando el nodo ya esta abierto, y
+ese es el motivo por el que la inicializacion de la frontal falla con
+VIDIOC_S_INPUT (ese parche va en el kernel, ver 0002 del kernel).
+
+Con el kernel arreglado, la frontal ya se inicializa y publica sus
+parametros. Este parche del wrapper:
+
+  1. Vuelve a exponer las camaras que da el HAL (trasera y frontal).
+  2. Sondea la frontal ANTES de decidir: abre y cierra el dispositivo "1"
+     contra el HAL y comprueba que publica parametros reales
+     (supported-picture-sizes y focal-length). Si el HAL sigue sin
+     inicializarla, se sigue exponiendo solo la trasera, de modo que la app
+     de camara nunca se cierra al abrirse.
+
+El sondeo se hace fuera de gCameraWrapperLock porque camera2_device_open()
+toma ese lock por su cuenta (Mutex no reentrante).
+
+---
+--- a/camera/CameraWrapper.cpp
++++ b/camera/CameraWrapper.cpp
+@@ -41,6 +41,7 @@
+ 
+ static camera_module_t *gVendorModule = 0;
+ static const camera_module_callbacks_t *gCallbacks = NULL;
++static bool gFrontCameraUsable = false;
+ 
+ static int check_vendor_module()
+ {
+@@ -98,24 +99,38 @@
+ 
+ static int camera_get_number_of_cameras(void)
+ {
+-    android::Mutex::Autolock lock(gCameraWrapperLock);
+-    ALOGV("%s", __FUNCTION__);
+-    if (check_vendor_module())
+-        return 0;
+-    int num_cameras = gVendorModule->get_number_of_cameras();
+-    // La camara frontal (id "1") no se puede inicializar en este dispositivo:
+-    // el HAL de Samsung falla con VIDIOC_S_INPUT al abrir /dev/video102 y
+-    // publica un conjunto de parametros vacio (ni focal-length, ni tamanos,
+-    // ni modos). Al crear las caracteristicas de esa camara, el framework
+-    // reventaba y la app de camara se cerraba al abrirse.
++    int num_cameras = 0;
++
++    {
++        android::Mutex::Autolock lock(gCameraWrapperLock);
++        ALOGV("%s", __FUNCTION__);
++        if (check_vendor_module())
++            return 0;
++        num_cameras = gVendorModule->get_number_of_cameras();
++    }
++
++    // La camara frontal (id "1") solo se expone si el HAL de Samsung
++    // consigue inicializarla. Si no puede abrir /dev/video102 (el nodo
++    // FIMC de captura frontal) publica un conjunto de parametros vacio y el
++    // framework de Android 13 reventaba al construir las caracteristicas
++    // estaticas de esa camara, cerrando la app de camara al abrirse.
+     //
+-    // Se expone solo la camara trasera (id "0"), que si funciona. Si el HAL
+-    // llegara a inicializar la frontal, se volverian a exponer todas.
+-    if (num_cameras > 1) {
+-        ALOGW("%s: exposing only the rear camera, the front one cannot be "
+-              "initialized by the vendor HAL", __FUNCTION__);
+-        return 1;
++    // El sondeo se hace FUERA del lock: camera2_device_is_usable() abre y
++    // cierra el dispositivo y toma gCameraWrapperLock por su cuenta.
++    if (num_cameras > 1 && !gFrontCameraUsable) {
++        gFrontCameraUsable = camera2_device_is_usable("1") == 1;
++        if (gFrontCameraUsable) {
++            ALOGI("%s: la camara frontal se inicializa correctamente, "
++                  "se expone junto a la trasera", __FUNCTION__);
++        } else {
++            ALOGW("%s: exposing only the rear camera, the front one cannot be "
++                  "initialized by the vendor HAL", __FUNCTION__);
++        }
+     }
++
++    if (num_cameras > 1 && !gFrontCameraUsable)
++        return 1;
++
+     return num_cameras;
+ }
+ 
+--- a/camera/Camera2Wrapper.cpp
++++ b/camera/Camera2Wrapper.cpp
+@@ -654,6 +654,64 @@
+  * so this function will always only be called once per camera instance
+  */
+ 
++static bool flattened_param_has_value(const char *params, const char *key)
++{
++    if (params == NULL || key == NULL)
++        return false;
++
++    size_t key_len = strlen(key);
++    const char *p = params;
++
++    while ((p = strstr(p, key)) != NULL) {
++        bool at_key_start = (p == params) || (p[-1] == ';');
++        if (at_key_start && p[key_len] == '=') {
++            const char *value = p + key_len + 1;
++            const char *end = strchr(value, ';');
++            size_t len = end ? (size_t)(end - value) : strlen(value);
++            return len > 0;
++        }
++        p += key_len;
++    }
++
++    return false;
++}
++
++int camera2_device_is_usable(const char *id)
++{
++    hw_device_t *device = NULL;
++    camera_device_t *cam = NULL;
++    char *params = NULL;
++    bool usable = false;
++
++    if (id == NULL)
++        return 0;
++
++    if (camera2_device_open(NULL, id, &device) != 0 || device == NULL) {
++        ALOGW("%s: la camara %s no se pudo abrir en el HAL de Samsung",
++                __FUNCTION__, id);
++        return 0;
++    }
++
++    cam = (camera_device_t *)device;
++    if (cam->ops != NULL && cam->ops->get_parameters != NULL) {
++        params = cam->ops->get_parameters(cam);
++        usable = flattened_param_has_value(params, "supported-picture-sizes") &&
++                 flattened_param_has_value(params, "focal-length");
++    }
++
++    if (params != NULL)
++        free(params);
++
++    if (device->common.close != NULL)
++        device->common.close(device);
++
++    if (!usable)
++        ALOGW("%s: la camara %s se abrio pero el HAL no publico parametros validos",
++                __FUNCTION__, id);
++
++    return usable ? 1 : 0;
++}
++
+ int camera2_device_open(const hw_module_t* module, const char* name,
+                 hw_device_t** device)
+ {
+--- a/camera/Camera2Wrapper.h
++++ b/camera/Camera2Wrapper.h
+@@ -18,3 +18,15 @@
+ #include <hardware/camera2.h>
+ 
+ int camera2_device_open(const hw_module_t* module, const char* name, hw_device_t** device);
++
++/*
++ * Abre la camara indicada contra el HAL de Samsung y comprueba que el HAL
++ * publica parametros utilizables (tamanos de captura y distancia focal).
++ * Devuelve 1 si la camara se puede inicializar y 0 si no.
++ *
++ * Se usa para decidir si la camara frontal se expone al framework: si el
++ * HAL no consigue inicializarla (no puede abrir /dev/video102) publica un
++ * conjunto de parametros vacio y el framework de Android 13 reventaba al
++ * construir las caracteristicas estaticas de esa camara.
++ */
++int camera2_device_is_usable(const char* id);

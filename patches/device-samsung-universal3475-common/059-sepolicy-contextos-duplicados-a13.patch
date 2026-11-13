@@ -1,0 +1,35 @@
+diff --git a/sepolicy/vendor/file_contexts b/sepolicy/vendor/file_contexts
+--- a/sepolicy/vendor/file_contexts
++++ b/sepolicy/vendor/file_contexts
+@@ -92,7 +92,7 @@
+ /data/nfc(/.*)?              u:object_r:nfc_data_file:s0
+ /data/\.cid\.info                  u:object_r:wifi_data_file:s0
+ /data/misc/conn/\.wifiver\.info    u:object_r:wifi_data_file:s0
+-/data/misc/radio(/.*)?       u:object_r:radio_data_file:s0
++/data/misc/radio(/.*)?       u:object_r:radio_core_data_file:s0
+ /data/vendor/display(/.*)?   u:object_r:display_vendor_data_file:s0
+ 
+ # gps
+diff --git a/sepolicy/vendor/file_contexts_cpefs b/sepolicy/vendor/file_contexts_cpefs
+deleted file mode 100644
+--- a/sepolicy/vendor/file_contexts_cpefs
++++ /dev/null
+@@ -1 +0,0 @@
+-/cpefs(/.*)?                 u:object_r:system_file:s0
+diff --git a/sepolicy/vendor/rild.te b/sepolicy/vendor/rild.te
+--- a/sepolicy/vendor/rild.te
++++ b/sepolicy/vendor/rild.te
+@@ -35,8 +35,13 @@ allow rild proc_qtaguid_stat:file r_file_perms;
+ r_dir_file(rild, mediaserver);
+ 
+ # /data/misc/radio/*
++# En A13 AOSP etiqueta /data/misc/radio como radio_core_data_file (en Q era
++# radio_data_file); se conservan ambas reglas para no romper si algun dia
++# vuelve la etiqueta antigua.
+ allow rild radio_data_file:dir rw_dir_perms;
+ allow rild radio_data_file:file create_file_perms;
++allow rild radio_core_data_file:dir rw_dir_perms;
++allow rild radio_core_data_file:file create_file_perms;
+ # /data/data/com.android.providers.telephony/databases/telephony.db
+ allow rild radio_data_file:lnk_file r_file_perms;
+ 

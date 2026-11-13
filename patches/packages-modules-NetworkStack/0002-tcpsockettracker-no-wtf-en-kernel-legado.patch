@@ -1,0 +1,53 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 03:10:00 +0000
+Subject: [PATCH] NetworkStack: no abortar con Log.wtf al parsear socket-info
+
+En el telefono, system_server llenaba el dropbox de TerribleFailures:
+
+  system_server_wtf@1794576146423.txt.gz
+  Process: system_server
+  Subject: TcpSocketTracker
+  android.util.Log$TerribleFailure: Unexpected socket info parsing, family 10
+    at com.android.networkstack.netlink.TcpSocketTracker.pollSocketsInfo(
+        TcpSocketTracker.java:255)
+
+El kernel 3.10 de este dispositivo devuelve el mensaje SOCK_DIAG_BY_FAMILY
+con un layout distinto al que espera A13 (offset del cookie y tamano de
+StructInetDiagMsg), de modo que el parseo del socket falla siempre que hay
+un socket IPv6 abierto.
+
+Log.wtf() es LOG_ALWAYS_FATAL: cada socket-info generaba un
+TerribleFailure en system_server con el buffer completo en base64 (~60 KB
+por entrada) y el dropbox crecia sin control. Se degrada a Log.w: el
+mensaje malformado se descarta y el stack sigue con normalidad.
+
+No cambia el comportamiento funcional: estas estadisticas de TCP solo
+alimentan la deteccion de data stalls del NetworkStack.
+
+---
+diff --git a/src/com/android/networkstack/netlink/TcpSocketTracker.java b/src/com/android/networkstack/netlink/TcpSocketTracker.java
+index 9cc2d60..4381c08 100644
+--- a/src/com/android/networkstack/netlink/TcpSocketTracker.java
++++ b/src/com/android/networkstack/netlink/TcpSocketTracker.java
+@@ -252,7 +252,20 @@ public class TcpSocketTracker {
+                         }
+                     }
+                 } catch (IllegalArgumentException | BufferUnderflowException e) {
+-                    Log.wtf(TAG, "Unexpected socket info parsing, family " + family
++                    // El kernel 3.10 de este dispositivo devuelve el mensaje
++                    // SOCK_DIAG_BY_FAMILY con otro layout que el de A13
++                    // (el offset del cookie y el tamano de StructInetDiagMsg
++                    // son distintos), asi que el parseo del socket falla.
++                    //
++                    // Log.wtf() es LOG_ALWAYS_FATAL: cada socket-info que llega
++                    // generaba un TerribleFailure en system_server (dropbox
++                    // system_server_wtf@...* "Unexpected socket info parsing,
++                    // family 10") y una entrada de 60 KB de buffer en base64
++                    // por cada fallo. Se degrada a Log.w: el mensaje se
++                    // descarta y el stack sigue, que es lo unico que hace
++                    // falta (estas estadisticas de TCP solo alimentan la
++                    // deteccion de data stalls).
++                    Log.w(TAG, "Unexpected socket info parsing, family " + family
+                             + " buffer:" + bytes + " "
+                             + Base64.getEncoder().encodeToString(bytes.array()), e);
+                 }

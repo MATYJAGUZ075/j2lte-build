@@ -1,0 +1,13 @@
+diff --git a/overlay/lineage-sdk/lineage/res/res/values/config.xml b/overlay/lineage-sdk/lineage/res/res/values/config.xml
+index 3087c8c..d860b75 100644
+--- a/overlay/lineage-sdk/lineage/res/res/values/config.xml
++++ b/overlay/lineage-sdk/lineage/res/res/values/config.xml
+@@ -26,8 +26,6 @@
+     <string-array name="config_externalLineageServices">
+         <item>org.lineageos.platform.internal.ProfileManagerService</item>
+         <item>org.lineageos.platform.internal.LineageHardwareService</item>
+-        <item>org.lineageos.platform.internal.PerformanceManagerService</item>
+-        <item>org.lineageos.platform.internal.LineageAudioService</item>
+         <item>org.lineageos.platform.internal.TrustInterfaceService</item>
+         <item>org.lineageos.platform.internal.LineageSettingsService</item>
+         <item>org.lineageos.platform.internal.LineageGlobalActionsService</item>

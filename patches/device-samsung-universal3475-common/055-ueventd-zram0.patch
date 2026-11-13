@@ -1,0 +1,14 @@
+diff --git a/ramdisk/etc/ueventd.universal3475.rc b/ramdisk/etc/ueventd.universal3475.rc
+index c412cf7..32f760c 100644
+--- a/ramdisk/etc/ueventd.universal3475.rc
++++ b/ramdisk/etc/ueventd.universal3475.rc
+@@ -190,3 +190,9 @@
+ # Fingerprint Sensor
+ /dev/vfsspi        0660   system     system
+ /dev/esfp0         0660   system     system
++
++# zram: swap comprimido en RAM (256 MB con LZ4, activated in init/zram.rc).
++# /dev is a tmpfs in this ROM, not devtmpfs, so without this rule the node
++# never appears and the swapon in post-fs-data fails: the phone ends up
++# swapping to the flash partition (vnswap0) only.
++/dev/zram0             0660   root       system

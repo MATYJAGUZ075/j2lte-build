@@ -1,0 +1,247 @@
+From 58d3228385da87d740be1d82f4b909675788f642 Mon Sep 17 00:00:00 2001
+From: dev <dev@local>
+Date: Fri, 13 Nov 2026 15:47:48 -0300
+Subject: [PATCH] opt
+
+---
+ Thermal/j2lte-thermal-guard.sh | 65 +++++++++++++++++++++++++++++++
+ Thermal/j2lte-thermal-tune.sh  | 71 ++++++++++++++++++++++++----------
+ Thermal/j2lte-thermal.rc       | 10 +++++
+ device.mk                      | 13 +++++--
+ init/opt-tune.rc               | 20 ++++++++++
+ 5 files changed, 155 insertions(+), 24 deletions(-)
+ create mode 100644 Thermal/j2lte-thermal-guard.sh
+ create mode 100644 init/opt-tune.rc
+
+diff --git a/Thermal/j2lte-thermal-guard.sh b/Thermal/j2lte-thermal-guard.sh
+new file mode 100644
+index 0000000..4e90398
+--- /dev/null
++++ b/Thermal/j2lte-thermal-guard.sh
+@@ -0,0 +1,65 @@
++#!/system/bin/sh
++# Guardarrail termico: baja el techo de la CPU cuando el SoC se calienta.
++#
++# El cooling del kernel es pasivo: cuando la zona termica pasa del umbral,
++# el cooling device (thermal-cpufreq-0) sube de estado y el kernel baja la
++# frecuencia por su cuenta. El problema es que con el techo alto el SoC puede
++# pasar de 70 grados y el PMIC acaba reiniciando el equipo por proteccion
++# termica (apagones en mitad de una carga o al cargar con la pantalla
++# encendida). Con el techo a 897 MHz la temperatura se queda entre 55 y 62
++# grados, pero el telefono va lento.
++#
++# Este servicio mantiene el techo alto cuando el SoC esta frio y lo baja por
++# escalones cuando el cooling device o la zona termica avisan:
++#
++#   cooling cur_state >= 4  o  temp >= 68000  ->  897000
++#   cooling cur_state >= 1  o  temp >= 62000  ->  1196000
++#   resto                                    ->  1300000
++#
++# Escribe solo scaling_max_freq (techo blando): el limite duro del driver
++# (cpufreq_max_limit) no existe en este kernel.
++
++MAX_HOT=1300000
++MAX_WARM=1196000
++MAX_COOL=897000
++TEMP_WARM=62000
++TEMP_COOL=68000
++
++while true; do
++    state=0
++    for c in /sys/class/thermal/cooling_device*; do
++        [ -f "$c/cur_state" ] || continue
++        cur=$(cat "$c/cur_state" 2>/dev/null)
++        case "$cur" in
++            ''|*[!0-9]*) continue ;;
++        esac
++        [ "$cur" -gt "$state" ] && state=$cur
++    done
++
++    temp=0
++    for z in /sys/class/thermal/thermal_zone*; do
++        [ -f "$z/temp" ] || continue
++        t=$(cat "$z/temp" 2>/dev/null)
++        case "$t" in
++            ''|*[!0-9]*) continue ;;
++        esac
++        [ "$t" -gt "$temp" ] && temp=$t
++    done
++
++    if [ "$state" -ge 4 ] || [ "$temp" -ge "$TEMP_COOL" ]; then
++        cap=$MAX_COOL
++    elif [ "$state" -ge 1 ] || [ "$temp" -ge "$TEMP_WARM" ]; then
++        cap=$MAX_WARM
++    else
++        cap=$MAX_HOT
++    fi
++
++    for p in /sys/devices/system/cpu/cpu*/cpufreq; do
++        [ -d "$p" ] || continue
++        current=$(cat "$p/scaling_max_freq" 2>/dev/null)
++        [ "$current" = "$cap" ] && continue
++        echo "$cap" > "$p/scaling_max_freq" 2>/dev/null
++    done
++
++    sleep 20
++done
+diff --git a/Thermal/j2lte-thermal-tune.sh b/Thermal/j2lte-thermal-tune.sh
+index 4505b1a..8e559fb 100644
+--- a/Thermal/j2lte-thermal-tune.sh
++++ b/Thermal/j2lte-thermal-tune.sh
+@@ -1,28 +1,57 @@
+ #!/system/bin/sh
+-# Limita la frecuencia maxima de la CPU y ajusta el governor interactive.
++# Ajusta el governor interactive y el techo de frecuencia de la CPU.
+ #
+-# El Exynos 3475 con cooling pasivo se recalienta mucho: se pasa de 70
+-# grados y el PMIC acaba reiniciando el equipo por proteccion termica
+-# (apagones en mitad de una carga, o al cargar con la pantalla encendida).
++# Antes este script escribia en
++#   /sys/devices/system/cpu/cpu*/cpufreq/interactive/...
++# una ruta que NO existe en este kernel: todos los writes fallaban en silencio
++# y el governor se quedaba con los valores por defecto del kernel
++# (go_hispeed_load=99, target_loads=90, min_sample_time=80 ms, timer_slack=80 ms,
++# io_is_busy=0, boost=0). Medido en el telefono: 1.841.322 ticks a 403 MHz y
++# solo 890 a 1.3 GHz, es decir, el CPU vivia en la frecuencia minima.
+ #
+-# Con el techo a 897000 la temperatura se queda entre 55 y 62 grados y
+-# desaparecen los reinicios por temperatura, a cambio de algo menos de
+-# velocidad punta.
++# La ruta real de la politica (una sola para los 4 cores) es:
++#   /sys/devices/system/cpu/cpufreq/interactive/
++# En otros kernels puede haber una por CPU, asi que se prueban las dos.
+ #
+-# Se aplica a todas las CPUs: el SoC tiene mas de un cluster y cada uno
+-# tiene su propio dominio de frecuencia.
+-MAX_FREQ=897000
++# Techo de frecuencia: antes 897000 fijo. El hardware da 1.3 GHz
++# (cpuinfo_max_freq=1300000) y el kernel tiene cooling pasivo
++# (thermal-cpufreq-0) que ya baja la frecuencia cuando hace calor. Aqui el
++# techo sube a 1196000 (L3) y el guardarrail termico
++# (j2lte-thermal-guard.sh) lo baja si el SoC se calienta de verdad.
++#
++# El "limite duro" (cpufreq_max_limit) no existe en este driver, asi que no se
++# toca: el techo blando es scaling_max_freq.
++
++MAX_FREQ=1196000
++POLICY_DIR="/sys/devices/system/cpu/cpufreq/interactive"
+ 
+-for p in /sys/devices/system/cpu/cpu*/cpufreq; do
+-    [ -d "$p" ] || continue
++set_policy()
++{
++    for d in "$POLICY_DIR" /sys/devices/system/cpu/cpu*/cpufreq/interactive; do
++        [ -d "$d" ] || continue
++        # Governor reactivo: sube rapido ante carga, baja rapio.
++        echo 1300000 > "$d/hispeed_freq" 2>/dev/null
++        echo 75 > "$d/go_hispeed_load" 2>/dev/null
++        echo "60 1196000:70 1300000:80" > "$d/target_loads" 2>/dev/null
++        echo "10000 1300000:5000" > "$d/above_hispeed_delay" 2>/dev/null
++        echo 20000 > "$d/min_sample_time" 2>/dev/null
++        echo 20000 > "$d/timer_rate" 2>/dev/null
++        echo 40000 > "$d/timer_slack" 2>/dev/null
++        # Con carga de I/O (swap en flash) tambien sube: sin esto el governor
++        # ignora el I/O y el sistema se atasca esperando al eMMC.
++        echo 1 > "$d/io_is_busy" 2>/dev/null
++        # Boost ante eventos de entrada: respuesta inmediata al scroll.
++        echo 1 > "$d/boost" 2>/dev/null
++    done
++}
+ 
+-    # cpufreq_max_limit es el techo duro (no lo puede subir nadie mas alla).
+-    echo "$MAX_FREQ" > "$p/cpufreq_max_limit" 2>/dev/null
+-    echo "$MAX_FREQ" > "$p/scaling_max_freq" 2>/dev/null
++set_freq_cap()
++{
++    for p in /sys/devices/system/cpu/cpu*/cpufreq; do
++        [ -d "$p" ] || continue
++        echo "$1" > "$p/scaling_max_freq" 2>/dev/null
++    done
++}
+ 
+-    [ -d "$p/interactive" ] || continue
+-    echo 507000 > "$p/interactive/hispeed_freq" 2>/dev/null
+-    echo 95 > "$p/interactive/go_hispeed_load" 2>/dev/null
+-    echo "85 507000:95 897000:99" > "$p/interactive/target_loads" 2>/dev/null
+-    echo 80000 > "$p/interactive/above_hispeed_delay" 2>/dev/null
+-done
++set_policy
++set_freq_cap "$MAX_FREQ"
+diff --git a/Thermal/j2lte-thermal.rc b/Thermal/j2lte-thermal.rc
+index 3f24484..2379483 100644
+--- a/Thermal/j2lte-thermal.rc
++++ b/Thermal/j2lte-thermal.rc
+@@ -7,3 +7,13 @@ on post-fs-data
+ 
+ on property:sys.boot_completed=1
+     exec -- /system/bin/sh /vendor/bin/j2lte-thermal-tune
++
++# Guardarrail termico: baja el techo de frecuencia si el SoC se calienta.
++service j2lte-thermal-guard /system/bin/sh /vendor/bin/j2lte-thermal-guard
++    class core
++    user root
++    group root system
++    disabled
++
++on property:sys.boot_completed=1
++    start j2lte-thermal-guard
+diff --git a/device.mk b/device.mk
+index f6fe4c6..87b311d 100644
+--- a/device.mk
++++ b/device.mk
+@@ -193,16 +193,23 @@ PRODUCT_COPY_FILES += \
+ PRODUCT_COPY_FILES += \
+     $(LOCAL_PATH)/init/usb-mtp.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/j2lte-mtpd.rc
+ 
+-# Ajuste termico de la CPU: techo de 897 MHz y governor interactive con
+-# valores conservadores.
++# Ajuste termico de la CPU: governor interactive reactivo, techo de 1196000 con
++# guardarrail termico y valores conservadores.
+ #
+ # El Exynos 3475 con cooling pasivo se recalienta mucho (mas de 70 grados) y
+ # el PMIC acaba reiniciando el equipo por proteccion termica. Con el techo a
+-# 897 MHz la temperatura se queda entre 55 y 62 grados.
++# 897 MHz la temperatura se queda entre 55 y 62 grados, pero el telefono va
++# lento. Ahora el techo sube a 1196000/1300000 y el servicio
++# j2lte-thermal-guard lo baja por escalones si el SoC se calienta.
+ PRODUCT_COPY_FILES += \
+     $(LOCAL_PATH)/Thermal/j2lte-thermal-tune.sh:$(TARGET_COPY_OUT_VENDOR)/bin/j2lte-thermal-tune \
++    $(LOCAL_PATH)/Thermal/j2lte-thermal-guard.sh:$(TARGET_COPY_OUT_VENDOR)/bin/j2lte-thermal-guard \
+     $(LOCAL_PATH)/Thermal/j2lte-thermal.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/j2lte-thermal.rc
+ 
++# Ajustes de memoria en runtime (LMK y swappiness): init/opt-tune.rc.
++PRODUCT_COPY_FILES += \
++    $(LOCAL_PATH)/init/opt-tune.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/j2lte-opt-tune.rc
++
+ # Ajustes de ART: el heap por app va en system.prop y los limites del
+ # compilador de dex se ajustan en runtime (init/j2lte-art.rc).
+ #
+diff --git a/init/opt-tune.rc b/init/opt-tune.rc
+new file mode 100644
+index 0000000..8fc5b7f
+--- /dev/null
++++ b/init/opt-tune.rc
+@@ -0,0 +1,20 @@
++# Ajustes de memoria en runtime.
++#
++# LMK (lowmemorykiller): con los valores por defecto del kernel
++# (18432,23040,27648,32256,36864,46080 KB = 18/23/27/32/36/46 MB) el LMK no
++# actua hasta que la memoria free esta por debajo de 18 MB, y para entonces el
++# OOM killer global ya ha matado procesos a ciegas (se vio morir system_server
++# con "Out of memory" en dmesg). Subiendo los umbrales, el LMK del kernel mata
++# antes y mejor: primero las apps sin mucha prioridad, sin que llegue a
++# dispararse el OOM global.
++#
++# Son 846 MB de RAM, asi que 32/40/48/56/64/80 MB deja aire para el sistema y
++# las caches, sin tirar apps con poca frecuencia.
++#
++# Swappiness: el vendor lo deja en 160, lo que hace que el kernel swappee
++# cualquier pagina "en reposo" (incluso frio) al swap en particion (flash).
++# Con zram activo (256 MB comprimidos en RAM) y swappiness 60, la paginacion
++# se queda en RAM y el flash no sufre.
++on post-fs-data
++    write /sys/module/lowmemorykiller/parameters/minfree "32768,40960,49152,57344,65536,81920"
++    write /proc/sys/vm/swappiness 60
+-- 
+2.50.1
+

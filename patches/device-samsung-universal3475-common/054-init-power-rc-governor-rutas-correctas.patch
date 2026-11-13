@@ -1,0 +1,44 @@
+diff --git a/ramdisk/etc/init.power.rc b/ramdisk/etc/init.power.rc
+index df134b6..4759fe1 100644
+--- a/ramdisk/etc/init.power.rc
++++ b/ramdisk/etc/init.power.rc
+@@ -1,19 +1,24 @@
+ on boot
+-    write /sys/devices/system/cpu/cpu0/cpufreq/interactive/timer_rate 20000
+-    write /sys/devices/system/cpu/cpu0/cpufreq/interactive/timer_slack 20000
+-    write /sys/devices/system/cpu/cpu0/cpufreq/interactive/min_sample_time 40000
+-    write /sys/devices/system/cpu/cpu0/cpufreq/interactive/hispeed_freq 900000
+-    write /sys/devices/system/cpu/cpu0/cpufreq/interactive/go_hispeed_load 89
+-    write /sys/devices/system/cpu/cpu0/cpufreq/interactive/target_loads "75 1200000:85"
+-    write /sys/devices/system/cpu/cpu0/cpufreq/interactive/above_hispeed_delay "39000 1200000:19000"
+-
+-    write /sys/devices/system/cpu/cpu4/cpufreq/interactive/timer_rate 20000
+-    write /sys/devices/system/cpu/cpu4/cpufreq/interactive/timer_slack 20000
+-    write /sys/devices/system/cpu/cpu4/cpufreq/interactive/min_sample_time 40000
+-    write /sys/devices/system/cpu/cpu4/cpufreq/interactive/hispeed_freq 1500000
+-    write /sys/devices/system/cpu/cpu4/cpufreq/interactive/go_hispeed_load 99
+-    write /sys/devices/system/cpu/cpu4/cpufreq/interactive/target_loads 90
+-    write /sys/devices/system/cpu/cpu4/cpufreq/interactive/above_hispeed_delay 20000
++# Governor interactive reactivo.
++#
++# Estos valores se escribian en
++#   /sys/devices/system/cpu/cpu0/cpufreq/interactive/...
++# una ruta que no existe en este kernel: en el Exynos 3475 hay una sola
++# politica de frecuencia para los 4 cores y sus parametros estan en
++#   /sys/devices/system/cpu/cpufreq/interactive/
++# Asi que todos los writes fallaban en silencio y el governor se quedaba con
++# los valores por defecto del kernel (go_hispeed_load=99, target_loads=90,
++# min_sample_time=80 ms, timer_slack=80 ms, io_is_busy=0, boost=0), con el
++# CPU casi siempre en la frecuencia minima.
++    write /sys/devices/system/cpu/cpufreq/interactive/timer_rate 20000
++    write /sys/devices/system/cpu/cpufreq/interactive/timer_slack 40000
++    write /sys/devices/system/cpu/cpufreq/interactive/min_sample_time 20000
++    write /sys/devices/system/cpu/cpufreq/interactive/hispeed_freq 1300000
++    write /sys/devices/system/cpu/cpufreq/interactive/go_hispeed_load 75
++    write /sys/devices/system/cpu/cpufreq/interactive/target_loads "60 1196000:70 1300000:80"
++    write /sys/devices/system/cpu/cpufreq/interactive/above_hispeed_delay "10000 1300000:5000"
++    write /sys/devices/system/cpu/cpufreq/interactive/io_is_busy 1
++    write /sys/devices/system/cpu/cpufreq/interactive/boost 1
+ 
+ # Kernel Workqueue
+     chown system system /sys/module/workqueue/parameters/power_efficient

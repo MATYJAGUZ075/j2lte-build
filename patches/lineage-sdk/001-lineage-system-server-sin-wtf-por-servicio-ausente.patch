@@ -1,0 +1,36 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 18:22:00 +0000
+Subject: [PATCH] lineage-sdk: no elevar a WTF los servicios que no estan en el build
+
+El overlay del dispositivo declara en config_externalLineageServices clases
+que no forman parte de este build (LineageAudioService y
+PerformanceManagerService), asi que LineageSystemServer no las encuentra al
+hacer Class.forName y registraba en cada arranque:
+
+  W/LineageSystemServer: BOOT FAILURE starting org.lineageos.platform.internal.LineageAudioService
+  W/LineageSystemServer: BOOT FAILURE starting org.lineageos.platform.internal.PerformanceManagerService
+
+con Slog.wtf (nivel ASSERT) y su traza de pila. El servicio ya se gestionaba
+con try/catch, asi que el sistema no se caia, pero el log queda contaminado.
+
+Ahora la ClassNotFoundException se distingue del resto de fallos: si la
+clase no existe en este build, se anota con Slog.i y se sigue; el resto de
+errores siguen registrándose como BOOT FAILURE.
+
+---
+diff --git a/lineage/lib/main/java/org/lineageos/platform/internal/LineageSystemServer.java b/lineage/lib/main/java/org/lineageos/platform/internal/LineageSystemServer.java
+index 6cbc2bd..f0a98b6 100644
+--- a/lineage/lib/main/java/org/lineageos/platform/internal/LineageSystemServer.java
++++ b/lineage/lib/main/java/org/lineageos/platform/internal/LineageSystemServer.java
+@@ -88,6 +88,11 @@ public class LineageSystemServer {
+                     Slog.i(TAG, "Not starting service " + service +
+                             " due to feature not declared on device");
+                 }
++            } catch (ClassNotFoundException e) {
++                // La clase no forma parte de este build (servicio especifico
++                // de un vendor que no esta presente). No es un fallo de
++                // arranque: se anota y se continua con el siguiente servicio.
++                Slog.i(TAG, "Service " + service + " is not available in this build, skipping");
+             } catch (Throwable e) {
+                 reportWtf("starting " + service , e);
+             }

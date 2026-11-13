@@ -1,0 +1,36 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 18:20:00 +0000
+Subject: [PATCH] netd: no elevar a WTF cuando no hay mapa BPF de interfaces
+
+El BpfInterfaceMapUpdater intenta abrir /sys/fs/bpf/netd_shared/map_netd_iface_index_name_map
+para mantener el indice de interfaces. Este kernel 3.10 no tiene eBPF (bpf()
+devuelve ENOSYS, sin CONFIG_BPF_SYSCALL), asi que el mapa no existe y
+getInterfaceMap() devuelve null.
+
+Al arrancar, el servicio registraba:
+
+  E/BpfInterfaceMapUpdater: Fail to start: Null bpf map
+
+que es un Log.wtf (nivel ASSERT): aparece como error grave en el logcat
+aunque el sistema funcione bien. En este dispositivo el mapa BPF no puede
+existir, asi que se baja a Log.i y se explica el motivo.
+
+Los mapas BPF que si usa el resto del framework ya estan parcheados por
+separado (netd-bpf-*.patch), este solo evita el ruido del WTF.
+
+---
+diff --git a/service-t/src/com/android/server/net/BpfInterfaceMapUpdater.java b/service-t/src/com/android/server/net/BpfInterfaceMapUpdater.java
+--- a/service-t/src/com/android/server/net/BpfInterfaceMapUpdater.java
++++ b/service-t/src/com/android/server/net/BpfInterfaceMapUpdater.java
+@@ -90,7 +90,10 @@ public class BpfInterfaceMapUpdater {
+     public void start() {
+         mHandler.post(() -> {
+             if (mBpfMap == null) {
+-                Log.wtf(TAG, "Fail to start: Null bpf map");
++                // Este kernel no soporta eBPF (bpf() = ENOSYS), asi que el
++                // mapa BPF de interfaces no existe y no hay nada que
++                // actualizar. No es un fallo grave: se avisa con Log.i.
++                Log.i(TAG, "Skipping interface map updates: no BPF map available");
+                 return;
+             }
+ 

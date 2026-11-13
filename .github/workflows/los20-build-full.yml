@@ -515,6 +515,11 @@ jobs:
               # manifest de LOS20: un parche ahi aborta el build con
               # "(omitido: packages/apps/Launcher3 no es un repo)".
               packages-apps-Trebuchet) NAME="packages/apps/Trebuchet" ;;
+              # El SDK de Lineage (los servicios "external" de LineageSystemServer)
+              # se sincroniza en el path "lineage-sdk" (LineageOS/android_lineage-sdk
+              # en el manifest LOS20). La regla generica tr '-' '/' daria
+              # "lineage/sdk", que no existe, y el build abortaria.
+              lineage-sdk) NAME="lineage-sdk" ;;
               *) NAME="$(echo "$CASE" | tr '-' '/')" ;;
             esac
             echo "  aplicando $(basename "$P") -> $NAME"

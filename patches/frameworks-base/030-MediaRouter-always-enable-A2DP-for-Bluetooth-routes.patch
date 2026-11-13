@@ -16,6 +16,25 @@ y ruta Bluetooth o default) y se sigue pasando route.isBluetooth() como
 estado de A2DP, para no forzar A2DP cuando la ruta seleccionada es la
 default (altavoz).
 
+FIX (13/11/2026): el gate isPlaybackActive() era ademas una proteccion
+implicita contra el cliente nulo. isPlaybackActive() devuelve false cuando
+mClient es null, y mClient es null todavia durante la construccion del
+MediaRouter (registerClientAsUser se llama despues, en rebindAsUser). Al
+quitar ese gate, selectRouteStatic() llamaba a setBluetoothA2dpOn() con
+mClient == null y el servidor lanzaba:
+
+  java.lang.IllegalArgumentException: client must not be null
+    at android.media.IMediaRouterService$Stub$Proxy.setBluetoothA2dpOn
+    at android.media.MediaRouter.selectRouteStatic(MediaRouter.java:1081)
+    at android.media.MediaRouter$Static.updateAudioRoutes(MediaRouter.java:276)
+    at android.media.MediaRouter$Static.startMonitoringRoutes(MediaRouter.java:198)
+    at android.media.MediaRouter.<init>(MediaRouter.java:846)
+    at com.android.systemui.qs.QSFragment$$ExternalSyntheticLambda3.run
+
+Eso tumbaba com.android.systemui en bucle (6 crashes en 10 s, dropbox
+system_app_crash@1794576328...) y dejaba el movil en negro. Se anade el
+check mClient != null, que es la condicion que el servidor exige.
+
 ---
 diff --git a/media/java/android/media/MediaRouter.java b/media/java/android/media/MediaRouter.java
 index 7d57734d..3e88928d 100644
@@ -26,7 +45,7 @@ index 7d57734d..3e88928d 100644
          }
  
 -        if (sStatic.isPlaybackActive() && sStatic.mBluetoothA2dpRoute != null
-+        if (sStatic.mBluetoothA2dpRoute != null
++        if (sStatic.mClient != null && sStatic.mBluetoothA2dpRoute != null
                  && (types & ROUTE_TYPE_LIVE_AUDIO) != 0
                  && (route.isBluetooth() || route.isDefault())) {
              try {

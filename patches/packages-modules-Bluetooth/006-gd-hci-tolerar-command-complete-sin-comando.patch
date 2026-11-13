@@ -1,0 +1,86 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 02:40:00 +0000
+Subject: [PATCH] gd/hci: no abortar con COMMAND_COMPLETE sin comando en espera
+
+El bluetooth se desconectaba solo mientras se usaba. Causa medida en el
+telefono (tombstone_00, 2026-11-13 10:22:52):
+
+  Cmdline: com.android.bluetooth
+  pid: 3243, tid: 3411, name: bt_stack_manage
+  signal 6 (SIGABRT)
+  Abort message: 'assertion 'op_code == OpCode::NONE' failed - Received
+  COMMAND_COMPLETE event with OpCode 0xd425 (Unknown OpCode: 54309) without
+  a waiting command(is the HAL sending commands, but not handling the events?)'
+      #04 libbluetooth_jni.so (bluetooth::hci::HciLayer::impl::on_hci_event)
+
+El stack GD de A13 exige que, cuando no hay comando en espera, el
+COMMAND_COMPLETE/STATUS traiga el opcode 0 (NONE, control de flujo). El HAL
+legacy de este dispositivo (BCM43438 con el HAL de Samsung) responde con su
+propio opcode (0xd425) a comandos que el stack no ha enviado, y el
+ASSERT_LOG() (LOG_ALWAYS_FATAL) mataba el proceso com.android.bluetooth.
+
+El parche 003 ya toleraba los asserts de handle_command_response; este cubre
+el camino de on_hci_event, que es por donde llega el evento en este caso.
+Los dos ASSERT_LOG pasan a LOG_WARN y los ASSERT(view.IsValid()) a un
+warning con descarte del evento: el stack sigue vivo y el bluetooth deja de
+caerse.
+
+Nota: no es un problema de memoria. En el mismo arranque no hay ningun OOM
+ni lowmemorykiller en /proc/last_kmsg, y el abort es un SIGABRT del propio
+stack de bluetooth.
+
+---
+diff --git a/system/gd/hci/hci_layer.cc b/system/gd/hci/hci_layer.cc
+index 4e341ba..dae752a 100644
+--- a/system/gd/hci/hci_layer.cc
++++ b/system/gd/hci/hci_layer.cc
+@@ -357,21 +357,39 @@ struct HciLayer::impl {
+       // COMMAND_COMPLETE and COMMAND_STATUS with opcode 0x0 for flow control
+       if (event_code == EventCode::COMMAND_COMPLETE) {
+           auto view = CommandCompleteView::Create(event);
+-          ASSERT(view.IsValid());
++          if (!view.IsValid()) {
++            // Evento malformado: ASSERT() abortaba el proceso.
++            LOG_WARN("Invalid COMMAND_COMPLETE event without a waiting command, discarding");
++            return;
++          }
+           auto op_code = view.GetCommandOpCode();
+-          ASSERT_LOG(op_code == OpCode::NONE,
+-            "Received %s event with OpCode 0x%02hx (%s) without a waiting command"
+-            "(is the HAL sending commands, but not handling the events?)",
+-            EventCodeText(event_code).c_str(), op_code, OpCodeText(op_code).c_str());
++          if (op_code != OpCode::NONE) {
++            // El HAL legacy de este dispositivo (BCM43438 via el HAL de
++            // Samsung) responde con su propio opcode a comandos que el stack
++            // de A13 no ha enviado. Medido en el telefono:
++            //   Abort message: 'assertion 'op_code == OpCode::NONE' failed -
++            //   Received COMMAND_COMPLETE event with OpCode 0xd425
++            //   (Unknown OpCode: 54309) without a waiting command
++            //   (is the HAL sending commands, but not handling the events?)'
++            // ASSERT_LOG() usa LOG_ALWAYS_FATAL: abortaba el proceso
++            // com.android.bluetooth y el bluetooth se caia (se desconectaba
++            // solo mientras se usaba). Se degrada a warning: el evento se
++            // registra y se ignora, el stack sigue vivo.
++            LOG_WARN("Received %s event with OpCode 0x%04hx (%s) without a waiting command",
++                     EventCodeText(event_code).c_str(), op_code, OpCodeText(op_code).c_str());
++          }
+       }
+       if (event_code == EventCode::COMMAND_STATUS) {
+           auto view = CommandStatusView::Create(event);
+-          ASSERT(view.IsValid());
++          if (!view.IsValid()) {
++            LOG_WARN("Invalid COMMAND_STATUS event without a waiting command, discarding");
++            return;
++          }
+           auto op_code = view.GetCommandOpCode();
+-          ASSERT_LOG(op_code == OpCode::NONE,
+-            "Received %s event with OpCode 0x%02hx (%s) without a waiting command"
+-            "(is the HAL sending commands, but not handling the events?)",
+-            EventCodeText(event_code).c_str(), op_code, OpCodeText(op_code).c_str());
++          if (op_code != OpCode::NONE) {
++            LOG_WARN("Received %s event with OpCode 0x%04hx (%s) without a waiting command",
++                     EventCodeText(event_code).c_str(), op_code, OpCodeText(op_code).c_str());
++          }
+       }
+       std::unique_ptr<CommandView> no_waiting_command{nullptr};
+       log_hci_event(no_waiting_command, event, module_.GetDependency<storage::StorageModule>());

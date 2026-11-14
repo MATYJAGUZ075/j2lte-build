@@ -1,0 +1,76 @@
+diff --git a/sepolicy/vendor/audioserver.te b/sepolicy/vendor/audioserver.te
+index cbee924..803c301 100644
+--- a/sepolicy/vendor/audioserver.te
++++ b/sepolicy/vendor/audioserver.te
+@@ -7,3 +7,6 @@ r_dir_file(audioserver, sec_efs_file);
+ 
+ # TFA98xx amplifier
+ allow audioserver amplifier_device:chr_file rw_file_perms;
++
++# FIX-061: audioserver (dominio de plataforma) lee una propiedad vendor
++allow audioserver vendor_default_prop:file r_file_perms;
+diff --git a/sepolicy/vendor/hal_audio_default.te b/sepolicy/vendor/hal_audio_default.te
+new file mode 100644
+index 0000000..2ad9fdf
+--- /dev/null
++++ b/sepolicy/vendor/hal_audio_default.te
+@@ -0,0 +1,4 @@
++# FIX-061: el HAL de audio legacy lee propiedades de plataforma, que A13
++# restringe a los dominios de sistema (default_prop/system_prop).
++allow hal_audio_default default_prop:file r_file_perms;
++allow hal_audio_default system_prop:file r_file_perms;
+diff --git a/sepolicy/vendor/hal_camera_default.te b/sepolicy/vendor/hal_camera_default.te
+index 7c7abf0..46b3bc1 100644
+--- a/sepolicy/vendor/hal_camera_default.te
++++ b/sepolicy/vendor/hal_camera_default.te
+@@ -18,3 +18,8 @@ allow hal_camera_default ion_device:chr_file rw_file_perms;
+ allow hal_camera_default mediaserver_exec:file r_file_perms;
+ allow hal_camera_default sysfs:file r_file_perms;
+ allow hal_camera_default sysfs:dir r_dir_perms;
++
++# FIX-061: el HAL de camara legacy lee propiedades de plataforma, que A13
++# restringe a los dominios de sistema (default_prop/system_prop).
++allow hal_camera_default default_prop:file r_file_perms;
++allow hal_camera_default system_prop:file r_file_perms;
+diff --git a/sepolicy/vendor/hal_health_default.te b/sepolicy/vendor/hal_health_default.te
+index 89b18e7..880edd6 100644
+--- a/sepolicy/vendor/hal_health_default.te
++++ b/sepolicy/vendor/hal_health_default.te
+@@ -1,2 +1,5 @@
+ r_dir_file(hal_health_default, sysfs_usb_supply)
+ allow hal_health_default sysfs_usb_supply:file rw_file_perms;
++
++# FIX-061: el HAL de salud lee /sys/class/thermal/thermal_zone*/type (sysfs generico)
++allow hal_health_default sysfs:file r_file_perms;
+diff --git a/sepolicy/vendor/init.te b/sepolicy/vendor/init.te
+index 3f462ee..7c2759f 100644
+--- a/sepolicy/vendor/init.te
++++ b/sepolicy/vendor/init.te
+@@ -40,7 +40,9 @@ allow init sysfs_camera:file { relabelto setattr };
+ allow init sysfs_camera:filesystem associate;
+ 
+ # WiFi firmware permissions
+-allow init sysfs_wifi:file setattr;
++# FIX-061: con enforcing init no puede escribir el firmware_path del modulo
++# wifi (dhd) -> el driver se queda sin ruta de firmware y el Wi-Fi no arranca.
++allow init sysfs_wifi:file { write setattr };
+ 
+ # Input devices
+ allow init sysfs_input:file { rw_file_perms setattr };
+diff --git a/sepolicy/vendor/mediaserver.te b/sepolicy/vendor/mediaserver.te
+index 02b8f37..96073a4 100644
+--- a/sepolicy/vendor/mediaserver.te
++++ b/sepolicy/vendor/mediaserver.te
+@@ -10,3 +10,12 @@ allow mediaserver camera_device:chr_file rw_file_perms;
+ # Snap permissions
+ allow mediaserver sensorservice_service:service_manager find;
+ allow mediaserver system_server:unix_stream_socket rw_stream_socket_perms;
++
++# FIX-061: varios dominios del sistema leen el stub /system/bin/mediaserver
++# (en A13 el mismo binario sirve media y media.metrics). Sin permiso solo
++# se genera ruido de avc.
++allow { netd wificond vdc zygote surfaceflinger audioserver cameraserver } mediaserver_exec:file r_file_perms;
++
++# El kernel 3.10 no tiene el device de cgroup eBPF (/dev/cg2_bpf) que netd
++# intenta abrir: la denegacion es esperable, se silencia.
++dontaudit netd device:dir read;

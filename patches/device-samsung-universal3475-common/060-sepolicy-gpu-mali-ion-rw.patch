@@ -1,0 +1,51 @@
+diff --git a/sepolicy/vendor/file_contexts b/sepolicy/vendor/file_contexts
+index 309e395..2b677fa 100644
+--- a/sepolicy/vendor/file_contexts
++++ b/sepolicy/vendor/file_contexts
+@@ -3,6 +3,13 @@
+ #
+ /dev/mali[0-9]*              u:object_r:gpu_device:s0
+ 
++# FIX-060: sysfs del driver Mali (DVFS, devfreq, debugfs del kernel).
++# Sin etiqueta propia queda como "sysfs" generico y surfaceflinger/HWC no
++# pueden leerlo con enforcing, el driver GPU no arranca.
++/sys/devices/platform/11400000\.mali[0-9]*   u:object_r:sysfs_graphics:s0
++/sys/devices/11400000\.mali[0-9]*            u:object_r:sysfs_graphics:s0
++/sys/class/misc/mali[0-9]*                    u:object_r:sysfs_graphics:s0
++
+ /dev/bcm2079x                u:object_r:nfc_device:s0
+ /dev/sec-nfc                 u:object_r:nfc_device:s0
+ 
+diff --git a/sepolicy/vendor/hal_graphics_composer.te b/sepolicy/vendor/hal_graphics_composer.te
+index 1916c0a..34bac6d 100644
+--- a/sepolicy/vendor/hal_graphics_composer.te
++++ b/sepolicy/vendor/hal_graphics_composer.te
+@@ -5,3 +5,9 @@ allow hal_graphics_composer_default sysfs_graphics:file rw_file_perms;
+ # uevent socket
+ allow hal_graphics_composer_default self:netlink_kobject_uevent_socket create_socket_perms_no_ioctl;
+ 
++# FIX-060: el HWC Exynos/MPP reserva buffers con ion y usa el device GPU
++allow hal_graphics_composer_default ion_device:chr_file rw_file_perms;
++allow hal_graphics_composer_default gpu_device:chr_file rw_file_perms;
++allow hal_graphics_composer_default debugfs_mali:dir r_dir_perms;
++allow hal_graphics_composer_default debugfs_mali:file rw_file_perms;
++
+diff --git a/sepolicy/vendor/surfaceflinger.te b/sepolicy/vendor/surfaceflinger.te
+index 7d0f0a8..a401d36 100644
+--- a/sepolicy/vendor/surfaceflinger.te
++++ b/sepolicy/vendor/surfaceflinger.te
+@@ -1,4 +1,12 @@
+ # HWC
+ allow surfaceflinger secmem_device:chr_file rw_file_perms;
+ allow surfaceflinger sysfs_graphics:file rw_file_perms;
+-r_dir_file(surfaceflinger, sysfs_graphics)
+\ No newline at end of file
++r_dir_file(surfaceflinger, sysfs_graphics)
++
++# FIX-060: el driver Mali (r15p0 sin DMA_FENCE) y el HWC Exynos/MPP usan ion
++# (/dev/ion -> ion_device). A13 solo concede lectura a surfaceflinger y nada
++# al compositor, asi que con SELinux enforcing el driver no puede inicializar
++# y surfaceflinger recibe un EGL con punteros corruptos (SIGSEGV en eglInitialize).
++allow surfaceflinger ion_device:chr_file rw_file_perms;
++allow surfaceflinger debugfs_mali:dir r_dir_perms;
++allow surfaceflinger debugfs_mali:file rw_file_perms;

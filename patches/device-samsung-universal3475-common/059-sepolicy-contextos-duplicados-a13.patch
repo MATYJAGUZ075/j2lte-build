@@ -1,12 +1,11 @@
 diff --git a/sepolicy/vendor/file_contexts b/sepolicy/vendor/file_contexts
 --- a/sepolicy/vendor/file_contexts
 +++ b/sepolicy/vendor/file_contexts
-@@ -92,7 +92,7 @@
+@@ -92,7 +92,6 @@
  /data/nfc(/.*)?              u:object_r:nfc_data_file:s0
  /data/\.cid\.info                  u:object_r:wifi_data_file:s0
  /data/misc/conn/\.wifiver\.info    u:object_r:wifi_data_file:s0
 -/data/misc/radio(/.*)?       u:object_r:radio_data_file:s0
-+/data/misc/radio(/.*)?       u:object_r:radio_core_data_file:s0
  /data/vendor/display(/.*)?   u:object_r:display_vendor_data_file:s0
  
  # gps

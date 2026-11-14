@@ -11,11 +11,19 @@ diff --git a/sepolicy/vendor/file_contexts b/sepolicy/vendor/file_contexts
  
  # gps
 diff --git a/sepolicy/vendor/file_contexts_cpefs b/sepolicy/vendor/file_contexts_cpefs
-deleted file mode 100644
 --- a/sepolicy/vendor/file_contexts_cpefs
-+++ /dev/null
-@@ -1 +0,0 @@
++++ b/sepolicy/vendor/file_contexts_cpefs
+@@ -1 +1,9 @@
 -/cpefs(/.*)?                 u:object_r:system_file:s0
++# /cpefs se etiqueta en sepolicy/vendor/file_contexts como sec_efs_file.
++#
++# Este fichero existia en el fork con la etiqueta system_file, que en A13
++# provocaba un conflicto en checkfc:
++#   Multiple different specifications for /cpefs(/.*)?
++#     (u:object_r:sec_efs_file:s0 and u:object_r:system_file:s0)
++# El montaje de /cpefs lo hace init y rild/audioserver necesitan leerlo como
++# sec_efs_file (ver init.te y rild.te), asi que la etiqueta correcta es la de
++# file_contexts y aqui no debe declararse /cpefs otra vez.
 diff --git a/sepolicy/vendor/rild.te b/sepolicy/vendor/rild.te
 --- a/sepolicy/vendor/rild.te
 +++ b/sepolicy/vendor/rild.te

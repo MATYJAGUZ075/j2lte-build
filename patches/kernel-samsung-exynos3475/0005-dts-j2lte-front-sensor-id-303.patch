@@ -1,0 +1,76 @@
+From: MATYJAGUZ075 <matyjaguz075@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 11:45:00 -0300
+Subject: [PATCH] dts: j2lte: front_sensor_id 302 -> 303 (camara frontal)
+
+El HAL de camara de Samsung lee el id del sensor frontal de
+/sys/devices/virtual/camera/front/front_sensorid, que sale del DT, y lo usa
+para elegir la tabla de parametros del sensor. El valor 302 corresponde al
+SR030, pero en este dispositivo el sensor frontal es el SR200 (es el driver
+que se enlaza en la I2C 4-0x20: sr200_soc). Con 302, el HAL configura el
+frontal como si fuera un SR030, el driver del kernel hace su init y falla
+con -ENXIO (v4l2_module_call(init)), el nodo /dev/video102 (FIMC ss1) no
+publica parametros y la camara frontal no se expone.
+
+El exynos3475-j2_common.dtsi (igual que el kernel de LOS19) declara
+front_sensor_id = <303> para el J2; las variantes j2lte_swa_open_00..04 lo
+sobrescribian con 302. Se restituye el valor del dtsi comun.
+
+Referencia: el id 302 es el del SR030 (ver exynos3475-j1x_common.dtsi), el
+303 el del SR200 usado por el J2.
+
+---
+diff --git a/arch/arm/boot/dts/exynos3475-j2lte_swa_open_00.dts b/arch/arm/boot/dts/exynos3475-j2lte_swa_open_00.dts
+--- a/arch/arm/boot/dts/exynos3475-j2lte_swa_open_00.dts
++++ b/arch/arm/boot/dts/exynos3475-j2lte_swa_open_00.dts
+@@ -201,6 +201,6 @@
+ 	};
+ 
+ 	fimc_is@14400000 {
+-		front_sensor_id = <302>;
++		front_sensor_id = <303>;
+ 	};
+ };
+diff --git a/arch/arm/boot/dts/exynos3475-j2lte_swa_open_01.dts b/arch/arm/boot/dts/exynos3475-j2lte_swa_open_01.dts
+--- a/arch/arm/boot/dts/exynos3475-j2lte_swa_open_01.dts
++++ b/arch/arm/boot/dts/exynos3475-j2lte_swa_open_01.dts
+@@ -193,6 +193,6 @@
+ 	};
+ 
+ 	fimc_is@14400000 {
+-		front_sensor_id = <302>;
++		front_sensor_id = <303>;
+ 	};
+ };
+diff --git a/arch/arm/boot/dts/exynos3475-j2lte_swa_open_02.dts b/arch/arm/boot/dts/exynos3475-j2lte_swa_open_02.dts
+--- a/arch/arm/boot/dts/exynos3475-j2lte_swa_open_02.dts
++++ b/arch/arm/boot/dts/exynos3475-j2lte_swa_open_02.dts
+@@ -176,6 +176,6 @@
+ 		};
+ 	};
+ 	fimc_is@14400000 {
+-		front_sensor_id = <302>;
++		front_sensor_id = <303>;
+ 	};
+ };
+diff --git a/arch/arm/boot/dts/exynos3475-j2lte_swa_open_03.dts b/arch/arm/boot/dts/exynos3475-j2lte_swa_open_03.dts
+--- a/arch/arm/boot/dts/exynos3475-j2lte_swa_open_03.dts
++++ b/arch/arm/boot/dts/exynos3475-j2lte_swa_open_03.dts
+@@ -185,6 +185,6 @@
+ 		};
+ 	};
+ 	fimc_is@14400000 {
+-		front_sensor_id = <302>;
++		front_sensor_id = <303>;
+ 	};
+ };
+diff --git a/arch/arm/boot/dts/exynos3475-j2lte_swa_open_04.dts b/arch/arm/boot/dts/exynos3475-j2lte_swa_open_04.dts
+--- a/arch/arm/boot/dts/exynos3475-j2lte_swa_open_04.dts
++++ b/arch/arm/boot/dts/exynos3475-j2lte_swa_open_04.dts
+@@ -185,6 +185,6 @@
+ 		};
+ 	};
+ 	fimc_is@14400000 {
+-		front_sensor_id = <302>;
++		front_sensor_id = <303>;
+ 	};
+ };

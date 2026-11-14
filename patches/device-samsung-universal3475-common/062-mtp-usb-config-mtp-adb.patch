@@ -1,0 +1,17 @@
+diff --git a/system.prop b/system.prop
+index e69af87..222816b 100644
+--- a/system.prop
++++ b/system.prop
+@@ -17,7 +17,11 @@
+ # quedo autorizada.
+ ro.debuggable=1
+ persist.adb.tcp.port=5555
+-persist.sys.usb.config=adb
++# MTP: el init del vendor (ramdisk/etc/init.universal3475.usb.rc) ya tiene el
++# bloque 'on property:sys.usb.config=mtp,adb' (escribe functions mtp,adb y
++# arranca adbd), pero la property pedia solo 'adb', asi que la funcion MTP
++# del gadget nunca se activaba y el PC no veia el telefono como MTP.
++persist.sys.usb.config=mtp,adb
+ # Sin autorizacion RSA, adb no crea ~/.android/adbkey ni exige confirmacion, por
+ # lo que tambien hay que dejar el pairing en modo "sin paternalidad".
+ ro.adb.authenticate=0

@@ -123,6 +123,36 @@ jobs:
           python3 -W error -m py_compile bsd/kern/makekdebugevents.py
           echo "OK: makekdebugevents.py (Python 3) compila"
 
+      - name: Probe 32-bit ARM toolchain (armv7k / armv7)
+        run: |
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          CC="$(xcrun --sdk iphoneos --find clang)"
+          LD="$(xcrun --sdk iphoneos --find ld)"
+          T="$(mktemp -d)"
+          echo 'int f(int x) { return x + 1; }' > "$T/t.c"
+          CHOSEN=""
+          for arch in armv7k armv7; do
+            echo "=== probando -arch ${arch}"
+            if "$CC" -arch "$arch" -miphoneos-version-min=10.0 -isysroot "$SDK" -ffreestanding -c "$T/t.c" -o "$T/t_${arch}.o"; then
+              echo "compile OK"
+              xcrun lipo -info "$T/t_${arch}.o" || true
+              if "$LD" -arch "$arch" -r "$T/t_${arch}.o" -o "$T/r_${arch}.o"; then
+                echo "ld OK"
+                if [ -z "$CHOSEN" ]; then CHOSEN="$arch"; fi
+              else
+                echo "ld FALLO para ${arch}"
+              fi
+            else
+              echo "compile FALLO para ${arch}"
+            fi
+          done
+          if [ -z "$CHOSEN" ]; then
+            echo "::error::Este Xcode no puede compilar+enlazar armv7k ni armv7. Hace falta otra toolchain (ver mensajes de arriba)."
+            exit 1
+          fi
+          echo "ARM_ARCH elegido: ${CHOSEN}"
+          echo "ARM_ARCH=${CHOSEN}" >> "$GITHUB_ENV"
+
       - name: Build XNU 4570 ARMv7 J2
         id: build
         working-directory: ios-port/xnu-4570.71.2-source
@@ -136,6 +166,7 @@ jobs:
             PLATFORM=iPhoneOS \
             SDKROOT=iphoneos \
             SDKVERSION=10.0 \
+            ARCH_FLAGS_ARM="-arch ${ARM_ARCH}" \
             BUILD_LTO=0 \
             BUILD_DSYM=0 \
             BUILD_WERROR=0 \
@@ -158,10 +189,10 @@ jobs:
           find "${SYMROOT}" \( -name 'mach*' -o -name 'kernel*' \) 2>/dev/null | head -20 || true
 
           if [ "${{ steps.build.outcome }}" != "success" ]; then
-            echo "=== Build FAILED - compiler errors (primeros 60) ==="
-            grep -nE " error: |fatal error: |Undefined symbols|ld: " "${BUILD_DIR}/build.log" | head -60 || true
-            echo "=== make errors (primeros 40) ==="
-            grep -nE "\*\*\* " "${BUILD_DIR}/build.log" | head -40 || true
+            echo "=== Errores de compilador ÚNICOS (conteo) ==="
+            grep -aoE "(fatal )?error: .*" "${BUILD_DIR}/build.log" | sort | uniq -c | sort -rn | head -40 || true
+            echo "=== Archivos que fallaron (make) ==="
+            grep -aoE "\*\*\* \[[^]]+\] Error" "${BUILD_DIR}/build.log" | sort -u | head -40 || true
             echo "=== Last 40 lines ==="
             tail -40 "${BUILD_DIR}/build.log" || true
             exit 1

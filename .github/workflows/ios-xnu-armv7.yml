@@ -69,17 +69,51 @@ jobs:
         run: |
           find ios-port/xnu-4570.71.2-source -name "*.py" -exec sed -i '' '1s|^#!/usr/bin/python$|#!/usr/bin/env python3|' {} \;
 
-      - name: Fix makekdebugevents.py (tabs)
+      - name: Replace makekdebugevents.py with Python 3 version
         working-directory: ios-port/xnu-4570.71.2-source
         run: |
           set -e
-          FILE="bsd/kern/makekdebugevents.py"
-          # Tabs -> espacios (tab stop de 8, igual que Python 2, para no romper la indentacion)
-          expand -t 8 "$FILE" > "$FILE.tmp"
-          mv "$FILE.tmp" "$FILE"
-          chmod +x "$FILE"
-          # Solo informativo: muestra si aun hay errores de sintaxis
-          python3 -m py_compile "$FILE" && echo "OK: makekdebugevents.py compila" || echo "WARNING: sigue con errores de sintaxis"
+          cat > bsd/kern/makekdebugevents.py << 'PYEOF'
+          #!/usr/bin/env python3
+          #
+          # This script scans the trace.codes file, containing a mapping of event id to
+          # event name for all events, and writes to stdout a C declaration for a table
+          # named kd_events[] or these mappings.
+          # Required to generate a header file used by DEVELOPMENT and DEBUG kernels.
+          #
+          import sys
+          import re
+
+          # we expect one arg specifying the path to the trace.codes file
+          if len(sys.argv) < 2:
+              sys.exit(1)
+          trace_code_file = sys.argv[1]
+
+          # regular expression pattern to match <hex_id> <string>
+          id_name_pattern = re.compile(r'0x([0-9a-fA-F]+)\s+([^\s]*)')
+          code_table = []
+
+          # scan file to generate internal table
+          with open(trace_code_file, 'rt') as codes:
+              for line in codes:
+                  m = id_name_pattern.match(line)
+                  if m:
+                      code_table += [(int(m.group(1), base=16), m.group(2))]
+
+          # emit typedef:
+          print("typedef struct {")
+          print("        uint32_t   id;")
+          print("        const char *name;")
+          print("} kd_event_t;")
+          # emit structure declaration and sorted initialization:
+          print("kd_event_t kd_events[] = {")
+          for mapping in sorted(code_table, key=lambda x: x[0]):
+              print("        {0x%x, \"%s\"}," % mapping)
+          print("};")
+          PYEOF
+          chmod +x bsd/kern/makekdebugevents.py
+          python3 -W error -m py_compile bsd/kern/makekdebugevents.py
+          echo "OK: makekdebugevents.py (Python 3) compila"
 
       - name: Build XNU 4570 ARMv7 J2
         id: build

@@ -262,6 +262,27 @@ jobs:
           python3 -W error -m py_compile bsd/kern/makekdebugevents.py
           echo "OK: makekdebugevents.py (Python 3) compila"
 
+      - name: Skip lldbmacros (Python 2 only, not needed to link the kernel)
+        working-directory: ios-port/xnu-4570.71.2-source
+        run: |
+          set -e
+          echo "=== tools/lldbmacros/Makefile (original) ==="
+          cat tools/lldbmacros/Makefile | head -60
+          cat > tools/lldbmacros/Makefile << 'LLDBEOF'
+          export MakeInc_cmd=${SRCROOT}/makedefs/MakeInc.cmd
+          export MakeInc_def=${SRCROOT}/makedefs/MakeInc.def
+          export MakeInc_rule=${SRCROOT}/makedefs/MakeInc.rule
+          export MakeInc_dir=${SRCROOT}/makedefs/MakeInc.dir
+
+          include $(MakeInc_cmd)
+          include $(MakeInc_def)
+
+          # J2 bring-up: lldbmacros son Python 2 y no hacen falta para enlazar el kernel
+          include $(MakeInc_rule)
+          include $(MakeInc_dir)
+          LLDBEOF
+          echo "OK: lldbmacros neutralizado"
+
       - name: Probe 32-bit ARM toolchain (armv7k / armv7)
         run: |
           SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
@@ -498,6 +519,10 @@ jobs:
             grep -aoE "(fatal )?error: .*" "${BUILD_DIR}/build.log" | sort | uniq -c | sort -rn | head -40 || true
             echo "=== Otros errores (make / linker / ensamblador) ==="
             grep -aE "No rule to make target|Undefined symbols|^ld: |ld: symbol|command not found|Assembler messages|\.s:[0-9]+:.*error" "${BUILD_DIR}/build.log" | sed -E 's/^[0-9T:.Z-]+ //' | sort | uniq -c | sort -rn | head -30 || true
+            echo "=== Contexto de los fallos de symbolset ==="
+            grep -a -B12 "symbolset\] Error" "${BUILD_DIR}/build.log" | grep -av "warning:" | head -80 || true
+            echo "=== Archivo kernel enlazado? ==="
+            find "${OBJROOT}" -maxdepth 2 -name 'mach.release*' 2>/dev/null | head || true
             echo "=== Archivos que fallaron (make) ==="
             grep -aoE "\*\*\* \[[^]]+\] Error" "${BUILD_DIR}/build.log" | sort -u | head -40 || true
             echo "=== Last 40 lines ==="

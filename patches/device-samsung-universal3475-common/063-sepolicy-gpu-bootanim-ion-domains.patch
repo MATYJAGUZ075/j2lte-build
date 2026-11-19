@@ -1,0 +1,51 @@
+diff --git a/sepolicy/vendor/bootanim.te b/sepolicy/vendor/bootanim.te
+new file mode 100644
+index 0000000..590c011
+--- /dev/null
++++ b/sepolicy/vendor/bootanim.te
+@@ -0,0 +1,8 @@
++# El bootanimation inicializa un contexto EGL con el driver Mali (r15p0 sin
++# DMA_FENCE) y para ello lee /sys/kernel/debug/mali0/mem (debugfs_mali).
++# Sin esta regla el driver no inicializa y devuelve punteros corruptos:
++# eglQueryString(EGL_EXTENSIONS) devuelve un puntero invalido y el
++# bootanimation revienta con SIGSEGV dentro de egl_display_t::initialize
++# (strstr), dejando la pantalla congelada en el arranque.
++allow bootanim debugfs_mali:dir r_dir_perms;
++allow bootanim debugfs_mali:file r_file_perms;
+diff --git a/sepolicy/vendor/cameraserver.te b/sepolicy/vendor/cameraserver.te
+index 85e7a11..8252be8 100644
+--- a/sepolicy/vendor/cameraserver.te
++++ b/sepolicy/vendor/cameraserver.te
+@@ -1,6 +1,9 @@
+ # /dev/m2m1shot_jpeg
+ allow cameraserver camera_device:chr_file rw_file_perms;
+ 
++# /dev/ion (el driver Mali r15p0 no usa DMA_FENCE, reserva con ion)
++allow cameraserver ion_device:chr_file rw_file_perms;
++
+ # /sys/devices/virtual/camera/*/*_camfw
+ allow cameraserver sysfs_camera:dir search;
+ allow cameraserver sysfs_camera:file rw_file_perms;
+diff --git a/sepolicy/vendor/hal_graphics_allocator_default.te b/sepolicy/vendor/hal_graphics_allocator_default.te
+new file mode 100644
+index 0000000..7f2e636
+--- /dev/null
++++ b/sepolicy/vendor/hal_graphics_allocator_default.te
+@@ -0,0 +1,2 @@
++# El allocator de graficos de Mali lee su propiedad de configuracion.
++get_prop(hal_graphics_allocator_default, graphics_config_prop)
+diff --git a/sepolicy/vendor/system_server.te b/sepolicy/vendor/system_server.te
+index 68aba79..ce9a862 100644
+--- a/sepolicy/vendor/system_server.te
++++ b/sepolicy/vendor/system_server.te
+@@ -34,6 +34,10 @@ allow system_server sysfs_mdnie:file rw_file_perms;
+ # memtrack HAL
+ allow system_server debugfs:dir r_dir_perms;
+ 
++# memtrack de Mali (/sys/kernel/debug/mali0/mem)
++allow system_server debugfs_mali:dir r_dir_perms;
++allow system_server debugfs_mali:file r_file_perms;
++
+ # sensor HAL
+ allow system_server sensor_device:chr_file rw_file_perms;
+ allow system_server baro_delta_factoryapp_efs_file:file r_file_perms;

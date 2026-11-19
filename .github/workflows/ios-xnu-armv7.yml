@@ -69,6 +69,78 @@ jobs:
           grep -n "J2.h\|S7002.h" pexpert/pexpert/arm/Makefile
           test -f pexpert/pexpert/arm/J2.h
 
+      - name: Apply compatibility patches (modern clang/migcom, missing Apple-private pieces)
+        working-directory: ios-port/xnu-4570.71.2-source
+        run: |
+          set -e
+          python3 - << 'PATCHEOF'
+          import urllib.request
+
+          def patch(path, old, new, skip_if=None):
+              s = open(path).read()
+              if skip_if and skip_if in s:
+                  print("ya aplicado:", path)
+                  return
+              assert old in s, "NO ENCONTRADO en %s: %r" % (path, old[:70])
+              open(path, "w").write(s.replace(old, new, 1))
+              print("OK:", path)
+
+          # 1) Flags de arch de Apple (privados) que faltan: kern_sysctl.c e ipsec.h usan __ARM__
+          patch("makedefs/MakeInc.def",
+                "MACHINE_FLAGS_ARM_J2 = -DARM_BOARD_CONFIG_J2 -DARM_J2",
+                "MACHINE_FLAGS_ARM_J2 = -DARM_BOARD_CONFIG_J2 -DARM_J2 -D__ARM__",
+                skip_if="-D__ARM__")
+
+          # 2) if_ipsec.c: ipsec_needs_netagent solo existe con IPSEC_NEXUS (que aqui es 0)
+          patch("bsd/net/if_ipsec.c",
+                "\treturn (pcb->ipsec_needs_netagent == true);",
+                "#if IPSEC_NEXUS\n\treturn (pcb->ipsec_needs_netagent == true);\n#else\n\t(void)pcb;\n\treturn (FALSE);\n#endif",
+                skip_if="(void)pcb;\n\treturn (FALSE);")
+
+          # 3) vm_object.c: clang moderno rechaza asignar un struct con miembro const
+          patch("osfmk/vm/vm_object.c",
+                "\t*object = vm_object_template;",
+                "\t__builtin_memcpy((void *)object, (const void *)&vm_object_template, sizeof(*object));",
+                skip_if="__builtin_memcpy((void *)object")
+
+          # 4) commpage.c: remote_time.h no se publico; solo se usa bajo __arm64__
+          s = open("osfmk/arm/commpage/commpage.c").read()
+          for inc in ("#include <kern/remote_time.h>\n", "#include <machine/machine_remote_time.h>\n"):
+              s = s.replace(inc, "")
+          open("osfmk/arm/commpage/commpage.c", "w").write(s)
+          assert "remote_time.h" not in s
+          print("OK: osfmk/arm/commpage/commpage.c")
+
+          # 5) migcom nuevo emite mach_msg_destroy_from_kernel (no existe en XNU 4570)
+          patch("osfmk/kern/ipc_mig.h",
+                "#define mach_msg_rpc_from_kernel mach_msg_rpc_from_kernel_proper\n",
+                "#define mach_msg_rpc_from_kernel mach_msg_rpc_from_kernel_proper\n\n"
+                "/* J2 bring-up shim: emitted by newer migcom, absent in XNU 4570 */\n"
+                "extern void mach_msg_destroy_from_kernel(mach_msg_header_t *msg);\n",
+                skip_if="mach_msg_destroy_from_kernel")
+          c = open("osfmk/kern/ipc_mig.c").read()
+          if "mach_msg_destroy_from_kernel" not in c:
+              c += ("\n/*\n * J2 bring-up shim. Newer migcom emits calls to this on error paths of\n"
+                    " * kernel-side MIG client stubs. XNU 4570 has no such function. This stub\n"
+                    " * intentionally does NOT release port rights / OOL memory in the message\n"
+                    " * (leaks on those error paths only).\n */\n"
+                    "void\nmach_msg_destroy_from_kernel(mach_msg_header_t *msg)\n{\n\t(void)msg;\n}\n")
+              open("osfmk/kern/ipc_mig.c", "w").write(c)
+          print("OK: osfmk/kern/ipc_mig.c")
+
+          # 6) firehose: header privado de libdispatch (no esta en el SDK publico)
+          url = "https://raw.githubusercontent.com/apple-oss-distributions/libdispatch/libdispatch-913.30.4/os/firehose_buffer_private.h"
+          data = urllib.request.urlopen(url, timeout=60).read()
+          assert b"__FIREHOSE_BUFFER_PRIVATE__" in data
+          text = data.decode("utf-8")
+          guard = "#define __FIREHOSE_BUFFER_PRIVATE__\n"
+          assert guard in text
+          text = text.replace(guard, guard + "\n#ifndef OS_FIREHOSE_SPI\n#define OS_FIREHOSE_SPI 1\n#endif\n", 1)
+          data = text.encode("utf-8")
+          open("libkern/os/firehose_buffer_private.h", "wb").write(data)
+          print("OK: libkern/os/firehose_buffer_private.h (%d bytes)" % len(data))
+          PATCHEOF
+
       - name: Show Xcode/SDK versions
         run: |
           xcodebuild -version
@@ -206,6 +278,8 @@ jobs:
           if [ "${{ steps.build.outcome }}" != "success" ]; then
             echo "=== Errores de compilador ÚNICOS (conteo) ==="
             grep -aoE "(fatal )?error: .*" "${BUILD_DIR}/build.log" | sort | uniq -c | sort -rn | head -40 || true
+            echo "=== Otros errores (make / linker / ensamblador) ==="
+            grep -aE "No rule to make target|Undefined symbols|^ld: |ld: symbol|command not found|Assembler messages|\.s:[0-9]+:.*error" "${BUILD_DIR}/build.log" | sed -E 's/^[0-9T:.Z-]+ //' | sort | uniq -c | sort -rn | head -30 || true
             echo "=== Archivos que fallaron (make) ==="
             grep -aoE "\*\*\* \[[^]]+\] Error" "${BUILD_DIR}/build.log" | sort -u | head -40 || true
             echo "=== Last 40 lines ==="

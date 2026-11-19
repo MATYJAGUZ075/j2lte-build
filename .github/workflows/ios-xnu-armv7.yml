@@ -46,6 +46,14 @@ jobs:
           cp ios-port/xnu-4570.71.2/makedefs/MakeInc.def ios-port/xnu-4570.71.2-source/makedefs/
           cp ios-port/xnu-4570.71.2/makedefs/MakeInc.top ios-port/xnu-4570.71.2-source/makedefs/
 
+      - name: Patch XNU files.arm (ccn_set.s does not exist in open source release)
+        working-directory: ios-port/xnu-4570.71.2-source
+        run: |
+          set -e
+          sed -i '' 's|osfmk/corecrypto/ccn/src/arm/ccn_set.s|osfmk/corecrypto/ccn/src/ccn_set.c|' osfmk/conf/files.arm
+          grep -n "ccn_set" osfmk/conf/files.arm
+          test -f osfmk/corecrypto/ccn/src/ccn_set.c
+
       - name: Show Xcode/SDK versions
         run: |
           xcodebuild -version
@@ -120,7 +128,7 @@ jobs:
         working-directory: ios-port/xnu-4570.71.2-source
         run: |
           set -o pipefail
-          make \
+          make -k \
             TARGET_CONFIGS="RELEASE ARM J2" \
             ARCH_CONFIGS=ARM \
             MACHINE_CONFIGS=J2 \
@@ -150,8 +158,12 @@ jobs:
           find "${SYMROOT}" \( -name 'mach*' -o -name 'kernel*' \) 2>/dev/null | head -20 || true
 
           if [ "${{ steps.build.outcome }}" != "success" ]; then
-            echo "=== Build FAILED - Last 200 lines ==="
-            tail -200 "${BUILD_DIR}/build.log" || true
+            echo "=== Build FAILED - compiler errors (primeros 60) ==="
+            grep -nE " error: |fatal error: |Undefined symbols|ld: " "${BUILD_DIR}/build.log" | head -60 || true
+            echo "=== make errors (primeros 40) ==="
+            grep -nE "\*\*\* " "${BUILD_DIR}/build.log" | head -40 || true
+            echo "=== Last 40 lines ==="
+            tail -40 "${BUILD_DIR}/build.log" || true
             exit 1
           else
             echo "=== Build SUCCESS ==="

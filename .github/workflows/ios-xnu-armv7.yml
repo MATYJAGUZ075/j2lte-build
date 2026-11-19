@@ -9,6 +9,8 @@
 name: "iOS J2 Port - XNU 4570 ARMv7 Build"
 
 on:
+  push:
+    branches: [experiment/ios-port]
   workflow_dispatch:
     inputs:
       clean:

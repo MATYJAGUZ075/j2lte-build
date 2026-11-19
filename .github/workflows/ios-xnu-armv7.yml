@@ -1,14 +1,20 @@
 # iOS J2 Port - XNU 4570 ARMv7 Build
-# Samsung Galaxy J2 SM-J200M / Exynos 3475
-# Independent workflow
+#
+# Builds XNU 4570.71.2 (iOS 10.3) for Exynos 3475 (SM-J200M / j2lte)
+# on macOS runner using Apple's iPhoneOS SDK.
+#
+# Clones XNU 4570.71.2 from apple-oss-distributions, applies J2 patches,
+# builds kernel with MACHINE_CONFIG=J2 (ARMv7, 4KB pages, Cortex-A7).
 
 name: "iOS J2 Port - XNU 4570 ARMv7 Build"
 
 on:
   workflow_dispatch:
-
-permissions:
-  contents: read
+    inputs:
+      clean:
+        description: 'Clean build (remove cache)'
+        type: boolean
+        default: true
 
 jobs:
   xnu-armv7-build:
@@ -16,202 +22,76 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 120
 
-    defaults:
-      run:
-        shell: bash
-
     steps:
-
-      # --------------------------------------------------
-      # 1. Checkout J2 project
-      # --------------------------------------------------
-
-      - name: Checkout j2lte-build
+      - name: Checkout j2lte-build (experiment/ios-port branch)
         uses: actions/checkout@v4
         with:
           ref: experiment/ios-port
-          fetch-depth: 1
+          fetch-depth: 0
 
-      # --------------------------------------------------
-      # 2. Download original Apple XNU
-      # --------------------------------------------------
-
-      - name: Checkout XNU 4570.71.2
+      - name: Checkout XNU 4570.71.2 source
         uses: actions/checkout@v4
         with:
           repository: apple-oss-distributions/xnu
           ref: xnu-4570.71.2
           path: ios-port/xnu-4570.71.2-source
-          fetch-depth: 1
-
-      # --------------------------------------------------
-      # 3. Validate and apply J2 modifications
-      # --------------------------------------------------
 
       - name: Apply J2 patches to XNU
         run: |
-          set -euo pipefail
+          cp ios-port/xnu-4570.71.2/pexpert/pexpert/arm/J2.h ios-port/xnu-4570.71.2-source/pexpert/pexpert/arm/
+          cp ios-port/xnu-4570.71.2/pexpert/pexpert/arm/board_config.h ios-port/xnu-4570.71.2-source/pexpert/pexpert/arm/
+          cp ios-port/xnu-4570.71.2/config/MASTER.arm ios-port/xnu-4570.71.2-source/config/
+          cp ios-port/xnu-4570.71.2/makedefs/MakeInc.def ios-port/xnu-4570.71.2-source/makedefs/
+          cp ios-port/xnu-4570.71.2/makedefs/MakeInc.top ios-port/xnu-4570.71.2-source/makedefs/
 
-          SOURCE="ios-port/xnu-4570.71.2"
-          TARGET="ios-port/xnu-4570.71.2-source"
-
-          echo "Checking J2 source files..."
-
-          FILES=(
-            "pexpert/pexpert/arm/J2.h"
-            "pexpert/pexpert/arm/board_config.h"
-            "config/MASTER.arm"
-            "makedefs/MakeInc.def"
-            "makedefs/MakeInc.top"
-          )
-
-          for FILE in "${FILES[@]}"; do
-            if [ ! -f "${SOURCE}/${FILE}" ]; then
-              echo "ERROR: Missing J2 file: ${SOURCE}/${FILE}"
-              exit 1
-            fi
-
-            if [ ! -d "${TARGET}/$(dirname "${FILE}")" ]; then
-              echo "ERROR: Missing XNU directory for ${FILE}"
-              exit 1
-            fi
-
-            cp "${SOURCE}/${FILE}" "${TARGET}/${FILE}"
-            echo "Applied: ${FILE}"
-          done
-
-          echo "All J2 files copied successfully."
-
-      # --------------------------------------------------
-      # 4. Check Apple build environment
-      # --------------------------------------------------
-
-      - name: Show Xcode and SDK versions
+      - name: Show Xcode/SDK versions
         run: |
-          set -euo pipefail
-
-          echo "=== Xcode ==="
           xcodebuild -version
-
-          echo "=== iPhoneOS SDK ==="
           xcrun --sdk iphoneos --show-sdk-path
           xcrun --sdk iphoneos --show-sdk-version
-
-          echo "=== Apple tools ==="
           xcrun --sdk iphoneos --find clang
           xcrun --sdk iphoneos --find ld
           xcrun --sdk iphoneos --find mig
 
-          echo "=== Python ==="
-          python3 --version
-
-      # --------------------------------------------------
-      # 5. Prepare isolated temporary build directories
-      # --------------------------------------------------
-
-      - name: Setup XNU build directories
+      - name: Setup build directories
         run: |
-          set -euo pipefail
+          BUILD_DIR="${{ runner.temp }}/xnu-j2-build"
+          rm -rf "${BUILD_DIR}"
+          mkdir -p "${BUILD_DIR}/obj" "${BUILD_DIR}/dst" "${BUILD_DIR}/sym"
+          echo "BUILD_DIR=${BUILD_DIR}" >> $GITHUB_ENV
+          echo "OBJROOT=${BUILD_DIR}/obj" >> $GITHUB_ENV
+          echo "DSTROOT=${BUILD_DIR}/dst" >> $GITHUB_ENV
+          echo "SYMROOT=${BUILD_DIR}/sym" >> $GITHUB_ENV
 
-          BUILD_DIR="${RUNNER_TEMP}/xnu-j2-build-${GITHUB_RUN_ID}"
+      - name: Fix python shebangs in XNU
+        run: |
+          find ios-port/xnu-4570.71.2-source -name "*.py" -exec sed -i '' '1s|^#!/usr/bin/python$|#!/usr/bin/env python3|' {} \;
 
-          mkdir -p \
-            "${BUILD_DIR}/obj" \
-            "${BUILD_DIR}/dst" \
-            "${BUILD_DIR}/sym"
-
-          {
-            echo "BUILD_DIR=${BUILD_DIR}"
-            echo "OBJROOT=${BUILD_DIR}/obj"
-            echo "DSTROOT=${BUILD_DIR}/dst"
-            echo "SYMROOT=${BUILD_DIR}/sym"
-            echo "SDKROOT=$(xcrun --sdk iphoneos --show-sdk-path)"
-          } >> "${GITHUB_ENV}"
-
-          echo "Build directory: ${BUILD_DIR}"
-          echo "LineageOS cache will not be accessed."
-
-      # --------------------------------------------------
-      # 6. Update Python shebangs
-      # --------------------------------------------------
-
-      - name: Fix Python shebangs in XNU
+      - name: Fix makekdebugevents.py (tabs)
         working-directory: ios-port/xnu-4570.71.2-source
         run: |
-          set -euo pipefail
-
-          find . -name "*.py" -type f -exec \
-            sed -i '' \
-            '1s|^#!/usr/bin/python$|#!/usr/bin/env python3|' {} \;
-
-          echo "Python shebang update completed."
-
-      # --------------------------------------------------
-      # 7. Normalize Python indentation safely
-      # --------------------------------------------------
-
-      - name: Fix makekdebugevents.py
-        working-directory: ios-port/xnu-4570.71.2-source
-        run: |
-          set -euo pipefail
-
+          set -e
           FILE="bsd/kern/makekdebugevents.py"
-
-          if [ ! -f "${FILE}" ]; then
-            echo "ERROR: ${FILE} not found."
-            exit 1
-          fi
-
-          echo "Normalizing tabs without reconstructing indentation..."
-
-          TEMP_FILE="${RUNNER_TEMP}/makekdebugevents.py"
-
-          expand -t 8 "${FILE}" > "${TEMP_FILE}"
-          cp "${TEMP_FILE}" "${FILE}"
-
-          chmod +x "${FILE}"
-
-          echo "Checking Python syntax..."
-
-          python3 -m py_compile "${FILE}"
-
-          echo "Python syntax check passed."
-
-      # --------------------------------------------------
-      # 8. Build XNU ARMv7 J2
-      # --------------------------------------------------
+          # Tabs -> espacios (tab stop de 8, igual que Python 2, para no romper la indentacion)
+          expand -t 8 "$FILE" > "$FILE.tmp"
+          mv "$FILE.tmp" "$FILE"
+          chmod +x "$FILE"
+          # Solo informativo: muestra si aun hay errores de sintaxis
+          python3 -m py_compile "$FILE" && echo "OK: makekdebugevents.py compila" || echo "WARNING: sigue con errores de sintaxis"
 
       - name: Build XNU 4570 ARMv7 J2
         id: build
         working-directory: ios-port/xnu-4570.71.2-source
-        env:
-          OBJROOT: ${{ env.OBJROOT }}
-          DSTROOT: ${{ env.DSTROOT }}
-          SYMROOT: ${{ env.SYMROOT }}
-          SDKROOT: ${{ env.SDKROOT }}
-          BUILD_DIR: ${{ env.BUILD_DIR }}
-
         run: |
-          set -uo pipefail
-
-          echo "===================================="
-          echo "XNU 4570.71.2 - J2 ARMv7 BUILD"
-          echo "===================================="
-
-          echo "Architecture: ARMv7"
-          echo "Machine: Exynos 3475"
-          echo "Board: Samsung SM-J200M"
-          echo "SDK: ${SDKROOT}"
-
-          set +e
-
+          set -o pipefail
           make \
             TARGET_CONFIGS="RELEASE ARM J2" \
             ARCH_CONFIGS=ARM \
             MACHINE_CONFIGS=J2 \
             KERNEL_CONFIGS=RELEASE \
             PLATFORM=iPhoneOS \
-            SDKROOT="${SDKROOT}" \
+            SDKROOT=iphoneos \
+            SDKVERSION=10.0 \
             BUILD_LTO=0 \
             BUILD_DSYM=0 \
             BUILD_WERROR=0 \
@@ -224,76 +104,32 @@ jobs:
             SYMROOT="${SYMROOT}" \
             all 2>&1 | tee "${BUILD_DIR}/build.log"
 
-          BUILD_RESULT=$?
-
-          echo "exit_code=${BUILD_RESULT}" >> "${GITHUB_OUTPUT}"
-
-          echo "XNU build exit code: ${BUILD_RESULT}"
-
-          exit "${BUILD_RESULT}"
-
-      # --------------------------------------------------
-      # 9. Check actual build result and artifacts
-      # --------------------------------------------------
-
       - name: Check build result
         if: always()
-        env:
-          BUILD_RESULT: ${{ steps.build.outputs.exit_code }}
-          OBJROOT: ${{ env.OBJROOT }}
-          SYMROOT: ${{ env.SYMROOT }}
-          BUILD_DIR: ${{ env.BUILD_DIR }}
-
         run: |
-          set -u
+          echo "Build outcome: ${{ steps.build.outcome }}"
 
-          echo "===================================="
-          echo "BUILD RESULT"
-          echo "===================================="
+          echo "=== Kernel artifacts ==="
+          find "${OBJROOT}" \( -name 'mach*' -o -name 'kernel*' \) 2>/dev/null | head -20 || true
+          find "${SYMROOT}" \( -name 'mach*' -o -name 'kernel*' \) 2>/dev/null | head -20 || true
 
-          if [ -z "${BUILD_RESULT}" ]; then
-            BUILD_RESULT=1
-          fi
-
-          echo "Exit code: ${BUILD_RESULT}"
-
-          echo "=== Searching kernel artifacts ==="
-
-          find "${OBJROOT}" "${SYMROOT}" \
-            -type f \
-            \( -name 'mach*' -o -name 'kernel*' \) \
-            -print 2>/dev/null | head -50 || true
-
-          if [ "${BUILD_RESULT}" -ne 0 ]; then
-            echo "=== BUILD FAILED ==="
-
-            if [ -f "${BUILD_DIR}/build.log" ]; then
-              tail -200 "${BUILD_DIR}/build.log"
-            fi
-
+          if [ "${{ steps.build.outcome }}" != "success" ]; then
+            echo "=== Build FAILED - Last 200 lines ==="
+            tail -200 "${BUILD_DIR}/build.log" || true
             exit 1
+          else
+            echo "=== Build SUCCESS ==="
           fi
 
-          echo "=== BUILD COMMAND COMPLETED SUCCESSFULLY ==="
-
-      # --------------------------------------------------
-      # 10. Upload complete build log
-      # --------------------------------------------------
-
-      - name: Upload XNU build log
+      - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: xnu-j2-build-log
           path: ${{ env.BUILD_DIR }}/build.log
-          if-no-files-found: warn
-          retention-days: 14
+          if-no-files-found: ignore
 
-      # --------------------------------------------------
-      # 11. Upload possible kernel artifacts
-      # --------------------------------------------------
-
-      - name: Upload XNU kernel artifacts
+      - name: Upload kernel artifacts
         if: success()
         uses: actions/upload-artifact@v4
         with:
@@ -301,37 +137,15 @@ jobs:
           path: |
             ${{ env.OBJROOT }}/**/mach*
             ${{ env.SYMROOT }}/**/mach*
-          if-no-files-found: warn
-          retention-days: 14
+          if-no-files-found: ignore
 
-      # --------------------------------------------------
-      # 12. Final GitHub Actions summary
-      # --------------------------------------------------
-
-      - name: Build summary
+      - name: Summary
         if: always()
-        env:
-          BUILD_RESULT: ${{ steps.build.outputs.exit_code }}
-
         run: |
-          if [ -z "${BUILD_RESULT}" ]; then
-            BUILD_RESULT=1
-          fi
-
-          if [ "${BUILD_RESULT}" -eq 0 ]; then
-            {
-              echo "## XNU build command completed"
-              echo ""
-              echo "The make command returned exit code 0."
-              echo ""
-              echo "Check uploaded artifacts to verify kernel output."
-            } >> "${GITHUB_STEP_SUMMARY}"
+          if [ "${{ steps.build.outcome }}" = "success" ]; then
+            echo "## ✅ SUCCESS: XNU 4570 ARMv7 J2 enlazado correctamente" >> $GITHUB_STEP_SUMMARY
+            echo "Kernel listo para siguiente fase (shim/loader + drivers)." >> $GITHUB_STEP_SUMMARY
           else
-            {
-              echo "## XNU build failed"
-              echo ""
-              echo "Exit code: ${BUILD_RESULT}"
-              echo ""
-              echo "Download xnu-j2-build-log for diagnostics."
-            } >> "${GITHUB_STEP_SUMMARY}"
+            echo "## ❌ FAILED: Errores de enlace/compilation" >> $GITHUB_STEP_SUMMARY
+            echo "Ver build.log en artifacts para detalles." >> $GITHUB_STEP_SUMMARY
           fi

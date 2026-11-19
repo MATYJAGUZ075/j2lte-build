@@ -344,8 +344,9 @@ jobs:
           open(path, "w").write("\n".join(allsyms) + "\n")
           out = ["/* J2 bring-up stub: NO funcional, solo satisface el linker */",
                  'void j2_stub_placeholder(void) {}']
-          for i, sym in enumerate(allsyms):
-              out.append('void j2_stub_%d(void) __asm__("%s"); void j2_stub_%d(void) {}' % (i, sym[1:], i))
+          for sym in allsyms:
+              # simbolo Mach-O completo, sin depender del prefijo automatico de clang
+              out.append('__asm__(".text\\n.thumb\\n.align 2\\n.globl %s\\n.thumb_func\\n%s:\\n\\tbx lr\\n");' % (sym, sym))
           open(stub_dir + "/stub.c", "w").write("\n".join(out) + "\n")
           print("stub con %d simbolos (%d nuevos)" % (len(allsyms), len(new - old)))
           STUBEOF
@@ -354,6 +355,8 @@ jobs:
             rm -f "${STUB_DIR}/lib${lib}.a"
             xcrun ar rcs "${STUB_DIR}/lib${lib}.a" "${STUB_DIR}/stub.o" "${STUB_DIR}/builtins.o" || return 1
             xcrun ranlib "${STUB_DIR}/lib${lib}.a"
+            echo "--- simbolos definidos en lib${lib}.a ---"
+            xcrun nm -g "${STUB_DIR}/lib${lib}.a" 2>/dev/null | grep -i " [TtDS] " | head -50
             sudo cp "${STUB_DIR}/lib${lib}.a" "${KLIB}/lib${lib}.a"
             echo "instalada ${KLIB}/lib${lib}.a"
           }

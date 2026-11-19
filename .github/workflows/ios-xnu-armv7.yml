@@ -435,11 +435,36 @@ jobs:
           echo "builtins.o OK"
 
           OK=0
+          LS_FIX=0
           for attempt in 1 2 3 4 5; do
             echo "##### intento ${attempt} #####"
             LOG="${BUILD_DIR}/build_attempt_${attempt}.log"
             if run_make "${LOG}"; then OK=1; cp "${LOG}" "${BUILD_DIR}/build.log"; break; fi
             cp "${LOG}" "${BUILD_DIR}/build.log"
+
+            if grep -aq "must link with libSystem" "${LOG}"; then
+              LS_FIX=$((LS_FIX+1))
+              echo "=== diagnostico de flags de link en MakeInc.def ==="
+              grep -n "LDFLAGS_KERNEL\|-static\|-kernel\|pagezero\|-pie\|image_base" makedefs/MakeInc.def | head -60
+              python3 - "${LS_FIX}" << 'LSEOF'
+          import re, shutil, sys, os
+          level = int(sys.argv[1])
+          p = "makedefs/MakeInc.def"
+          if not os.path.exists(p + ".orig"):
+              shutil.copy(p, p + ".orig")
+          s = open(p + ".orig").read()
+          flags = ["-Wl,-static"] if level == 1 else ["-Wl,-static", "-Wl,-kernel"]
+          m = re.search(r"^LDFLAGS_KERNEL_GEN = \\\n", s, re.M)
+          if not m:
+              print("no encontre 'LDFLAGS_KERNEL_GEN = \\' en MakeInc.def (ver el diagnostico de arriba)")
+              sys.exit(1)
+          ins = "".join("\t%s \\\n" % f for f in flags)
+          open(p, "w").write(s[:m.end()] + ins + s[m.end():])
+          print("MakeInc.def: agregado a LDFLAGS_KERNEL_GEN ->", flags)
+          LSEOF
+              [ $? -ne 0 ] && break
+              [ "${LS_FIX}" -le 2 ] && continue
+            fi
 
             MISSING="$(grep -aoE "library not found for -l(firehose_kernel|cc_kext)" "${LOG}" | sed 's/.*-l//' | sort -u)"
             UNDEF_N="$(grep -acE '^\s+"_[^"]+", referenced from' "${LOG}")"

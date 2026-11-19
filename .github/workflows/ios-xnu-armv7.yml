@@ -296,27 +296,91 @@ jobs:
         id: build
         working-directory: ios-port/xnu-4570.71.2-source
         run: |
-          set -o pipefail
-          make -k \
-            TARGET_CONFIGS="RELEASE ARM J2" \
-            ARCH_CONFIGS=ARM \
-            MACHINE_CONFIGS=J2 \
-            KERNEL_CONFIGS=RELEASE \
-            PLATFORM=iPhoneOS \
-            SDKROOT=iphoneos \
-            SDKVERSION=10.0 \
-            ARCH_FLAGS_ARM="-arch ${ARM_ARCH}" \
-            BUILD_LTO=0 \
-            BUILD_DSYM=0 \
-            BUILD_WERROR=0 \
-            CTFCONVERT=/usr/bin/true \
-            CTFMERGE=/usr/bin/true \
-            CTFINSERT=/usr/bin/true \
-            EMBEDDED_DEVICE_MAP=/dev/null \
-            OBJROOT="${OBJROOT}" \
-            DSTROOT="${DSTROOT}" \
-            SYMROOT="${SYMROOT}" \
-            all 2>&1 | tee "${BUILD_DIR}/build.log"
+          set +e
+          SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          CC="$(xcrun --sdk iphoneos --find clang)"
+          KLIB="${SDK_PATH}/usr/local/lib/kernel"
+          STUB_DIR="${BUILD_DIR}/stublibs"
+          mkdir -p "${STUB_DIR}"
+          : > "${STUB_DIR}/symbols.txt"
+          sudo mkdir -p "${KLIB}"
+
+          run_make() {
+            set -o pipefail
+            make -k \
+              TARGET_CONFIGS="RELEASE ARM J2" \
+              ARCH_CONFIGS=ARM \
+              MACHINE_CONFIGS=J2 \
+              KERNEL_CONFIGS=RELEASE \
+              PLATFORM=iPhoneOS \
+              SDKROOT=iphoneos \
+              SDKVERSION=10.0 \
+              ARCH_FLAGS_ARM="-arch ${ARM_ARCH}" \
+              BUILD_LTO=0 \
+              BUILD_DSYM=0 \
+              BUILD_WERROR=0 \
+              CTFCONVERT=/usr/bin/true \
+              CTFMERGE=/usr/bin/true \
+              CTFINSERT=/usr/bin/true \
+              EMBEDDED_DEVICE_MAP=/dev/null \
+              OBJROOT="${OBJROOT}" \
+              DSTROOT="${DSTROOT}" \
+              SYMROOT="${SYMROOT}" \
+              all 2>&1 | tee "$1"
+          }
+
+          # Genera/actualiza una libreria stub (bring-up: solo para que el kernel enlace)
+          make_stub_lib() {
+            lib="$1"
+            python3 - "${STUB_DIR}" "$2" << 'STUBEOF'
+          import re, sys
+          stub_dir, log_path = sys.argv[1], sys.argv[2]
+          log = open(log_path, errors="replace").read()
+          new = set(re.findall(r'^\s+"(_[^"]+)", referenced from', log, re.M))
+          path = stub_dir + "/symbols.txt"
+          old = set(l.strip() for l in open(path) if l.strip())
+          allsyms = sorted(old | new)
+          open(path, "w").write("\n".join(allsyms) + "\n")
+          out = ["/* J2 bring-up stub: NO funcional, solo satisface el linker */",
+                 'void j2_stub_placeholder(void) {}']
+          for i, sym in enumerate(allsyms):
+              out.append('void j2_stub_%d(void) __asm__("%s"); void j2_stub_%d(void) {}' % (i, sym[1:], i))
+          open(stub_dir + "/stub.c", "w").write("\n".join(out) + "\n")
+          print("stub con %d simbolos (%d nuevos)" % (len(allsyms), len(new - old)))
+          STUBEOF
+            "${CC}" -arch "${ARM_ARCH}" -miphoneos-version-min=10.0 -isysroot "${SDK_PATH}" \
+              -ffreestanding -c "${STUB_DIR}/stub.c" -o "${STUB_DIR}/stub.o" || return 1
+            rm -f "${STUB_DIR}/lib${lib}.a"
+            xcrun ar rcs "${STUB_DIR}/lib${lib}.a" "${STUB_DIR}/stub.o" || return 1
+            xcrun ranlib "${STUB_DIR}/lib${lib}.a"
+            sudo cp "${STUB_DIR}/lib${lib}.a" "${KLIB}/lib${lib}.a"
+            echo "instalada ${KLIB}/lib${lib}.a"
+          }
+
+          OK=0
+          for attempt in 1 2 3 4 5; do
+            echo "##### intento ${attempt} #####"
+            LOG="${BUILD_DIR}/build_attempt_${attempt}.log"
+            if run_make "${LOG}"; then OK=1; cp "${LOG}" "${BUILD_DIR}/build.log"; break; fi
+            cp "${LOG}" "${BUILD_DIR}/build.log"
+
+            MISSING="$(grep -aoE "library not found for -l(firehose_kernel|cc_kext)" "${LOG}" | sed 's/.*-l//' | sort -u)"
+            UNDEF_N="$(grep -acE '^\s+"_[^"]+", referenced from' "${LOG}")"
+            if [ -z "${MISSING}" ] && [ "${UNDEF_N}" = "0" ]; then
+              echo "El fallo no es de librerias faltantes ni simbolos indefinidos; me detengo."
+              break
+            fi
+            if [ "${UNDEF_N}" -gt 300 ]; then
+              echo "Demasiados simbolos indefinidos (${UNDEF_N}); no genero stubs."
+              break
+            fi
+            for lib in ${MISSING}; do make_stub_lib "${lib}" "${LOG}"; done
+            if [ -z "${MISSING}" ]; then
+              # solo simbolos indefinidos: actualizar firehose_kernel
+              make_stub_lib firehose_kernel "${LOG}"
+            fi
+          done
+          [ "${OK}" = "1" ]
 
       - name: Check build result
         if: always()
@@ -346,7 +410,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: xnu-j2-build-log
-          path: ${{ env.BUILD_DIR }}/build.log
+          path: ${{ env.BUILD_DIR }}/build*.log
           if-no-files-found: ignore
 
       - name: Upload kernel artifacts

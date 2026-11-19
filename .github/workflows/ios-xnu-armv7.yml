@@ -54,6 +54,21 @@ jobs:
           grep -n "ccn_set" osfmk/conf/files.arm
           test -f osfmk/corecrypto/ccn/src/ccn_set.c
 
+      - name: Patch pexpert/arm Makefile (export J2.h like S7002.h / T8002.h)
+        working-directory: ios-port/xnu-4570.71.2-source
+        run: |
+          set -e
+          python3 - << 'MKEOF'
+          p = "pexpert/pexpert/arm/Makefile"
+          s = open(p).read()
+          if "J2.h" not in s:
+              s = s.replace("\tS7002.h \\\n", "\tJ2.h \\\n\tS7002.h \\\n", 1)
+          assert "J2.h" in s, "no se pudo agregar J2.h a DATAFILES"
+          open(p, "w").write(s)
+          MKEOF
+          grep -n "J2.h\|S7002.h" pexpert/pexpert/arm/Makefile
+          test -f pexpert/pexpert/arm/J2.h
+
       - name: Show Xcode/SDK versions
         run: |
           xcodebuild -version

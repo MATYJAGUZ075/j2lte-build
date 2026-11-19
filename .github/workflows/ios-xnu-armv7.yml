@@ -335,4 +335,3 @@ jobs:
               echo "Download xnu-j2-build-log for diagnostics."
             } >> "${GITHUB_STEP_SUMMARY}"
           fi
-```

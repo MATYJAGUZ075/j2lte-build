@@ -141,6 +141,62 @@ jobs:
           print("OK: libkern/os/firehose_buffer_private.h (%d bytes)" % len(data))
           PATCHEOF
 
+      - name: Patch missing ARM pieces (san configs, zlib asm, firehose export)
+        working-directory: ios-port/xnu-4570.71.2-source
+        run: |
+          set -e
+          echo "=== libkern/os/Makefile (antes del parche) ==="
+          cat libkern/os/Makefile
+          echo "=== libkern/conf ==="
+          ls libkern/conf
+          echo "=== san/conf ==="
+          ls san/conf
+          python3 - << 'ARMEOF'
+          import glob, os
+
+          # A) san/conf: XNU 4570 open source solo trae configs x86_64; ARM va vacio
+          os.makedirs("san/conf", exist_ok=True)
+          for f in ("san/conf/Makefile.arm", "san/conf/files.arm"):
+              if not os.path.exists(f):
+                  open(f, "w").close()
+                  print("creado vacio:", f)
+              else:
+                  print("ya existe:", f)
+
+          # B) zlib: ensamblador ARM de Apple que no esta en el release open source
+          bad = ("zlib/arm/inffastS.s", "zlib/arm/adler32vec.s")
+          removed = 0
+          for path in sorted(glob.glob("libkern/conf/files*")):
+              lines = open(path).read().split("\n")
+              keep = [l for l in lines if not any(b in l for b in bad)]
+              n = len(lines) - len(keep)
+              if n:
+                  open(path, "w").write("\n".join(keep))
+                  print("quitadas %d lineas de %s" % (n, path))
+                  removed += n
+          assert removed > 0, "no encontre referencias a inffastS.s / adler32vec.s en libkern/conf/files*"
+
+          # C) firehose_buffer_private.h: agregarlo a la lista de headers exportados
+          p = "libkern/os/Makefile"
+          lines = open(p).read().split("\n")
+          if any("firehose_buffer_private.h" in l for l in lines):
+              print("ya aplicado:", p)
+          else:
+              for i, l in enumerate(lines):
+                  if l.strip().startswith("log_private.h"):
+                      indent = l[:len(l) - len(l.lstrip())]
+                      lines.insert(i, indent + "firehose_buffer_private.h \\")
+                      break
+              else:
+                  raise SystemExit("no encontre log_private.h en libkern/os/Makefile (ver el cat de arriba)")
+              open(p, "w").write("\n".join(lines))
+              print("OK:", p)
+          ARMEOF
+          echo "=== libkern/os/Makefile (despues del parche) ==="
+          cat libkern/os/Makefile
+          echo "=== diagnostico zlib: referencias a las versiones asm ==="
+          grep -n "adler32_vec\|inflate_fast\|__arm__\|_ARM_ARCH\|__ARM_NEON__" libkern/zlib/adler32.c libkern/zlib/inffast.c || true
+
       - name: Show Xcode/SDK versions
         run: |
           xcodebuild -version

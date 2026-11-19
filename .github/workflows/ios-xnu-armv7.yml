@@ -176,20 +176,16 @@ jobs:
                   removed += n
           assert removed > 0, "no encontre referencias a inffastS.s / adler32vec.s en libkern/conf/files*"
 
-          # C) firehose_buffer_private.h: agregarlo a la lista de headers exportados
+          # C) firehose_buffer_private.h: agregarlo a EXPORT_MI_LIST (se exporta a EXPORT_HDRS/libkern/os)
           p = "libkern/os/Makefile"
-          lines = open(p).read().split("\n")
-          if any("firehose_buffer_private.h" in l for l in lines):
+          s = open(p).read()
+          if "firehose_buffer_private.h" in s:
               print("ya aplicado:", p)
           else:
-              for i, l in enumerate(lines):
-                  if l.strip().startswith("log_private.h"):
-                      indent = l[:len(l) - len(l.lstrip())]
-                      lines.insert(i, indent + "firehose_buffer_private.h \\")
-                      break
-              else:
-                  raise SystemExit("no encontre log_private.h en libkern/os/Makefile (ver el cat de arriba)")
-              open(p, "w").write("\n".join(lines))
+              old = "${KERNELFILES} ${PRIVATE_KERNELFILES} log_private.h"
+              assert old in s, "no encontre la linea de EXPORT_MI_LIST en libkern/os/Makefile"
+              s = s.replace(old, old + " firehose_buffer_private.h", 1)
+              open(p, "w").write(s)
               print("OK:", p)
           ARMEOF
           echo "=== libkern/os/Makefile (despues del parche) ==="

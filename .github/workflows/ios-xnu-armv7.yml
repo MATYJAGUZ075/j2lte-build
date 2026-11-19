@@ -21,7 +21,7 @@ on:
 jobs:
   xnu-armv7-build:
     name: Build XNU 4570 ARMv7 J2
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 120
 
     steps:

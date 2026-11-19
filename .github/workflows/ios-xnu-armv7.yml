@@ -339,7 +339,8 @@ jobs:
           new = set(re.findall(r'^\s+"(_[^"]+)", referenced from', log, re.M))
           path = stub_dir + "/symbols.txt"
           old = set(l.strip() for l in open(path) if l.strip())
-          allsyms = sorted(old | new)
+          real = set("___" + n for n in ("udivmoddi4","udivdi3","umoddi3","divdi3","moddi3","floatundidf","floatdidf","floatundisf","floatdisf","fixunsdfdi","fixdfdi","fixunssfdi","fixsfdi"))
+          allsyms = sorted((old | new) - real)
           open(path, "w").write("\n".join(allsyms) + "\n")
           out = ["/* J2 bring-up stub: NO funcional, solo satisface el linker */",
                  'void j2_stub_placeholder(void) {}']
@@ -351,11 +352,84 @@ jobs:
             "${CC}" -arch "${ARM_ARCH}" -miphoneos-version-min=10.0 -isysroot "${SDK_PATH}" \
               -ffreestanding -c "${STUB_DIR}/stub.c" -o "${STUB_DIR}/stub.o" || return 1
             rm -f "${STUB_DIR}/lib${lib}.a"
-            xcrun ar rcs "${STUB_DIR}/lib${lib}.a" "${STUB_DIR}/stub.o" || return 1
+            xcrun ar rcs "${STUB_DIR}/lib${lib}.a" "${STUB_DIR}/stub.o" "${STUB_DIR}/builtins.o" || return 1
             xcrun ranlib "${STUB_DIR}/lib${lib}.a"
             sudo cp "${STUB_DIR}/lib${lib}.a" "${KLIB}/lib${lib}.a"
             echo "instalada ${KLIB}/lib${lib}.a"
           }
+
+          # Builtins de 64 bits para armv7k: Xcode no trae libclang_rt para armv7k (solo armv7),
+          # y el kernel necesita __udivdi3, __umoddi3, __moddi3, __floatdidf, etc.
+          cat > "${STUB_DIR}/builtins.c" << 'BIEOF'
+          /* J2 bring-up: minimal 64-bit compiler-rt builtins for armv7k (no libclang_rt for armv7k in Xcode) */
+          typedef unsigned long long u64;
+          typedef long long s64;
+          typedef unsigned int u32;
+
+          static u64 j2_udivmod(u64 n, u64 d, u64 *rem)
+          {
+          	u64 q = 0, r = 0;
+          	int i;
+          	if (d == 0) { if (rem) *rem = n; return 0; }
+          	for (i = 63; i >= 0; i--) {
+          		r = (r << 1) | ((n >> i) & 1);
+          		if (r >= d) { r -= d; q |= ((u64)1 << i); }
+          	}
+          	if (rem) *rem = r;
+          	return q;
+          }
+
+          u64 __udivmoddi4(u64 n, u64 d, u64 *rem) { return j2_udivmod(n, d, rem); }
+          u64 __udivdi3(u64 n, u64 d) { return j2_udivmod(n, d, 0); }
+          u64 __umoddi3(u64 n, u64 d) { u64 r; j2_udivmod(n, d, &r); return r; }
+          s64 __divdi3(s64 a, s64 b)
+          {
+          	int neg = (a < 0) ^ (b < 0);
+          	u64 ua = a < 0 ? (u64)0 - (u64)a : (u64)a;
+          	u64 ub = b < 0 ? (u64)0 - (u64)b : (u64)b;
+          	u64 q = j2_udivmod(ua, ub, 0);
+          	return neg ? (s64)((u64)0 - q) : (s64)q;
+          }
+          s64 __moddi3(s64 a, s64 b)
+          {
+          	u64 ua = a < 0 ? (u64)0 - (u64)a : (u64)a;
+          	u64 ub = b < 0 ? (u64)0 - (u64)b : (u64)b;
+          	u64 r;
+          	j2_udivmod(ua, ub, &r);
+          	return a < 0 ? (s64)((u64)0 - r) : (s64)r;
+          }
+          double __floatundidf(u64 a)
+          {
+          	return (double)(u32)(a >> 32) * 4294967296.0 + (double)(u32)a;
+          }
+          double __floatdidf(s64 a)
+          {
+          	if (a < 0) return -__floatundidf((u64)0 - (u64)a);
+          	return __floatundidf((u64)a);
+          }
+          float __floatundisf(u64 a) { return (float)__floatundidf(a); }
+          float __floatdisf(s64 a) { return (float)__floatdidf(a); }
+          u64 __fixunsdfdi(double d)
+          {
+          	u32 hi, lo;
+          	if (d <= 0.0) return 0;
+          	if (d >= 18446744073709551616.0) return ~(u64)0;
+          	hi = (u32)(d / 4294967296.0);
+          	lo = (u32)(d - (double)hi * 4294967296.0);
+          	return ((u64)hi << 32) | lo;
+          }
+          s64 __fixdfdi(double d)
+          {
+          	if (d < 0.0) return (s64)((u64)0 - __fixunsdfdi(-d));
+          	return (s64)__fixunsdfdi(d);
+          }
+          u64 __fixunssfdi(float f) { return __fixunsdfdi((double)f); }
+          s64 __fixsfdi(float f) { return __fixdfdi((double)f); }
+          BIEOF
+          "${CC}" -arch "${ARM_ARCH}" -miphoneos-version-min=10.0 -isysroot "${SDK_PATH}" \
+            -O2 -ffreestanding -fno-builtin -c "${STUB_DIR}/builtins.c" -o "${STUB_DIR}/builtins.o"
+          if [ $? -ne 0 ]; then echo "::error::no compilo builtins.c"; exit 1; fi
+          echo "builtins.o OK"
 
           OK=0
           for attempt in 1 2 3 4 5; do

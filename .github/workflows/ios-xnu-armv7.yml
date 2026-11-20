@@ -20,7 +20,7 @@ on:
       kernel_text_base:
         description: 'EXPERIMENTAL: __TEXT base address in hex (ej. 0x80000000). Vacio = sin cambios (base actual)'
         type: string
-        default: ''
+        default: '0x80000000'
 
 jobs:
   xnu-armv7-build:
@@ -692,7 +692,7 @@ jobs:
           echo "=== stubs firehose enlazados: desensamblado Thumb + bytes crudos ==="
           echo "(esperado: movs r0, #0 ; bx lr = bytes 00 20 70 47)"
           for s in ___firehose_buffer_create ___firehose_buffer_tracepoint_reserve; do
-            xcrun llvm-objdump -d --triple=thumbv7k-apple-ios10.0 --disassemble-symbols="$s" "${BIN}" 2>&1 | head -8 || true
+            xcrun llvm-objdump -d --triple=thumbv7k-apple-ios10.0 --disassemble-symbols="$s" "${BIN}" 2>&1 || true
             ADDR="$(xcrun nm -n "${BIN}" | awk -v s="$s" '$3==s{print $1; exit}')"
             if [ -n "${ADDR}" ]; then
               OFF=$(( 0x${ADDR} - VM ))

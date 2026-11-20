@@ -28,8 +28,12 @@ index 14cdbdc..70ea99b 100644
 +allow mediacodec sysfs:file r_file_perms;
 +allow mediacodec sysfs:dir r_dir_perms;
 +
- # /sys/class/video4linux/*
- r_dir_file(mediacodec, sysfs_v4l);
++# Permisos explícitos sobre sysfs_v4l etiquetado en genfs_contexts
++allow mediacodec sysfs_v4l:file r_file_perms;
++allow mediacodec sysfs_v4l:dir r_dir_perms;
+
+  # /sys/class/video4linux/*
+  r_dir_file(mediacodec, sysfs_v4l);
 diff --git a/sepolicy/vendor/mediaserver.te b/sepolicy/vendor/mediaserver.te
 index 96073a4..11dbb3b 100644
 --- a/sepolicy/vendor/mediaserver.te

@@ -1,0 +1,17 @@
+diff --git a/arch/arm/boot/dts/exynos3475-j2_common.dtsi b/arch/arm/boot/dts/exynos3475-j2_common.dtsi
+index 51c2354ff..26e75794b 100755
+--- a/arch/arm/boot/dts/exynos3475-j2_common.dtsi
++++ b/arch/arm/boot/dts/exynos3475-j2_common.dtsi
+@@ -932,7 +932,11 @@
+ 			gpio_reset = <&gpd0 4 0x1>;
+ 			gpio_standby = <&gpf1 0 0x1>; /* VT_CAM_STBY */
+ 			gpio_mclk = <&gpe0 1 0x1>; /* VT_CAM_MCLK */
+-			status = "okay";
++			/* Este movil no lleva el sensor frontal DB8221A (i2c 0x45): el
++			 * frontal es el SR200 (i2c 0x20, id 302). Con los dos nodos
++			 * activos el FIMC-IS empareja la camara frontal con el
++			 * DB8221A y falla al inicializar (-ENXIO en /dev/video102). */
++			status = "disabled";
+ 		};
+ 	};
+ 

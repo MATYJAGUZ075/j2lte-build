@@ -1,8 +1,8 @@
 diff --git a/sepolicy/vendor/genfs_contexts b/sepolicy/vendor/genfs_contexts
-index c889e68..e9d2ada 100644
+index 7eb7c25..3f26041 100644
 --- a/sepolicy/vendor/genfs_contexts
 +++ b/sepolicy/vendor/genfs_contexts
-@@ -126,3 +126,8 @@ genfscon sysfs /devices/14800000.dsim      u:object_r:sysfs_graphics:s0
+@@ -127,6 +127,11 @@ genfscon sysfs /devices/14800000.dsim      u:object_r:sysfs_graphics:s0
  
  # video4linux
  genfscon sysfs /devices/12800000.mfc0/video4linux   u:object_r:sysfs_v4l:s0
@@ -11,6 +11,9 @@ index c889e68..e9d2ada 100644
 +genfscon sysfs /devices/fimc_is_sensor.2/video4linux u:object_r:sysfs_v4l:s0
 +genfscon sysfs /devices/fimc_is_sensor.3/video4linux u:object_r:sysfs_v4l:s0
 +genfscon sysfs /devices/mdev_output.6/video4linux u:object_r:sysfs_v4l:s0
+ 
+ # debugfs de Mali (memtrack)
+ genfscon debugfs /mali  u:object_r:debugfs_mali:s0
 diff --git a/sepolicy/vendor/mediacodec.te b/sepolicy/vendor/mediacodec.te
 index 14cdbdc..70ea99b 100644
 --- a/sepolicy/vendor/mediacodec.te

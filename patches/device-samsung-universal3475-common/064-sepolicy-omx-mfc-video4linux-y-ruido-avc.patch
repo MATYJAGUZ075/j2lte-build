@@ -1,0 +1,41 @@
+diff --git a/sepolicy/vendor/genfs_contexts b/sepolicy/vendor/genfs_contexts
+index c889e68..e9d2ada 100644
+--- a/sepolicy/vendor/genfs_contexts
++++ b/sepolicy/vendor/genfs_contexts
+@@ -126,3 +126,8 @@ genfscon sysfs /devices/14800000.dsim      u:object_r:sysfs_graphics:s0
+ 
+ # video4linux
+ genfscon sysfs /devices/12800000.mfc0/video4linux   u:object_r:sysfs_v4l:s0
++genfscon sysfs /devices/12c30000.mfc0/video4linux   u:object_r:sysfs_v4l:s0
++genfscon sysfs /devices/14400000.fimc_is/video4linux u:object_r:sysfs_v4l:s0
++genfscon sysfs /devices/fimc_is_sensor.2/video4linux u:object_r:sysfs_v4l:s0
++genfscon sysfs /devices/fimc_is_sensor.3/video4linux u:object_r:sysfs_v4l:s0
++genfscon sysfs /devices/mdev_output.6/video4linux u:object_r:sysfs_v4l:s0
+diff --git a/sepolicy/vendor/mediacodec.te b/sepolicy/vendor/mediacodec.te
+index 14cdbdc..70ea99b 100644
+--- a/sepolicy/vendor/mediacodec.te
++++ b/sepolicy/vendor/mediacodec.te
+@@ -1,5 +1,11 @@
+ # /system/lib/omx/
+ allow mediacodec system_file:dir r_dir_perms;
+ 
++# El HAL de OMX de Samsung lee el nombre del codec en el sysfs del driver MFC
++# (/sys/devices/12c30000.mfc0/video4linux/videoN/name). Sin esto el HAL no
++# identifica el codec y el servicio repite la denegacion cientos de veces.
++allow mediacodec sysfs:file r_file_perms;
++allow mediacodec sysfs:dir r_dir_perms;
++
+ # /sys/class/video4linux/*
+ r_dir_file(mediacodec, sysfs_v4l);
+diff --git a/sepolicy/vendor/mediaserver.te b/sepolicy/vendor/mediaserver.te
+index 96073a4..11dbb3b 100644
+--- a/sepolicy/vendor/mediaserver.te
++++ b/sepolicy/vendor/mediaserver.te
+@@ -19,3 +19,7 @@ allow { netd wificond vdc zygote surfaceflinger audioserver cameraserver } media
+ # El kernel 3.10 no tiene el device de cgroup eBPF (/dev/cg2_bpf) que netd
+ # intenta abrir: la denegacion es esperable, se silencia.
+ dontaudit netd device:dir read;
++
++# El stub /system/bin/mediaserver lo leen varios dominios al arrancar; solo
++# generan ruido de avc.
++dontaudit { rild bootstat auditctl } mediaserver_exec:file read;

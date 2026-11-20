@@ -360,17 +360,20 @@ jobs:
           _Static_assert(sizeof(boot_args) == 0x140, "sizeof(boot_args)");
           ASSEOF
           INC="-I pexpert -I osfmk -I libkern -I bsd -I ."
-          FLAGS="-arch ${ARM_ARCH} -miphoneos-version-min=10.0 -isysroot ${SDK} -ffreestanding -fsyntax-only"
-          echo "--- layout segun clang (${ARM_ARCH}) ---"
-          if "$CC" $FLAGS $INC -Xclang -fdump-record-layouts "$T/layout.c" > "$T/layout.log" 2>&1; then
-            sed -n '/struct boot_args/,/sizeof=/p' "$T/layout.log" | head -40
+          BASEFLAGS="-arch ${ARM_ARCH} -miphoneos-version-min=10.0 -isysroot ${SDK} -ffreestanding"
+          echo "--- layout segun clang (${ARM_ARCH}, informativo; requiere codegen, por eso -c) ---"
+          if "$CC" $BASEFLAGS $INC -Xclang -fdump-record-layouts -c "$T/layout.c" -o "$T/layout.o" > "$T/layout.log" 2>&1; then
+            if grep -q "struct boot_args" "$T/layout.log"; then
+              sed -n '/struct boot_args/,/sizeof=/p' "$T/layout.log" | head -40
+            else
+              echo "(el volcado de layout salio vacio; no afecta la comprobacion de offsets de abajo)"
+            fi
           else
-            echo "::warning::boot_args NO CONFIRMADO: no pude compilar boot.h para obtener el layout. Los offsets de la propuesta siguen siendo calculados a mano, no verificados."
+            echo "(no pude generar el volcado de layout; no afecta la comprobacion de offsets de abajo)"
             head -30 "$T/layout.log"
-            exit 0
           fi
           echo "--- comprobacion de offsets (static_assert) ---"
-          if "$CC" $FLAGS $INC "$T/assert.c" > "$T/assert.log" 2>&1; then
+          if "$CC" $BASEFLAGS $INC -fsyntax-only "$T/assert.c" > "$T/assert.log" 2>&1; then
             echo "::notice::boot_args: los offsets esperados COINCIDEN con pexpert/pexpert/arm/boot.h de este checkout (verificado por compilacion, no por ejecucion)."
           else
             echo "::warning::boot_args NO CONFIRMADO: los offsets esperados NO coinciden o la comprobacion no compilo. Ver errores:"
@@ -516,7 +519,7 @@ jobs:
             echo "--- simbolos definidos en lib${lib}.a ---"
             xcrun nm -g "${STUB_DIR}/lib${lib}.a" 2>/dev/null | grep -i " [TtDS] " | head -50
             echo "--- desensamblado de los stubs firehose (verificacion de retorno NULL) ---"
-            xcrun llvm-objdump -d "${STUB_DIR}/stub.o" 2>&1 | grep -A3 "firehose" | head -40 || true
+            xcrun llvm-objdump -d --triple=thumbv7k-apple-ios10.0 "${STUB_DIR}/stub.o" 2>&1 | grep -A3 "firehose" | head -40 || true
             sudo cp "${STUB_DIR}/lib${lib}.a" "${KLIB}/lib${lib}.a"
             echo "instalada ${KLIB}/lib${lib}.a"
           }
@@ -684,12 +687,18 @@ jobs:
           xcrun otool -l "${BIN}" | grep -E "segname|vmaddr|vmsize|fileoff|filesize" | head -60
           echo "=== simbolos clave ==="
           xcrun nm -n "${BIN}" | grep -E " (__start|_arm_init|___firehose_buffer_create|___firehose_buffer_tracepoint_reserve)$" || true
-          echo "=== desensamblado de los stubs firehose enlazados ==="
-          for s in ___firehose_buffer_create ___firehose_buffer_tracepoint_reserve; do
-            xcrun llvm-objdump -d --disassemble-symbols="$s" "${BIN}" 2>&1 | head -8 || true
-          done
           VM="$(xcrun otool -l "${BIN}" | awk '/segname __TEXT/{f=1} f&&/vmaddr/{print $2; exit}')"
           echo "__TEXT vmaddr real: ${VM}"
+          echo "=== stubs firehose enlazados: desensamblado Thumb + bytes crudos ==="
+          echo "(esperado: movs r0, #0 ; bx lr = bytes 00 20 70 47)"
+          for s in ___firehose_buffer_create ___firehose_buffer_tracepoint_reserve; do
+            xcrun llvm-objdump -d --triple=thumbv7k-apple-ios10.0 --disassemble-symbols="$s" "${BIN}" 2>&1 | head -8 || true
+            ADDR="$(xcrun nm -n "${BIN}" | awk -v s="$s" '$3==s{print $1; exit}')"
+            if [ -n "${ADDR}" ]; then
+              OFF=$(( 0x${ADDR} - VM ))
+              echo "${s} @ 0x${ADDR} (file offset ${OFF}): $(od -A n -t x1 -j ${OFF} -N 8 "${BIN}")"
+            fi
+          done
           if [ -n "${KBASE}" ]; then
             if [ $(( VM )) -ne $(( KBASE )) ]; then
               echo "::warning::__TEXT vmaddr (${VM}) distinto de kernel_text_base pedido (${KBASE}): ld no respeto -image_base."

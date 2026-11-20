@@ -405,7 +405,7 @@ jobs:
       - name: Optional experiment - set kernel __TEXT base (no-op if kernel_text_base is empty)
         working-directory: ios-port/xnu-4570.71.2-source
         env:
-          KBASE: 0x80000000
+          KBASE: '0x80000000'
         run: |
           set -e
           if [ -z "${KBASE}" ]; then
@@ -676,7 +676,7 @@ jobs:
         if: always()
         continue-on-error: true
         env:
-          KBASE: ${{ inputs.kernel_text_base }}
+          KBASE: '${{ inputs.kernel_text_base }}'
         run: |
           BIN="${OBJROOT}/RELEASE_ARM_J2/mach.release.j2.unstripped"
           if [ ! -f "${BIN}" ]; then

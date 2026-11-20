@@ -45,4 +45,4 @@ index 96073a4..11dbb3b 100644
 +
 +# El stub /system/bin/mediaserver lo leen varios dominios al arrancar; solo
 +# generan ruido de avc.
-+dontaudit { rild bootstat auditctl } mediaserver_exec:file read;
++dontaudit { rild bootstat } mediaserver_exec:file read;

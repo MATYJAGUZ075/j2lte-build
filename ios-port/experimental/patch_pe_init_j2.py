@@ -66,13 +66,15 @@ static void j2_mct_init(volatile unsigned int *base)
 	/* MCT initialization - frequency VERIFIED: 26 MHz (0x018cba80)
 	 * base: 0x100B0000 (verified via /proc/device-tree/mct@100B0000/reg)
 	 * Global counter lower 32 bits at offset 0x100, upper at 0x104.
-	 * This reads the counter to verify the timer is accessible. */
+	 * Read and store the counter to verify timer accessibility. */
+	static volatile unsigned int mct_counter_lo = 0;
+	static volatile unsigned int mct_counter_hi = 0;
 	volatile unsigned int *cnt_l = base + (0x100 / 4);
 	volatile unsigned int *cnt_u = base + (0x104 / 4);
-	unsigned int lo = *cnt_l;
-	unsigned int hi = *cnt_u;
-	(void)lo;
-	(void)hi;
+	mct_counter_lo = *cnt_l;
+	mct_counter_hi = *cnt_u;
+	(void)mct_counter_lo;
+	(void)mct_counter_hi;
 }
 
 void

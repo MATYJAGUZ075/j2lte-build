@@ -14,7 +14,7 @@
 #include "../load_planner.h"
 #include "../drivers/uart.h"
 #include "../drivers/gic.h"
-#include "../drivers/mct.h"
+#include "../platform/platform.h"
 
 static int failures = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { printf("FAIL: %s\n", msg); failures++; } else { printf("PASS: %s\n", msg); } } while (0)
@@ -110,7 +110,7 @@ int main(void) {
 
     j2_shim_memory_t mem = { in.physBase, in.virtBase, in.memSize, in.topOfKernelData, 0x21000000, 0x20ff0000 };
     CHECK(j2_shim_prepare(&mem) == 1, "shim prepare");
-    CHECK(j2_shim_handoff_valid(&mem) == 1, "shim handoff valid");
+    CHECK(j2_platform_init(&mem) == 1, "platform init");
 
     CHECK(j2_boot_args_validate(in.physBase, in.virtBase, in.memSize, in.topOfKernelData) == 1, "boot_args validate");
     CHECK(j2_boot_args_validate(0x20000000, 0x80000000, 0x3F500000, 0x80536000) == 0, "VA-as-PA rejected");

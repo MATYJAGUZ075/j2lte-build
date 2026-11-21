@@ -42,11 +42,11 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -c boot_args_builder.c apple_dt_serializer.c boot_args_validator.c
           cc -std=c11 -Wall -Wextra -Werror -c macho/macho_loader.c -I macho
           cc -std=c11 -Wall -Wextra -Werror -c macho/full/macho_full.c -I macho/full -I macho
-          cc -std=c11 -Wall -Wextra -Werror -c drivers/drivers.c -I. -Idrivers
+          cc -std=c11 -Wall -Wextra -Werror -c platform/platform.c -I. -Iplatform -Ishim -Idrivers
           cc -std=c11 -Wall -Wextra -Werror -c load_planner.c -I. -I macho -I macho/full -I memory
           cc -std=c11 -Wall -Wextra -Werror -I. -I macho -I macho/full -I memory -I shim \
             integration/integration_test.c boot_args_builder.c apple_dt_serializer.c boot_args_validator.c \
-            macho/macho_loader.c macho/full/macho_full.c memory/memory_manager.c shim/shim.c load_planner.c drivers/drivers.c \
+            macho/macho_loader.c macho/full/macho_full.c memory/memory_manager.c shim/shim.c load_planner.c drivers/drivers.c platform/platform.c \
             -o integration_test
           ./integration_test
 

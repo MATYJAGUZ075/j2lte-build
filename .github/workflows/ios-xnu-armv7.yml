@@ -46,7 +46,7 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -c load_planner.c -I. -I macho -I macho/full -I memory
           cc -std=c11 -Wall -Wextra -Werror -I. -I macho -I macho/full -I memory -I shim \
             integration/integration_test.c boot_args_builder.c apple_dt_serializer.c boot_args_validator.c \
-            macho/macho_loader.c macho/full/macho_full.c memory/memory_manager.c shim/shim.c load_planner.c drivers/drivers.c platform/platform.c memplan/memplan.c pe_j2_adapter.c \
+            macho/macho_loader.c macho/full/macho_full.c memory/memory_manager.c shim/shim.c load_planner.c drivers/drivers.c platform/platform.c memplan/memplan.c \
             -o integration_test
           ./integration_test
 
@@ -59,8 +59,8 @@ jobs:
 
       - name: Apply J2 patches to XNU
         run: |
-           cp ios-port/xnu-4570.71.2/pexpert/pexpert/arm/J2.h ios-port/xnu-4570.71.2-source/pexpert/pexpert/arm/
-           cp ios-port/xnu-4570.71.2/pexpert/pexpert/arm/board_config.h ios-port/xnu-4570.71.2-source/pexpert/pexpert/arm/
+          cp ios-port/xnu-4570.71.2/pexpert/pexpert/arm/J2.h ios-port/xnu-4570.71.2-source/pexpert/pexpert/arm/
+          cp ios-port/xnu-4570.71.2/pexpert/pexpert/arm/board_config.h ios-port/xnu-4570.71.2-source/pexpert/pexpert/arm/
           cp ios-port/xnu-4570.71.2/config/MASTER.arm ios-port/xnu-4570.71.2-source/config/
           cp ios-port/xnu-4570.71.2/makedefs/MakeInc.def ios-port/xnu-4570.71.2-source/makedefs/
           cp ios-port/xnu-4570.71.2/makedefs/MakeInc.top ios-port/xnu-4570.71.2-source/makedefs/

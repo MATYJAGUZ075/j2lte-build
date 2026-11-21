@@ -15,7 +15,7 @@
 #include "../drivers/uart.h"
 #include "../drivers/gic.h"
 #include "../drivers/mct.h"
-#include "../memplan/memplan.h"
+#include "../platform/platform.h"
 #include "../manifest_values.h"
 
 static int failures = 0;
@@ -200,7 +200,13 @@ int main(void) {
     CHECK(j2_boot_args_validate(0x20000000, 0x80000000, 0x3F500000, 0x80536000) == 0, "VA-as-PA rejected");
     CHECK(j2_boot_args_validate(0, 0x80000000, 0x3F500000, 0x20536000) == 0, "zero physBase rejected");
 
-    CHECK(j2_va_to_pa(0x80100000, 0x80000000, 0x20000000, &(uint32_t){0}) == 1, "va_to_pa ok");
+    /* Platform init full test */
+    volatile uint32_t puart[64] = {0}; puart[J2_UART_UTRSTAT / 4] = J2_UART_UTRSTAT_TX_EMPTY;
+    volatile uint32_t pgicd[1024] = {0}; volatile uint32_t pgicc[1024] = {0};
+    volatile uint32_t pmct[1024] = {0}; pmct[J2_MCT_G_CNT_L / 4] = 0x1234;
+    int plat = j2_platform_init_full(&mem, puart, pgicd, pgicc, pmct);
+    CHECK(plat == 3, "platform init full (3 components)");
+    CHECK(j2_platform_init(NULL) == 0, "platform init null rejected");
 
     if (failures == 0) {
         /* UART host test */

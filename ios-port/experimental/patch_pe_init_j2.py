@@ -80,7 +80,8 @@ j2_pe_init_platform(void *args)
 	/* UART init (MMIO base verified via /proc/iomem) */
 	j2_uart_init(uart);
 
-	/* GIC init (addresses from J2.h, NOT independently verified) */
+	/* GIC init (addresses from J2.h, NOT independently verified on hardware) */
+	/* WARNING: 0x10C01000/0x10C02000 are UNVERIFIED - do not use in production */
 	j2_gic_init(gic_dist, gic_cpu);
 
 	/* MCT init (frequency UNVERIFIED) */

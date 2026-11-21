@@ -61,8 +61,23 @@ jobs:
         run: |
           cp ios-port/xnu-4570.71.2/pexpert/pexpert/arm/J2.h ios-port/xnu-4570.71.2-source/pexpert/pexpert/arm/
           cp ios-port/xnu-4570.71.2/pexpert/pexpert/arm/board_config.h ios-port/xnu-4570.71.2-source/pexpert/pexpert/arm/
-          cp ios-port/xnu-4570.71.2/pexpert/arm/pe_j2.c ios-port/xnu-4570.71.2-source/pexpert/arm/pe_j2.c
-          python3 ios-port/experimental/patch_pe_init_j2.py ios-port/xnu-4570.71.2-source/pexpert/arm/pe_init.c
+           cp ios-port/xnu-4570.71.2/pexpert/arm/pe_j2.c ios-port/xnu-4570.71.2-source/pexpert/arm/pe_j2.c
+           python3 ios-port/experimental/patch_pe_init_j2.py ios-port/xnu-4570.71.2-source/pexpert/arm/pe_init.c
+           python3 - << 'PEJ2EOF'
+           import os, glob
+           targets = []
+           for root, dirs, files in os.walk("ios-port/xnu-4570.71.2-source"):
+               for f in files:
+                   if f == "files.arm":
+                       targets.append(os.path.join(root, f))
+           print("files.arm found:", targets)
+           for p in targets:
+               s = open(p).read()
+               if "pe_init.c" in s and "pe_j2.c" not in s:
+                   s = s.replace("pe_init.c", "pe_init.c\npe_j2.c", 1)
+                   open(p, "w").write(s)
+                   print("patched:", p)
+           PEJ2EOF
           cp ios-port/xnu-4570.71.2/config/MASTER.arm ios-port/xnu-4570.71.2-source/config/
           cp ios-port/xnu-4570.71.2/makedefs/MakeInc.def ios-port/xnu-4570.71.2-source/makedefs/
           grep -rn "PE_init_platform" ios-port/xnu-4570.71.2-source/pexpert/ | head -40

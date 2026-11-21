@@ -23,7 +23,7 @@ int main(void) {
     lc[0] = 1; lc[1] = 56;
     memcpy(macho + 28 + 8, "__TEXT", 6);
     uint32_t *seg = (uint32_t*)(macho + 28 + 24);
-    seg[0] = 0x80100000; seg[1] = 0x003A0000; seg[2] = 0; seg[3] = 0x003A0000;
+    seg[0] = 0x80100000; seg[1] = 0x003A0000; seg[2] = 0; seg[3] = 0;
 
     CHECK(j2_macho_validate_header(macho, sizeof(macho)) == 1, "macho header valid");
     CHECK(j2_macho_validate_header(macho, 4) == 0, "macho truncated rejected");
@@ -85,3 +85,4 @@ int main(void) {
     printf("%d FAILURES\n", failures);
     return 1;
 }
+

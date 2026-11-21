@@ -70,5 +70,3 @@ int main(void) {
     printf("%d FAILURES\n", failures);
     return 1;
 }
-EOF
-Path: D:\J2_XNU_PORT\repo-j2lte-build\ios-port\experimental\integration\integration_test.c

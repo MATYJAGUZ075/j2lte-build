@@ -9,16 +9,20 @@ index cbee924..803c301 100644
 +
 +# FIX-061: audioserver (dominio de plataforma) lee una propiedad vendor
 +allow audioserver vendor_default_prop:file r_file_perms;
-diff --git a/sepolicy/vendor/hal_audio_default.te b/sepolicy/vendor/hal_audio_default.te
-new file mode 100644
-index 0000000..2ad9fdf
---- /dev/null
-+++ b/sepolicy/vendor/hal_audio_default.te
-@@ -0,0 +1,4 @@
-+# FIX-061: el HAL de audio legacy lee propiedades de plataforma, que A13
-+# restringe a los dominios de sistema (default_prop/system_prop).
-+allow hal_audio_default default_prop:file r_file_perms;
-+allow hal_audio_default system_prop:file r_file_perms;
+diff --git a/sepolicy/vendor/genfs_contexts b/sepolicy/vendor/genfs_contexts
+index c889e68..0b72d39 100644
+--- a/sepolicy/vendor/genfs_contexts
++++ b/sepolicy/vendor/genfs_contexts
+@@ -126,3 +126,9 @@ genfscon sysfs /devices/14800000.dsim      u:object_r:sysfs_graphics:s0
+ 
+ # video4linux
+ genfscon sysfs /devices/12800000.mfc0/video4linux   u:object_r:sysfs_v4l:s0
++
++genfscon sysfs /devices/12c30000.mfc0/video4linux   u:object_r:sysfs_v4l:s0
++genfscon sysfs /devices/14400000.fimc_is/video4linux u:object_r:sysfs_v4l:s0
++genfscon sysfs /devices/fimc_is_sensor.2/video4linux u:object_r:sysfs_v4l:s0
++genfscon sysfs /devices/fimc_is_sensor.3/video4linux u:object_r:sysfs_v4l:s0
++genfscon sysfs /devices/mdev_output.6/video4linux u:object_r:sysfs_v4l:s0
 diff --git a/sepolicy/vendor/hal_camera_default.te b/sepolicy/vendor/hal_camera_default.te
 index 7c7abf0..46b3bc1 100644
 --- a/sepolicy/vendor/hal_camera_default.te
@@ -57,11 +61,29 @@ index 3f462ee..7c2759f 100644
  
  # Input devices
  allow init sysfs_input:file { rw_file_perms setattr };
+diff --git a/sepolicy/vendor/mediacodec.te b/sepolicy/vendor/mediacodec.te
+index 14cdbdc..f9e4936 100644
+--- a/sepolicy/vendor/mediacodec.te
++++ b/sepolicy/vendor/mediacodec.te
+@@ -3,3 +3,13 @@ allow mediacodec system_file:dir r_dir_perms;
+ 
+ # /sys/class/video4linux/*
+ r_dir_file(mediacodec, sysfs_v4l);
++
++# El HAL de OMX de Samsung lee el nombre del codec en el sysfs del driver MFC
++# (/sys/devices/12c30000.mfc0/video4linux/videoN/name). Sin esto el HAL no
++# identifica el codec y el servicio repite la denegacion cientos de veces.
++allow mediacodec sysfs:file r_file_perms;
++allow mediacodec sysfs:dir r_dir_perms;
++
++# Permisos explicit sobre sysfs_v4l etiquetado en genfs_contexts
++allow mediacodec sysfs_v4l:file r_file_perms;
++allow mediacodec sysfs_v4l:dir r_dir_perms;
 diff --git a/sepolicy/vendor/mediaserver.te b/sepolicy/vendor/mediaserver.te
-index 02b8f37..96073a4 100644
+index 02b8f37..1918c7a 100644
 --- a/sepolicy/vendor/mediaserver.te
 +++ b/sepolicy/vendor/mediaserver.te
-@@ -10,3 +10,12 @@ allow mediaserver camera_device:chr_file rw_file_perms;
+@@ -10,3 +10,16 @@ allow mediaserver camera_device:chr_file rw_file_perms;
  # Snap permissions
  allow mediaserver sensorservice_service:service_manager find;
  allow mediaserver system_server:unix_stream_socket rw_stream_socket_perms;
@@ -74,3 +96,7 @@ index 02b8f37..96073a4 100644
 +# El kernel 3.10 no tiene el device de cgroup eBPF (/dev/cg2_bpf) que netd
 +# intenta abrir: la denegacion es esperable, se silencia.
 +dontaudit netd device:dir read;
++
++# El stub /system/bin/mediaserver lo leen varios dominios al arrancar; solo
++# generan ruido de avc.
++dontaudit { rild bootstat } mediaserver_exec:file read;

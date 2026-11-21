@@ -2,7 +2,7 @@
 #define J2_GIC_H
 #include <stdint.h>
 /* Verified via /proc/iomem and device-tree on SM-J200M */
-#define J2_GIC_BASE 0x10C00000U
+#define J2_GIC_BASE 0x10C01000U
 #define J2_GIC_SIZE 0x10000U
 /* CPU interface commonly at distributor+0x2000 on Exynos */
 #define J2_GICC_BASE (J2_GIC_BASE + 0x2000U)

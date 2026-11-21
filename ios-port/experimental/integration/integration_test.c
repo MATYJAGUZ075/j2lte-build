@@ -11,7 +11,9 @@
 #include "../apple_dt_serializer.h"
 #include "../shim/shim.h"
 #include "../boot_args_validator.h"
-#include "../load_planner.h"
+#include "../drivers/uart.h"
+#include "../drivers/gic.h"
+#include "../drivers/mct.h"
 
 static int failures = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { printf("FAIL: %s\n", msg); failures++; } else { printf("PASS: %s\n", msg); } } while (0)
@@ -115,7 +117,12 @@ int main(void) {
     CHECK(j2_va_to_pa(0x80100000, 0x80000000, 0x20000000, &(uint32_t){0}) == 1, "va_to_pa ok");
 
     if (failures == 0) {
-        printf("ALL INTEGRATION CHECKS PASSED\n");
+        CHECK(j2_uart_base_valid(J2_UART0_BASE) == 1, "uart0 valid");
+    CHECK(j2_uart_base_valid(0x12345678) == 0, "uart invalid");
+    CHECK(j2_gic_base_valid(J2_GIC_BASE) == 1, "gic valid");
+    CHECK(j2_mct_base_valid(J2_MCT_BASE) == 1, "mct valid");
+
+    printf("ALL INTEGRATION CHECKS PASSED\n");
         return 0;
     }
     printf("%d FAILURES\n", failures);

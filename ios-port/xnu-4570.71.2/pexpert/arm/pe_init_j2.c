@@ -78,6 +78,13 @@ PE_init_panicheader(void *base, size_t size)
 	/* No-op on J2 bring-up */
 }
 
+int
+PE_current_console(PE_Video * info)
+{
+	*info = PE_state.video;
+	return (0);
+}
+
 void
 PE_display_icon(__unused unsigned int flags, __unused const char *name)
 {

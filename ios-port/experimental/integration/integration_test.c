@@ -16,6 +16,7 @@
 #include "../drivers/gic.h"
 #include "../drivers/mct.h"
 #include "../memplan/memplan.h"
+#include "../manifest_values.h"
 
 static int failures = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { printf("FAIL: %s\n", msg); failures++; } else { printf("PASS: %s\n", msg); } } while (0)

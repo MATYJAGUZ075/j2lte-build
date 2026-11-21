@@ -125,8 +125,17 @@ int main(void) {
     j2_uart_init(uartmem);
     CHECK(j2_uart_putc(uartmem, 'A', 10) == 1, "uart putc");
     CHECK(uartmem[J2_UART_UTXH / 4] == 'A', "uart txh");
-    CHECK(j2_gic_base_valid(J2_GIC_BASE) == 1, "gic valid");
-    CHECK(j2_mct_base_valid(J2_MCT_BASE) == 1, "mct valid");
+    /* GIC host test */
+    volatile uint32_t gicdist[1024] = {0};
+    volatile uint32_t giccpu[1024] = {0};
+    j2_gic_init(gicdist, giccpu);
+    j2_gic_enable_irq(gicdist, 32);
+    CHECK(gicdist[(J2_GICD_ISENABLER + 4) / 4] == (1U << 0), "gic enable");
+    /* MCT host test */
+    volatile uint32_t mctmem[1024] = {0};
+    mctmem[J2_MCT_G_CNT_L / 4] = 0x1234;
+    mctmem[J2_MCT_G_CNT_U / 4] = 0x5678;
+    CHECK(j2_mct_read_counter(mctmem) == 0x567800001234ULL, "mct counter");
 
     printf("ALL INTEGRATION CHECKS PASSED\n");
         return 0;

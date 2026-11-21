@@ -712,6 +712,19 @@ jobs:
             fi
           fi
 
+      - name: Audit Mach-O
+        if: always()
+        run: |
+          BIN=$(find "${OBJROOT}" -type f -name 'mach.release.j2.unstripped' | head -1)
+          if [ -z "$BIN" ]; then
+            echo "No kernel artifact found"
+            exit 0
+          fi
+          echo "SHA256: $(shasum -a 256 "$BIN" | awk '{print $1}')"
+          file "$BIN"
+          xcrun otool -l "$BIN" | head -80
+          xcrun nm -n "$BIN" | head -40
+
       - name: Check build result
         if: always()
         run: |

@@ -249,6 +249,7 @@ int j2_dt_trees_equal(const j2_dt_tree_node_t *a, const j2_dt_tree_node_t *b) {
     }
     return 1;
 }
+void j2_dt_free_tree(j2_dt_tree_node_t *node) {
     if (!node) return;
     if (node->props) {
         for (size_t i = 0; i < node->nprops; i++) free((void*)node->props[i].value);

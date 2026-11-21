@@ -23,6 +23,16 @@ index c889e68..0b72d39 100644
 +genfscon sysfs /devices/fimc_is_sensor.2/video4linux u:object_r:sysfs_v4l:s0
 +genfscon sysfs /devices/fimc_is_sensor.3/video4linux u:object_r:sysfs_v4l:s0
 +genfscon sysfs /devices/mdev_output.6/video4linux u:object_r:sysfs_v4l:s0
+diff --git a/sepolicy/vendor/hal_audio_default.te b/sepolicy/vendor/hal_audio_default.te
+new file mode 100644
+index 0000000..2ad9fdf
+--- /dev/null
++++ b/sepolicy/vendor/hal_audio_default.te
+@@ -0,0 +1,4 @@
++# FIX-061: el HAL de audio legacy lee propiedades de plataforma, que A13
++# restringe a los dominios de sistema (default_prop/system_prop).
++allow hal_audio_default default_prop:file r_file_perms;
++allow hal_audio_default system_prop:file r_file_perms;
 diff --git a/sepolicy/vendor/hal_camera_default.te b/sepolicy/vendor/hal_camera_default.te
 index 7c7abf0..46b3bc1 100644
 --- a/sepolicy/vendor/hal_camera_default.te

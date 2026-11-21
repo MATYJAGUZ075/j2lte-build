@@ -59,22 +59,8 @@ jobs:
 
       - name: Apply J2 patches to XNU
         run: |
-           cp ios-port/xnu-4570.71.2/pexpert/pexpert/arm/J2.h ios-port/xnu-4570.71.2-source/pexpert/pexpert/arm/
-           cp ios-port/xnu-4570.71.2/pexpert/pexpert/arm/board_config.h ios-port/xnu-4570.71.2-source/pexpert/pexpert/arm/
-           cp ios-port/xnu-4570.71.2/pexpert/arm/pe_j2.c ios-port/xnu-4570.71.2-source/pexpert/arm/pe_j2.c
-           python3 - << 'PYEOF'
-import os
-p = "ios-port/xnu-4570.71.2-source/pexpert/arm/pe_init.c"
-s = open(p).read()
-needle = "\tpe_init_debug();\n"
-assert needle in s, "needle not found"
-s = s.replace(needle, needle + "\n\t/* J2 platform adapter */\n\tj2_pe_init_platform(args);\n", 1)
-# add extern declaration after includes
-s = s.replace("#include <libkern/section_keywords.h>\n",
-              "#include <libkern/section_keywords.h>\n\nextern void j2_pe_init_platform(void *);\n", 1)
-open(p, "w").write(s)
-print("patched pe_init.c")
-PYEOF
+          cp ios-port/xnu-4570.71.2/pexpert/pexpert/arm/J2.h ios-port/xnu-4570.71.2-source/pexpert/pexpert/arm/
+          cp ios-port/xnu-4570.71.2/pexpert/pexpert/arm/board_config.h ios-port/xnu-4570.71.2-source/pexpert/pexpert/arm/
           cp ios-port/xnu-4570.71.2/config/MASTER.arm ios-port/xnu-4570.71.2-source/config/
           cp ios-port/xnu-4570.71.2/makedefs/MakeInc.def ios-port/xnu-4570.71.2-source/makedefs/
           cp ios-port/xnu-4570.71.2/makedefs/MakeInc.top ios-port/xnu-4570.71.2-source/makedefs/

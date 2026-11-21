@@ -78,10 +78,10 @@ PE_init_panicheader(void)
 	/* No-op on J2 bring-up */
 }
 
-void
-PE_initialize_console(PE_Video *video, int mode)
+int
+PE_initialize_console(PE_Video *newInfo, int op)
 {
-	/* No-op on J2 bring-up */
+	return (0);
 }
 
 int

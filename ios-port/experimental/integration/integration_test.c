@@ -18,7 +18,7 @@ static int failures = 0;
 int main(void) {
     uint8_t macho[28 + 56] = {0};
     uint32_t *w = (uint32_t*)macho;
-    w[0] = 0xFEEDFACEU; w[1] = 12; w[2] = 12; w[3] = 2; w[4] = 1;
+    w[0] = 0xFEEDFACEU; w[1] = 12; w[2] = 12; w[3] = 2; w[4] = 1; w[5] = 56;
     uint32_t *lc = (uint32_t*)(macho + 28);
     lc[0] = 1; lc[1] = 56;
     memcpy(macho + 28 + 8, "__TEXT", 6);
@@ -44,7 +44,7 @@ int main(void) {
     j2_mem_map_add(&mm, 0x30000000, 0x10000000, J2_MEM_RAM, "ram1");
     CHECK(j2_mem_is_within_ram(&mm, 0x20000000, 0x1000) == 1, "within ram0");
     CHECK(j2_mem_is_within_ram(&mm, 0x50000000, 0x1000) == 0, "outside ram rejected");
-    CHECK(j2_mem_reserve(&mm, 0x20001000, 0x1000, "r1") == 1, "reserve ok");
+    CHECK(j2_mem_reserve(&mm, 0x40001000, 0x1000, "r1") == 1, "reserve ok");
     CHECK(j2_mem_reserve(&mm, 0x20001000, 0x1000, "dup") == 0, "double reserve rejected");
 
     j2_load_plan_t plan;

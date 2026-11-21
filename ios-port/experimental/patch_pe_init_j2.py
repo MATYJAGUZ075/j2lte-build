@@ -7,7 +7,7 @@ needle = "\tStartIOKit(PE_state.deviceTreeHead, PE_state.bootArgs, (void *) 0, (
 assert needle in s, "needle not found in pe_init.c"
 assert "j2_pe_init_platform" not in s, "patch already applied"
 
-s = s.replace(needle, "\tStartIOKit(PE_state.deviceTreeHead, PE_state.bootArgs, (void *) 0, (void *) 0);\n\n\t/* J2 platform adapter (incremental, original PE preserved) */\n\tj2_pe_init_platform(args);\n}\n", 1)
+s = s.replace(needle, "\tStartIOKit(PE_state.deviceTreeHead, PE_state.bootArgs, (void *) 0, (void *) 0);\n\n\t/* J2 platform adapter (incremental, original PE preserved) */\n\tj2_pe_init_platform((void *)0);\n}\n", 1)
 
 hdr = "#include <pexpert/pexpert.h>\n"
 assert hdr in s, "header include not found"

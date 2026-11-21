@@ -141,10 +141,10 @@ int main(void) {
     CHECK(mp.topOfKernelData >= 0x20DA6000, "memplan topk >= observed min");
     CHECK(mp.topOfKernelData % 4096 == 0, "memplan topk aligned");
     /* memplan negatives */
-    j2_memplan_t mp2 = mp; mp2.dt_size = 0;
-    CHECK(j2_memplan_compute_topk(&mp2) == 0, "memplan missing dt rejected");
-    j2_memplan_t mp3 = mp; mp3.kernel_data_end = 0x20000000;
-    CHECK(j2_memplan_compute_topk(&mp3) == 0, "memplan bad data range rejected");
+    j2_memplan_t mp2b = mp; mp2b.dt_size = 0;
+    CHECK(j2_memplan_compute_topk(&mp2b) == 0, "memplan missing dt rejected");
+    j2_memplan_t mp3b = mp; mp3b.kernel_data_end = 0x20000000;
+    CHECK(j2_memplan_compute_topk(&mp3b) == 0, "memplan bad data range rejected");
 
     /* === END-TO-END PIPELINE === */
     /* 1. Build real DT */

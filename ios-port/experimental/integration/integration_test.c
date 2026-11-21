@@ -108,8 +108,9 @@ int main(void) {
     j2_dt_free_tree(recon);
     free(dbuf);
 
-    j2_shim_memory_t mem = { in.physBase, in.virtBase, in.memSize, in.topOfKernelData };
+    j2_shim_memory_t mem = { in.physBase, in.virtBase, in.memSize, in.topOfKernelData, 0x21000000, 0x20ff0000 };
     CHECK(j2_shim_prepare(&mem) == 1, "shim prepare");
+    CHECK(j2_shim_handoff_valid(&mem) == 1, "shim handoff valid");
 
     CHECK(j2_boot_args_validate(in.physBase, in.virtBase, in.memSize, in.topOfKernelData) == 1, "boot_args validate");
     CHECK(j2_boot_args_validate(0x20000000, 0x80000000, 0x3F500000, 0x80536000) == 0, "VA-as-PA rejected");

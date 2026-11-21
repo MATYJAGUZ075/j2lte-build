@@ -109,8 +109,27 @@ int main(void) {
     j2_dt_free_tree(recon);
     free(dbuf);
 
+    /* DT negative: truncated buffer */
+    uint8_t trunc[4] = {0};
+    CHECK(j2_dt_validate_tree(trunc, sizeof(trunc), 8) == 0, "dt truncated rejected");
+    /* DT negative: zero bufsize */
+    uint8_t dummy[8] = {0};
+    CHECK(j2_dt_validate_tree(dummy, 0, 8) == 0, "dt zero bufsize rejected");
+
     j2_shim_memory_t mem = { in.physBase, in.virtBase, in.memSize, in.topOfKernelData, 0x21000000, 0x20ff0000 };
     CHECK(j2_shim_prepare(&mem) == 1, "shim prepare");
+    CHECK(j2_shim_handoff_valid(&mem) == 1, "shim handoff valid");
+    /* negative: null */
+    CHECK(j2_shim_handoff_valid(NULL) == 0, "shim null rejected");
+    /* negative: unaligned topk */
+    j2_shim_memory_t bad = mem; bad.topOfKernelData = 0x20da6001;
+    CHECK(j2_shim_handoff_valid(&bad) == 0, "shim unaligned topk rejected");
+    /* negative: dt out of range */
+    j2_shim_memory_t bad2 = mem; bad2.dt_pa = 0x10000000;
+    CHECK(j2_shim_handoff_valid(&bad2) == 0, "shim dt oor rejected");
+    /* negative: zero boot_args */
+    j2_shim_memory_t bad3 = mem; bad3.boot_args_pa = 0;
+    CHECK(j2_shim_handoff_valid(&bad3) == 0, "shim zero boot_args rejected");
     /* memplan test */
     j2_memplan_t mp = {0};
     mp.physBase = 0x20000000; mp.virtBase = 0x80000000; mp.memSize = 0x3F500000;

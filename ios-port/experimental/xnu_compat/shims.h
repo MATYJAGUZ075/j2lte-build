@@ -14,8 +14,6 @@ typedef unsigned long vm_size_t;
 
 /* os/overflow.h from XNU provides os_add3_overflow */
 
-/* Mach types minimal */
-typedef void *task_t;
-typedef void *thread_t;
+/* no mach type typedefs needed */
 
 #endif

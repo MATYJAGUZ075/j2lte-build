@@ -69,7 +69,7 @@ jobs:
         working-directory: ios-port/experimental
         run: |
           set -e
-          XNU=../../xnu-4570.71.2-source
+          XNU=../xnu-4570.71.2-source
           cc -std=c11 -Wall -Wextra -Werror \
             -I. -Ixnu_compat -I"$XNU/pexpert/pexpert" \
             -include xnu_compat/shims.h \

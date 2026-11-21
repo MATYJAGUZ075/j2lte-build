@@ -711,7 +711,7 @@ jobs:
           CC="$(xcrun --sdk iphoneos --find clang)"
           BIN=$(find "${OBJROOT}" -type f -name 'mach.release.j2.unstripped' | head -1)
           if [ -z "$BIN" ]; then echo "no kernel artifact"; exit 0; fi
-          "$CC" -std=c11 -Wall -Wextra -Werror -I. -I macho macho_dump.c macho/macho_loader.c -o macho_dump
+          "$CC" -arch "${ARM_ARCH}" -miphoneos-version-min=10.0 -isysroot "$SDK" -std=c11 -Wall -Wextra -Werror -I. -I macho macho_dump.c macho/macho_loader.c -o macho_dump
           ./macho_dump "$BIN" | tee "${BUILD_DIR}/macho_dump.txt"
           echo "=== macho_dump saved to ${BUILD_DIR}/macho_dump.txt ==="
 

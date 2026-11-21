@@ -73,7 +73,7 @@ PE_init_iokit(void)
 }
 
 void
-PE_init_panicheader(void *base, size_t size)
+PE_init_panicheader(void)
 {
 	/* No-op on J2 bring-up */
 }

@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#define J2_DT_PROP_NAME_LEN 32
 #define J2_DT_PROP_HEADER_SIZE (J2_DT_PROP_NAME_LEN + sizeof(uint32_t))
 
 typedef struct {

@@ -74,7 +74,7 @@ PE_display_icon(__unused unsigned int flags, __unused const char *name)
 }
 
 uint32_t
-PE_get_offset_into_panic_region(__unused void *base, __unused size_t size)
+PE_get_offset_into_panic_region(char *location)
 {
 	return (0);
 }

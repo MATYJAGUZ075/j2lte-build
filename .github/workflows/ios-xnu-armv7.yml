@@ -59,10 +59,10 @@ jobs:
 
       - name: Apply J2 patches to XNU
         run: |
-           cp ios-port/xnu-4570.71.2/pexpert/pexpert/arm/J2.h ios-port/xnu-4570.71.2-source/pexpert/pexpert/arm/
-           cp ios-port/xnu-4570.71.2/pexpert/pexpert/arm/board_config.h ios-port/xnu-4570.71.2-source/pexpert/pexpert/arm/
-           cp ios-port/xnu-4570.71.2/pexpert/arm/pe_j2.c ios-port/xnu-4570.71.2-source/pexpert/arm/pe_j2.c
-           python3 ios-port/experimental/patch_pe_init.py ios-port/xnu-4570.71.2-source/pexpert/arm/pe_init.c
+          cp ios-port/xnu-4570.71.2/pexpert/pexpert/arm/J2.h ios-port/xnu-4570.71.2-source/pexpert/pexpert/arm/
+          cp ios-port/xnu-4570.71.2/pexpert/pexpert/arm/board_config.h ios-port/xnu-4570.71.2-source/pexpert/pexpert/arm/
+          cp ios-port/xnu-4570.71.2/pexpert/arm/pe_j2.c ios-port/xnu-4570.71.2-source/pexpert/arm/pe_j2.c
+          python3 ios-port/experimental/patch_pe_init.py ios-port/xnu-4570.71.2-source/pexpert/arm/pe_init.c
           cp ios-port/xnu-4570.71.2/config/MASTER.arm ios-port/xnu-4570.71.2-source/config/
           cp ios-port/xnu-4570.71.2/makedefs/MakeInc.def ios-port/xnu-4570.71.2-source/makedefs/
           cp ios-port/xnu-4570.71.2/makedefs/MakeInc.top ios-port/xnu-4570.71.2-source/makedefs/

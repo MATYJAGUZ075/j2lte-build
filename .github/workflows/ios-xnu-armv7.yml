@@ -714,6 +714,8 @@ jobs:
           "$CC" -arch "${ARM_ARCH}" -miphoneos-version-min=10.0 -isysroot "$SDK" -std=c11 -Wall -Wextra -Werror -I. -I macho macho_dump.c macho/macho_loader.c -o macho_dump
           ./macho_dump "$BIN" | tee "${BUILD_DIR}/macho_dump.txt"
           echo "=== macho_dump saved to ${BUILD_DIR}/macho_dump.txt ==="
+          python3 gen_manifest.py "${BUILD_DIR}/macho_dump.txt" "$BIN" "${BUILD_DIR}/manifest.json"
+          echo "=== manifest saved ==="
 
       - name: Inspect linked kernel (read-only, informational)
         if: always()
@@ -795,7 +797,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: xnu-j2-build-log
-          path: ${{ env.BUILD_DIR }}/build*.log
+          path:            ${{ env.BUILD_DIR }}/build*.log
+           ${{ env.BUILD_DIR }}/macho_dump.txt
+           ${{ env.BUILD_DIR }}/manifest.json
           if-no-files-found: ignore
 
       - name: Upload kernel artifacts

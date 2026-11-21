@@ -64,9 +64,14 @@ static void j2_gic_init(volatile unsigned int *dist, volatile unsigned int *cpu)
 static void j2_mct_init(volatile unsigned int *base)
 {
 	/* MCT initialization - frequency VERIFIED: 26 MHz (0x018cba80)
-	 * via /proc/device-tree/fixed-rate-clocks/oscclk/clock-frequency */
-	/* Register layout depends on Exynos MCT spec */
+	 * via /proc/device-tree/fixed-rate-clocks/oscclk/clock-frequency
+	 * base: 0x100B0000 (verified via /proc/device-tree/mct@100B0000/reg)
+	 * Register layout: Exynos MCT global counter at offset 0x100 (lower 32 bits)
+	 * and 0x104 (upper 32 bits). This is a read-only global counter.
+	 * NOTE: Full MCT init (comparator setup, interrupts) requires GIC
+	 * which is not yet connected to XNU interrupt subsystem. */
 	(void)base;
+	/* Read-only counter access - no writes to unknown registers */
 }
 
 void

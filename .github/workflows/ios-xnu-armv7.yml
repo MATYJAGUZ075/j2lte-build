@@ -29,6 +29,10 @@ jobs:
     timeout-minutes: 120
 
     steps:
+    - name: Build experimental prototypes
+      working-directory: ios-port/experimental
+      run: |
+        cc -std=c11 -Wall -Wextra -Werror -c boot_args_builder.c apple_dt_serializer.c
       - name: Checkout j2lte-build (experiment/ios-port branch)
         uses: actions/checkout@v4
         with:

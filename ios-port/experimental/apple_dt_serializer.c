@@ -4,7 +4,7 @@
 size_t j2_dt_align4(size_t v) { return (v + 3) & ~((size_t)3); }
 
 size_t j2_dt_prop_size(size_t value_len) {
-    return sizeof(j2_dt_prop_t) + j2_dt_align4(value_len);
+    return J2_DT_PROP_HEADER_SIZE + j2_dt_align4(value_len);
 }
 
 size_t j2_dt_node_header_size(void) { return sizeof(j2_dt_node_t); }
@@ -33,8 +33,8 @@ int j2_dt_serialize_tree(uint8_t *buf, size_t bufsize, const j2_dt_tree_node_t *
     size_t off = sizeof(j2_dt_node_t);
     /* props (values zeroed; caller fills externally if needed) */
     for (size_t i = 0; i < node->nprops; i++) {
-        memcpy(buf + off, &node->props[i], sizeof(j2_dt_prop_t) - sizeof(const uint8_t*));
-        off += sizeof(j2_dt_prop_t) - sizeof(const uint8_t*);
+        memcpy(buf + off, &node->props[i], J2_DT_PROP_HEADER_SIZE);
+        off += J2_DT_PROP_HEADER_SIZE;
         if (node->props[i].value && node->props[i].length > 0)
             memcpy(buf + off, node->props[i].value, node->props[i].length);
         off += j2_dt_align4(node->props[i].length);
@@ -62,18 +62,18 @@ int j2_dt_prop_at(const uint8_t *buf, size_t bufsize, size_t prop_index, j2_dt_p
     if (prop_index >= node.nProperties) return 0;
     size_t off = sizeof(j2_dt_node_t);
     for (size_t i = 0; i < prop_index; i++) {
-        if (off + sizeof(j2_dt_prop_t) > bufsize) return 0;
+        if (off + J2_DT_PROP_HEADER_SIZE > bufsize) return 0;
         j2_dt_prop_t *p = (j2_dt_prop_t*)(buf + off);
-        off += sizeof(j2_dt_prop_t);
+        off += J2_DT_PROP_HEADER_SIZE;
         size_t valsize = j2_dt_align4(p->length);
         if (off + valsize > bufsize) return 0;
         off += valsize;
     }
-    if (off + sizeof(j2_dt_prop_t) > bufsize) return 0;
+    if (off + J2_DT_PROP_HEADER_SIZE > bufsize) return 0;
     j2_dt_prop_t *p = (j2_dt_prop_t*)(buf + off);
-    if (p->length > bufsize - off - sizeof(j2_dt_prop_t)) return 0;
+    if (p->length > bufsize - off - J2_DT_PROP_HEADER_SIZE) return 0;
     *out_prop = p;
-    *out_val = buf + off + sizeof(j2_dt_prop_t);
+    *out_val = buf + off + J2_DT_PROP_HEADER_SIZE;
     return 1;
 }
 int j2_dt_validate_tree(const uint8_t *buf, size_t bufsize, int max_depth) {
@@ -82,13 +82,13 @@ int j2_dt_validate_tree(const uint8_t *buf, size_t bufsize, int max_depth) {
     if (!j2_dt_parse_header(buf, bufsize, &node)) return 0;
     size_t off = sizeof(j2_dt_node_t);
     for (size_t i = 0; i < node.nProperties; i++) {
-        if (off + sizeof(j2_dt_prop_t) > bufsize) return 0;
+        if (off + J2_DT_PROP_HEADER_SIZE > bufsize) return 0;
         j2_dt_prop_t *p = (j2_dt_prop_t*)(buf + off);
         int term = 0;
         for (int k = 0; k < J2_DT_PROP_NAME_LEN; k++) if (p->name[k] == 0) { term = 1; break; }
         if (!term) return 0;
-        if (p->length > bufsize - off - sizeof(j2_dt_prop_t)) return 0;
-        off += sizeof(j2_dt_prop_t);
+        if (p->length > bufsize - off - J2_DT_PROP_HEADER_SIZE) return 0;
+        off += J2_DT_PROP_HEADER_SIZE;
         off += j2_dt_align4(p->length);
         if (off > bufsize) return 0;
     }
@@ -102,9 +102,9 @@ size_t j2_dt_node_size(const uint8_t *buf, size_t bufsize) {
     if (!j2_dt_parse_header(buf, bufsize, &node)) return 0;
     size_t off = sizeof(j2_dt_node_t);
     for (size_t i = 0; i < node.nProperties; i++) {
-        if (off + sizeof(j2_dt_prop_t) > bufsize) return 0;
+        if (off + J2_DT_PROP_HEADER_SIZE > bufsize) return 0;
         j2_dt_prop_t *p = (j2_dt_prop_t*)(buf + off);
-        off += sizeof(j2_dt_prop_t);
+        off += J2_DT_PROP_HEADER_SIZE;
         off += j2_dt_align4(p->length);
         if (off > bufsize) return 0;
     }
@@ -118,9 +118,9 @@ size_t j2_dt_subtree_size(const uint8_t *buf, size_t bufsize) {
     if (!j2_dt_parse_header(buf, bufsize, &node)) return 0;
     size_t off = sizeof(j2_dt_node_t);
     for (size_t i = 0; i < node.nProperties; i++) {
-        if (off + sizeof(j2_dt_prop_t) > bufsize) return 0;
+        if (off + J2_DT_PROP_HEADER_SIZE > bufsize) return 0;
         j2_dt_prop_t *p = (j2_dt_prop_t*)(buf + off);
-        off += sizeof(j2_dt_prop_t);
+        off += J2_DT_PROP_HEADER_SIZE;
         off += j2_dt_align4(p->length);
         if (off > bufsize) return 0;
     }
@@ -149,13 +149,13 @@ int j2_dt_parse_tree(const uint8_t *buf, size_t bufsize, j2_dt_tree_node_t *out,
         out->props = NULL;
     }
     for (size_t i = 0; i < out->nprops; i++) {
-        if (off + sizeof(j2_dt_prop_t) > bufsize) return 0;
+        if (off + J2_DT_PROP_HEADER_SIZE > bufsize) return 0;
         j2_dt_prop_t *p = (j2_dt_prop_t*)(buf + off);
         /* name terminated */
         int term = 0;
         for (int k = 0; k < J2_DT_PROP_NAME_LEN; k++) if (p->name[k] == 0) { term = 1; break; }
         if (!term) return 0;
-        off += sizeof(j2_dt_prop_t);
+        off += J2_DT_PROP_HEADER_SIZE;
         off += j2_dt_align4(p->length);
         if (off > bufsize) return 0;
     }
@@ -196,7 +196,7 @@ int j2_dt_tree_from_buffer(const uint8_t *buf, size_t bufsize, j2_dt_tree_node_t
     for (size_t i = 0; i < n->nprops; i++) {
         j2_dt_prop_t *p = NULL; const uint8_t *val = NULL;
         if (!j2_dt_prop_at(buf, bufsize, i, &p, &val)) { j2_dt_free_tree(n); return 0; }
-        memcpy(&n->props[i], p, sizeof(j2_dt_prop_t) - sizeof(const uint8_t*));
+        memcpy(&n->props[i], p, J2_DT_PROP_HEADER_SIZE);
         n->props[i].value = NULL;
         if (p->length > 0) {
             n->props[i].value = malloc(p->length);
@@ -210,7 +210,7 @@ int j2_dt_tree_from_buffer(const uint8_t *buf, size_t bufsize, j2_dt_tree_node_t
             memcpy(n->name, val, p->length);
             n->name[p->length] = 0;
         }
-        off += sizeof(j2_dt_prop_t) + j2_dt_align4(p->length);
+        off += J2_DT_PROP_HEADER_SIZE + j2_dt_align4(p->length);
     }
     /* children */
     if (n->nchildren > 0) {

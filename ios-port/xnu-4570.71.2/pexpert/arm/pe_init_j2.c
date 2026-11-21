@@ -66,11 +66,16 @@ PE_i_can_has_debugger(uint32_t *arg)
 	return (0);
 }
 
-int
-PE_current_console(PE_Video * info)
+void
+PE_init_iokit(void)
 {
-	*info = PE_state.video;
-	return (0);
+	/* No-op on J2 bring-up */
+}
+
+void
+PE_init_panicheader(void *base, size_t size)
+{
+	/* No-op on J2 bring-up */
 }
 
 void

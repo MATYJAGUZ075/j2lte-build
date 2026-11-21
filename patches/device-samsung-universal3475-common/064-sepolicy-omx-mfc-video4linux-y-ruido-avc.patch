@@ -31,10 +31,10 @@ diff --git a/sepolicy/vendor/mediacodec.te b/sepolicy/vendor/mediacodec.te
 diff --git a/sepolicy/vendor/mediaserver.te b/sepolicy/vendor/mediaserver.te
 --- a/sepolicy/vendor/mediaserver.te
 +++ b/sepolicy/vendor/mediaserver.te
-@@ -10,3 +10,7 @@
- # Snap permissions
- allow mediaserver sensorservice_service:service_manager find;
- allow mediaserver system_server:unix_stream_socket rw_stream_socket_perms;
+@@ -19,3 +19,7 @@
+ # El kernel 3.10 no tiene el device de cgroup eBPF (/dev/cg2_bpf) que netd
+ # intenta abrir: la denegacion es esperable, se silencia.
+ dontaudit netd device:dir read;
 +
 +# El stub /system/bin/mediaserver lo leen varios dominios al arrancar; solo
 +# generan ruido de avc.

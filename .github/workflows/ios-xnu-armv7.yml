@@ -63,7 +63,11 @@ jobs:
           cp ios-port/xnu-4570.71.2/pexpert/pexpert/arm/board_config.h ios-port/xnu-4570.71.2-source/pexpert/pexpert/arm/
           cp ios-port/xnu-4570.71.2/config/MASTER.arm ios-port/xnu-4570.71.2-source/config/
           cp ios-port/xnu-4570.71.2/makedefs/MakeInc.def ios-port/xnu-4570.71.2-source/makedefs/
-          cp ios-port/xnu-4570.71.2/makedefs/MakeInc.top ios-port/xnu-4570.71.2-source/makedefs/
+          grep -rn "PE_init_platform" ios-port/xnu-4570.71.2-source/pexpert/ | head -40
+          echo "--- PE_state ---"
+          grep -rn "PE_state" ios-port/xnu-4570.71.2-source/pexpert/ | head -40
+          echo "--- firehose refs ---"
+          grep -rln "firehose" ios-port/xnu-4570.71.2-source/pexpert/ | head -40
 
       - name: Build XNU compat DT test
         working-directory: ios-port/experimental

@@ -5,6 +5,6 @@ int j2_boot_args_validate(uint32_t physBase, uint32_t virtBase, uint32_t memSize
     if (memSize == 0) return 0;
     if (topOfKernelData == 0) return 0;
     if (topOfKernelData < physBase) return 0;
-    if (topOfKernelData > (physBase + memSize)) return 0;
     return 1;
 }
+

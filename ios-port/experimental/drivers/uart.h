@@ -23,9 +23,7 @@
 int j2_uart_base_valid(uint32_t base);
 /* host-testable: base points to a 0x100-byte register window */
 void j2_uart_init(volatile uint32_t *base);
-#define J2_UART_URXH    0x24U
-#define J2_UART_UTRSTAT_RX_READY (1U << 0)
-
+int j2_uart_putc(volatile uint32_t *base, char c, uint32_t timeout_iters);
 int j2_uart_getc(volatile uint32_t *base, uint32_t timeout_iters);
 void j2_uart_set_baud(volatile uint32_t *base, uint32_t div, uint32_t slot);
 #endif

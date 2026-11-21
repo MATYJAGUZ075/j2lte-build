@@ -13,5 +13,17 @@ hdr = "#include <pexpert/pexpert.h>\n"
 assert hdr in s, "header include not found"
 s = s.replace(hdr, hdr + "\nextern void j2_pe_init_platform(void *);\n", 1)
 
+# Append function definition at end of file
+s += '''
+
+void
+j2_pe_init_platform(void *args)
+{
+	(void)args;
+	/* J2 (Exynos 3475) platform adapter - incremental integration */
+}
+'''
+
 open(p, "w").write(s)
-print("patched pe_init.c (J2 adapter inserted)")
+print("patched pe_init.c (J2 adapter inserted + defined)")
+PYEOF

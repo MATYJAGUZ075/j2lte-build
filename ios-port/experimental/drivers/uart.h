@@ -15,10 +15,12 @@
 #define J2_UART_UERSTAT 0x14U
 #define J2_UART_UFSTAT  0x18U
 #define J2_UART_UTXH    0x20U
+#define J2_UART_URXH    0x24U
 #define J2_UART_UBRDIV  0x28U
 #define J2_UART_UDIVSLOT 0x2CU
 
 #define J2_UART_UTRSTAT_TX_EMPTY (1U << 2)
+#define J2_UART_UTRSTAT_RX_READY (1U << 0)
 
 int j2_uart_base_valid(uint32_t base);
 /* host-testable: base points to a 0x100-byte register window */

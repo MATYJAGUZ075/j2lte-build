@@ -87,7 +87,7 @@ PE_register_timebase_callback(timebase_callback_func callback)
 }
 
 void
-PE_save_buffer_to_vram(void *base, size_t size)
+PE_save_buffer_to_vram(unsigned char *base, unsigned int *size)
 {
 	/* No-op on J2 bring-up */
 }

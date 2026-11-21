@@ -78,14 +78,10 @@ PE_init_panicheader(void)
 	/* No-op on J2 bring-up */
 }
 
-int
-PE_poll_input(void)
-{
-	return (0);
-}
+int (*PE_poll_input)(unsigned int options, char *c) = NULL;
 
 void
-PE_register_timebase_callback(void (*cb)(void))
+PE_register_timebase_callback(timebase_callback_func callback)
 {
 	/* No-op on J2 bring-up */
 }

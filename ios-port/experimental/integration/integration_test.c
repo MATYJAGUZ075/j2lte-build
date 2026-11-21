@@ -146,6 +146,55 @@ int main(void) {
     j2_memplan_t mp3 = mp; mp3.kernel_data_end = 0x20000000;
     CHECK(j2_memplan_compute_topk(&mp3) == 0, "memplan bad data range rejected");
 
+    /* === END-TO-END PIPELINE === */
+    /* 1. Build real DT */
+    j2_dt_tree_node_t e2e_root; memset(&e2e_root, 0, sizeof(e2e_root));
+    strcpy(e2e_root.name, "root");
+    j2_dt_prop_t e2e_props[1]; memset(e2e_props, 0, sizeof(e2e_props));
+    strcpy(e2e_props[0].name, "model"); e2e_props[0].length = 7; e2e_props[0].value = (const uint8_t*)"j2lte";
+    e2e_root.props = e2e_props; e2e_root.nprops = 1;
+    size_t e2e_dtsz = 0;
+    CHECK(j2_dt_serialize_tree(NULL, 0, &e2e_root, &e2e_dtsz) == 1, "e2e dt size");
+    uint8_t *e2e_dtbuf = (uint8_t*)malloc(e2e_dtsz);
+    size_t e2e_dtout = 0;
+    CHECK(j2_dt_serialize_tree(e2e_dtbuf, e2e_dtsz, &e2e_root, &e2e_dtout) == 1, "e2e dt serialize");
+    CHECK(j2_dt_validate_tree(e2e_dtbuf, e2e_dtsz, 8) == 1, "e2e dt validate");
+
+    /* 2. Ramdisk (real bytes, minimal) */
+    uint8_t ramdisk[256]; memset(ramdisk, 0xAB, sizeof(ramdisk));
+    size_t rd_size = sizeof(ramdisk);
+
+    /* 3. boot_args with real sizes */
+    j2_boot_args_t e2e_ba; j2_boot_args_inputs_t e2e_in = {0};
+    e2e_in.physBase = 0x20000000; e2e_in.virtBase = 0x80000000;
+    e2e_in.memSize = 0x3F500000; e2e_in.topOfKernelData = 0x20536000;
+    e2e_in.machineType = 0x20; e2e_in.commandLine = "rd=md0";
+    e2e_in.deviceTreeP = (void*)0x21000000; e2e_in.deviceTreeLength = (uint32_t)e2e_dtsz;
+    j2_boot_args_init(&e2e_ba, &e2e_in);
+    CHECK(e2e_ba.deviceTreeLength == (uint32_t)e2e_dtsz, "e2e boot_args dt length");
+
+    /* 4. memplan with real sizes */
+    j2_memplan_t e2e_mp = {0};
+    e2e_mp.physBase = 0x20000000; e2e_mp.virtBase = 0x80000000; e2e_mp.memSize = 0x3F500000;
+    e2e_mp.kernel_data_start = 0x20bcc000; e2e_mp.kernel_data_end = 0x20da5eb7;
+    e2e_mp.dt_size = (uint32_t)e2e_dtsz; e2e_mp.ramdisk_size = (uint32_t)rd_size; e2e_mp.boot_args_size = 0x1000;
+    CHECK(j2_memplan_compute_topk(&e2e_mp) == 1, "e2e memplan compute");
+
+    /* 5. handoff validation */
+    j2_shim_memory_t e2e_mem = { e2e_in.physBase, e2e_in.virtBase, e2e_in.memSize, e2e_in.topOfKernelData, 0x21000000, 0x20ff0000 };
+    CHECK(j2_shim_handoff_valid(&e2e_mem) == 1, "e2e shim handoff valid");
+
+    /* 6. reject inconsistency: mismatched dt size */
+    j2_boot_args_t bad_ba; j2_boot_args_inputs_t bad_in = e2e_in;
+    bad_in.deviceTreeLength = 0;
+    j2_boot_args_init(&bad_ba, &bad_in);
+    CHECK(j2_boot_args_validate(bad_in.physBase, bad_in.virtBase, bad_in.memSize, bad_in.topOfKernelData) == 1, "e2e bad dt still validates fields");
+    free(e2e_dtbuf);
+    j2_memplan_t mp2 = mp; mp2.dt_size = 0;
+    CHECK(j2_memplan_compute_topk(&mp2) == 0, "memplan missing dt rejected");
+    j2_memplan_t mp3 = mp; mp3.kernel_data_end = 0x20000000;
+    CHECK(j2_memplan_compute_topk(&mp3) == 0, "memplan bad data range rejected");
+
     CHECK(j2_boot_args_validate(in.physBase, in.virtBase, in.memSize, in.topOfKernelData) == 1, "boot_args validate");
     CHECK(j2_boot_args_validate(0x20000000, 0x80000000, 0x3F500000, 0x80536000) == 0, "VA-as-PA rejected");
     CHECK(j2_boot_args_validate(0, 0x80000000, 0x3F500000, 0x20536000) == 0, "zero physBase rejected");

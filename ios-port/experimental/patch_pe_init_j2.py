@@ -61,4 +61,3 @@ j2_pe_init_platform(void *args)
 
 open(p, "w").write(s)
 print("patched pe_init.c (J2 adapter + UART init)")
-PYEOF

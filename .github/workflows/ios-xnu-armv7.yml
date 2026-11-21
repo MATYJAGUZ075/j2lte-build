@@ -65,6 +65,20 @@ jobs:
           cp ios-port/xnu-4570.71.2/makedefs/MakeInc.def ios-port/xnu-4570.71.2-source/makedefs/
           cp ios-port/xnu-4570.71.2/makedefs/MakeInc.top ios-port/xnu-4570.71.2-source/makedefs/
 
+      - name: Build XNU compat DT test
+        working-directory: ios-port/experimental
+        run: |
+          set -e
+          XNU=../../xnu-4570.71.2-source
+          cc -std=c11 -Wall -Wextra -Werror \
+            -I. -Ixnu_compat -I"$XNU/pexpert/pexpert" \
+            -include xnu_compat/shims.h \
+            "$XNU/pexpert/gen/device_tree.c" \
+            apple_dt_serializer.c \
+            xnu_compat/xnu_dt_test.c \
+            -o xnu_dt_test
+          ./xnu_dt_test
+
       - name: Patch XNU files.arm (ccn_set.s does not exist in open source release)
         working-directory: ios-port/xnu-4570.71.2-source
         run: |

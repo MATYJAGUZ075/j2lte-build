@@ -101,6 +101,12 @@ PE_initialize_console(PE_Video *newInfo, int op)
 	return (0);
 }
 
+void
+PE_sync_panic_buffers(void)
+{
+	/* No-op on J2 bring-up */
+}
+
 int
 PE_current_console(PE_Video * info)
 {

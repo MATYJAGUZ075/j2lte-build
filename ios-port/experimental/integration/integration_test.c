@@ -16,6 +16,7 @@
 #include "../drivers/gic.h"
 #include "../drivers/mct.h"
 #include "../platform/platform.h"
+#include "../memplan/memplan.h"
 #include "../manifest_values.h"
 
 static int failures = 0;

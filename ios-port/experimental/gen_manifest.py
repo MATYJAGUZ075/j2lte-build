@@ -27,6 +27,15 @@ def main():
     }
     with open(out_path, "w") as f:
         json.dump(manifest, f, indent=2)
+    # also emit a C header for memplan consumption
+    hdr_path = os.path.join(os.path.dirname(out_path), "manifest_values.h")
+    with open(hdr_path, "w") as f:
+        f.write("#ifndef MANIFEST_VALUES_H\n#define MANIFEST_VALUES_H\n")
+        f.write("#define MANIFEST_DT_SIZE %d\n" % (segs and 0 or 0))
+        # dt size comes from apple dt serializer, not macho; keep 0 here
+        f.write("#define MANIFEST_KERNEL_FILESIZE %d\n" % (filesize or 0))
+        f.write("#define MANIFEST_KERNEL_SHA256 \"%s\"\n" % h.hexdigest())
+        f.write("#endif\n")
     print(json.dumps(manifest, indent=2))
 
 if __name__ == "__main__":

@@ -76,13 +76,17 @@ j2_pe_init_platform(void *args)
 	volatile unsigned int *gic_cpu = (volatile unsigned int *)J2_GIC_CPU_BASE;
 
 	(void)args;
+	(void)gic_dist;
+	(void)gic_cpu;
 
 	/* UART init (MMIO base verified via /proc/iomem) */
 	j2_uart_init(uart);
 
-	/* GIC init (addresses from J2.h, NOT independently verified on hardware) */
-	/* WARNING: 0x10C01000/0x10C02000 are UNVERIFIED - do not use in production */
-	j2_gic_init(gic_dist, gic_cpu);
+	/* GIC init (addresses from J2.h, NOT independently verified on hardware)
+	 * WARNING: 0x10C01000/0x10C02000 are UNVERIFIED - skipped to avoid
+	 * writing to unknown MMIO regions. Enable only after independent
+	 * verification via Device Tree or /proc/iomem. */
+	/* j2_gic_init(gic_dist, gic_cpu); -- DISABLED: addresses unverified */
 
 	/* MCT init (frequency UNVERIFIED) */
 	j2_mct_init((volatile unsigned int *)J2_MCT_BASE);

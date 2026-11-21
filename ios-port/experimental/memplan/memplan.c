@@ -19,8 +19,7 @@ int j2_memplan_validate(const j2_memplan_t *p) {
 int j2_memplan_compute_topk(j2_memplan_t *p) {
     if (!p) return 0;
     if (!j2_memplan_validate(p)) { p->topk_known = 0; p->topOfKernelData = 0; return 0; }
-    uint32_t kernel_size = p->kernel_data_end - p->kernel_data_start;
-    uint32_t off = kernel_size + p->dt_size + p->ramdisk_size + p->boot_args_size;
+    uint32_t off = (p->kernel_data_end - p->physBase) + p->dt_size + p->ramdisk_size + p->boot_args_size;
     /* page align up */
     off = (off + 4095) & ~4095U;
     /* overflow check */

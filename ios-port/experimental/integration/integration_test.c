@@ -15,7 +15,7 @@
 #include "../drivers/uart.h"
 #include "../drivers/gic.h"
 #include "../drivers/mct.h"
-#include "../platform/platform.h"
+#include "../memplan/memplan.h"
 
 static int failures = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { printf("FAIL: %s\n", msg); failures++; } else { printf("PASS: %s\n", msg); } } while (0)
@@ -111,7 +111,14 @@ int main(void) {
 
     j2_shim_memory_t mem = { in.physBase, in.virtBase, in.memSize, in.topOfKernelData, 0x21000000, 0x20ff0000 };
     CHECK(j2_shim_prepare(&mem) == 1, "shim prepare");
-    CHECK(j2_platform_init(&mem) == 1, "platform init");
+    /* memplan test */
+    j2_memplan_t mp = {0};
+    mp.physBase = 0x20000000; mp.virtBase = 0x80000000; mp.memSize = 0x3F500000;
+    mp.kernel_data_start = 0x20bcc000; mp.kernel_data_end = 0x20da5eb7;
+    mp.dt_size = 0x10000; mp.ramdisk_size = 0x1127F0; mp.boot_args_size = 0x1000;
+    CHECK(j2_memplan_compute_topk(&mp) == 1, "memplan compute");
+    CHECK(mp.topOfKernelData != 0, "memplan topk nonzero");
+    CHECK(mp.topk_known == 0, "memplan topk unknown (not confirmed)");
 
     CHECK(j2_boot_args_validate(in.physBase, in.virtBase, in.memSize, in.topOfKernelData) == 1, "boot_args validate");
     CHECK(j2_boot_args_validate(0x20000000, 0x80000000, 0x3F500000, 0x80536000) == 0, "VA-as-PA rejected");

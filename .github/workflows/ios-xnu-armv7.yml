@@ -701,6 +701,20 @@ jobs:
           fi
           exit 1
 
+      - name: Mach-O dump of real kernel (experimental)
+        if: always()
+        continue-on-error: true
+        working-directory: ios-port/experimental
+        run: |
+          set -e
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          CC="$(xcrun --sdk iphoneos --find clang)"
+          BIN=$(find "${OBJROOT}" -type f -name 'mach.release.j2.unstripped' | head -1)
+          if [ -z "$BIN" ]; then echo "no kernel artifact"; exit 0; fi
+          "$CC" -std=c11 -Wall -Wextra -Werror -I. -I macho macho_dump.c macho/macho_loader.c -o macho_dump
+          ./macho_dump "$BIN" | tee "${BUILD_DIR}/macho_dump.txt"
+          echo "=== macho_dump saved to ${BUILD_DIR}/macho_dump.txt ==="
+
       - name: Inspect linked kernel (read-only, informational)
         if: always()
         continue-on-error: true

@@ -54,8 +54,6 @@ j2_pe_init_platform(void *args)
 	volatile unsigned int *uart = (volatile unsigned int *)J2_UART0_BASE;
 	(void)args;
 	j2_uart_init(uart);
-	/* Send a single marker byte to verify TX path (not proven on hardware) */
-	j2_uart_putc(uart, 'J', 100000);
 }
 '''
 

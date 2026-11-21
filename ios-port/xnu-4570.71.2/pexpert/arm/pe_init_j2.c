@@ -10,6 +10,9 @@
 #include <mach/vm_param.h>
 #include <pexpert/protos.h>
 #include <pexpert/pexpert.h>
+
+/* PE state definition (was in original pe_init.c) */
+PE_state_t PE_state;
 #include <pexpert/boot.h>
 #include <pexpert/device_tree.h>
 #include <pexpert/pe_images.h>

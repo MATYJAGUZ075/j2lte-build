@@ -14,6 +14,7 @@
 #include "../load_planner.h"
 #include "../drivers/uart.h"
 #include "../drivers/gic.h"
+#include "../drivers/mct.h"
 #include "../platform/platform.h"
 
 static int failures = 0;

@@ -33,11 +33,12 @@ jobs:
       working-directory: ios-port/experimental
       run: |
         cc -std=c11 -Wall -Wextra -Werror -c boot_args_builder.c apple_dt_serializer.c
-      - name: Checkout j2lte-build (experiment/ios-port branch)
-        uses: actions/checkout@v4
-        with:
-          ref: experiment/ios-port
-          fetch-depth: 0
+
+    - name: Checkout j2lte-build (experiment/ios-port branch)
+      uses: actions/checkout@v4
+      with:
+        ref: experiment/ios-port
+        fetch-depth: 0
 
       - name: Checkout XNU 4570.71.2 source
         uses: actions/checkout@v4

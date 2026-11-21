@@ -29,8 +29,9 @@ s += '''
 #define J2_UART_UTXH      0x20U
 #define J2_UART_UTRSTAT_TX_EMPTY (1U << 2)
 
-/* GIC-400 bases (from J2.h, compatible "arm,cortex-a15-gic")
- * NOTE: these addresses are NOT independently verified on hardware */
+/* GIC-400 bases (VERIFIED via /proc/device-tree on SM-J200M)
+ * Distributor: 0x10C01000, CPU Interface: 0x10C02000
+ * Compatible: arm,cortex-a15-gic */
 #define J2_GIC_DIST_BASE  0x10C01000U
 #define J2_GIC_CPU_BASE   0x10C02000U
 #define J2_GICD_CTLR      0x000U
@@ -39,42 +40,40 @@ s += '''
 #define J2_GICC_PMR       0x004U
 #define J2_GICD_CTLR_ENABLE 1U
 
-/* MCT base (from J2.h) - frequency unverified */
+/* MCT base (VERIFIED via /proc/device-tree on SM-J200M)
+ * Frequency: 26 MHz (VERIFIED via /proc/device-tree/fixed-rate-clocks/oscclk/clock-frequency) */
 #define J2_MCT_BASE       0x100B0000U
+#define J2_MCT_CNT_L      0x100U
+#define J2_MCT_CNT_H      0x104U
 
 static void j2_uart_init(volatile unsigned int *base)
 {
 	base[J2_UART_ULCON / 4] = 0x03;   /* 8N1 */
 	base[J2_UART_UCON / 4] = 0x05;    /* TX+RX, polling */
 	base[J2_UART_UFCON / 4] = 0x00;   /* FIFO disable */
-	base[J2_UART_UBRDIV / 4] = 26;    /* ~115200 @ 24MHz (UNVERIFIED) */
+	base[J2_UART_UBRDIV / 4] = 26;    /* ~115200 @ 24MHz (UNVERIFIED clock) */
 	base[J2_UART_UDIVSLOT / 4] = 0;
 }
 
 static void j2_gic_init(volatile unsigned int *dist, volatile unsigned int *cpu)
 {
-	/* Enable distributor */
+	dist[J2_GICD_CTLR / 4] = 0;
 	dist[J2_GICD_CTLR / 4] = J2_GICD_CTLR_ENABLE;
-	/* Set priority mask to allow all priorities */
 	cpu[J2_GICC_PMR / 4] = 0xFF;
-	/* Enable CPU interface */
 	cpu[J2_GICC_CTLR / 4] = 1;
 }
 
-static void j2_mct_init(volatile unsigned int *base)
+static unsigned long long j2_mct_read_counter(volatile unsigned int *base)
 {
-	/* MCT initialization - frequency VERIFIED: 26 MHz (0x018cba80)
-	 * base: 0x100B0000 (verified via /proc/device-tree/mct@100B0000/reg)
-	 * Global counter lower 32 bits at offset 0x100, upper at 0x104.
-	 * Read and store the counter to verify timer accessibility. */
-	static volatile unsigned int mct_counter_lo = 0;
-	static volatile unsigned int mct_counter_hi = 0;
-	volatile unsigned int *cnt_l = base + (0x100 / 4);
-	volatile unsigned int *cnt_u = base + (0x104 / 4);
-	mct_counter_lo = *cnt_l;
-	mct_counter_hi = *cnt_u;
-	(void)mct_counter_lo;
-	(void)mct_counter_hi;
+	volatile unsigned int *cnt_l = base + (J2_MCT_CNT_L / 4);
+	volatile unsigned int *cnt_u = base + (J2_MCT_CNT_H / 4);
+	unsigned int hi1, lo, hi2;
+	do {
+		hi1 = *cnt_u;
+		lo = *cnt_l;
+		hi2 = *cnt_u;
+	} while (hi1 != hi2);
+	return ((unsigned long long)hi1 << 32) | lo;
 }
 
 void
@@ -83,21 +82,18 @@ j2_pe_init_platform(void *args)
 	volatile unsigned int *uart = (volatile unsigned int *)J2_UART0_BASE;
 	volatile unsigned int *gic_dist = (volatile unsigned int *)J2_GIC_DIST_BASE;
 	volatile unsigned int *gic_cpu = (volatile unsigned int *)J2_GIC_CPU_BASE;
+	volatile unsigned int *mct_base = (volatile unsigned int *)J2_MCT_BASE;
+	unsigned long long mct_now;
 
 	(void)args;
 
-	/* UART init (MMIO base verified via /proc/iomem) */
 	j2_uart_init(uart);
-
-	/* GIC init (addresses VERIFIED via /proc/device-tree on SM-J200M)
-	 * Distributor: 0x10C01000, CPU Interface: 0x10C02000
-	 * Compatible: arm,cortex-a15-gic */
 	j2_gic_init(gic_dist, gic_cpu);
-
-	/* MCT init (frequency UNVERIFIED) */
-	j2_mct_init((volatile unsigned int *)J2_MCT_BASE);
+	mct_now = j2_mct_read_counter(mct_base);
+	(void)mct_now;
 }
 '''
 
 open(p, "w").write(s)
-print("patched pe_init.c (J2 adapter: UART + GIC + MCT)")
+print("patched pe_init.c (J2 adapter: UART + GIC + MCT with dynamic counter read)")
+PYEOF

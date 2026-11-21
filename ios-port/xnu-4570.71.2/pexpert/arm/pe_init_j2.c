@@ -5,9 +5,19 @@
  * Integrates J2 early drivers (UART, GIC, MCT) with XNU PE interfaces.
  */
 
+#include <sys/types.h>
+#include <sys/kdebug.h>
+#include <mach/vm_param.h>
+#include <pexpert/protos.h>
 #include <pexpert/pexpert.h>
-#include <pexpert/arm/boot.h>
-#include <pexpert/gen/device_tree.h>
+#include <pexpert/boot.h>
+#include <pexpert/device_tree.h>
+#include <pexpert/pe_images.h>
+#include <kern/sched_prim.h>
+#include <machine/machine_routines.h>
+#include <arm/caches_internal.h>
+#include <kern/debug.h>
+#include <libkern/section_keywords.h>
 
 /* J2 early driver MMIO bases (from J2.h, verified via /proc/iomem) */
 #define J2_UART0_BASE  0x13800000U

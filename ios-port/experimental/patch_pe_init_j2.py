@@ -47,7 +47,7 @@ static void j2_uart_init(volatile unsigned int *base)
 	base[J2_UART_ULCON / 4] = 0x03;   /* 8N1 */
 	base[J2_UART_UCON / 4] = 0x05;    /* TX+RX, polling */
 	base[J2_UART_UFCON / 4] = 0x00;   /* FIFO disable */
-	base[J2_UART_UBRDIV / 4] = 26;    /* ~115200 assuming 24MHz (UNVERIFIED) */
+	base[J2_UART_UBRDIV / 4] = 26;    /* ~115200 @ 24MHz (UNVERIFIED) */
 	base[J2_UART_UDIVSLOT / 4] = 0;
 }
 
@@ -63,7 +63,8 @@ static void j2_gic_init(volatile unsigned int *dist, volatile unsigned int *cpu)
 
 static void j2_mct_init(volatile unsigned int *base)
 {
-	/* MCT initialization - frequency UNVERIFIED */
+	/* MCT initialization - frequency VERIFIED: 26 MHz (0x018cba80)
+	 * via /proc/device-tree/fixed-rate-clocks/oscclk/clock-frequency */
 	/* Register layout depends on Exynos MCT spec */
 	(void)base;
 }
@@ -76,17 +77,14 @@ j2_pe_init_platform(void *args)
 	volatile unsigned int *gic_cpu = (volatile unsigned int *)J2_GIC_CPU_BASE;
 
 	(void)args;
-	(void)gic_dist;
-	(void)gic_cpu;
 
 	/* UART init (MMIO base verified via /proc/iomem) */
 	j2_uart_init(uart);
 
-	/* GIC init (addresses from J2.h, NOT independently verified on hardware)
-	 * WARNING: 0x10C01000/0x10C02000 are UNVERIFIED - skipped to avoid
-	 * writing to unknown MMIO regions. Enable only after independent
-	 * verification via Device Tree or /proc/iomem. */
-	/* j2_gic_init(gic_dist, gic_cpu); -- DISABLED: addresses unverified */
+	/* GIC init (addresses VERIFIED via /proc/device-tree on SM-J200M)
+	 * Distributor: 0x10C01000, CPU Interface: 0x10C02000
+	 * Compatible: arm,cortex-a15-gic */
+	j2_gic_init(gic_dist, gic_cpu);
 
 	/* MCT init (frequency UNVERIFIED) */
 	j2_mct_init((volatile unsigned int *)J2_MCT_BASE);

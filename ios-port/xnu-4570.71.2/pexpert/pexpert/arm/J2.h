@@ -14,7 +14,7 @@
  * devices it needs during early bring-up. */
 #define J2_SOC_PHYS_BASE		0x10000000
 
-/* GIC-400 (compatible "arm,cortex-a15-gic") */
+/* GIC-400 (compatible "arm,cortex-a15-gic") - addresses VERIFIED via /proc/device-tree on SM-J200M */
 #define J2_GIC_DIST_BASE		0x10C01000
 #define J2_GIC_CPU_BASE		0x10C02000
 #define J2_GIC_DIST_SIZE		0x1000
@@ -40,7 +40,7 @@
 /* MCT interrupt map: 11 channels -> GIC PPI 102-113 (0-10 + PPI base) */
 #define J2_MCT_IRQ_BASE		102
 #define J2_MCT_NUM_CHANNELS	11
-/* MCT clock frequency - Exynos 3475 uses 26 MHz fin_pll (like S8) */
+/* MCT clock frequency - Exynos 3475 uses 26 MHz fin_pll (VERIFIED via /proc/device-tree) */
 #define J2_MCT_FIN_PLL		26000000
 #define J2_CNTFRQ			26000000
 

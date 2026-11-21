@@ -79,6 +79,18 @@ PE_init_panicheader(void)
 }
 
 int
+PE_poll_input(void)
+{
+	return (0);
+}
+
+void
+PE_register_timebase_callback(void (*cb)(void))
+{
+	/* No-op on J2 bring-up */
+}
+
+int
 PE_initialize_console(PE_Video *newInfo, int op)
 {
 	return (0);

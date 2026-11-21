@@ -11,6 +11,7 @@
 #include "../apple_dt_serializer.h"
 #include "../shim/shim.h"
 #include "../boot_args_validator.h"
+#include "../load_planner.h"
 #include "../drivers/uart.h"
 #include "../drivers/gic.h"
 #include "../drivers/mct.h"

@@ -1,0 +1,58 @@
+/*
+ * J2 (Exynos 3475) Platform Expert - PE_init_platform
+ *
+ * Replaces pexpert/arm/pe_init.c for the J2 machine config.
+ * Integrates J2 early drivers (UART, GIC, MCT) with XNU PE interfaces.
+ */
+
+#include <pexpert/pexpert.h>
+#include <pexpert/arm/boot.h>
+#include <pexpert/gen/device_tree.h>
+
+/* J2 early driver MMIO bases (from J2.h, verified via /proc/iomem) */
+#define J2_UART0_BASE  0x13800000U
+#define J2_GIC_BASE    0x10C01000U
+#define J2_MCT_BASE    0x100B0000U
+
+void
+PE_init_platform(boolean_t vm_initialized, void *args)
+{
+	boot_args *boot_args_ptr = (boot_args *) args;
+
+	if (PE_state.initialized == FALSE) {
+		PE_state.initialized = TRUE;
+		PE_state.bootArgs = boot_args_ptr;
+		PE_state.deviceTreeHead = boot_args_ptr->deviceTreeP;
+		PE_state.video.v_baseAddr = boot_args_ptr->Video.v_baseAddr;
+		PE_state.video.v_rowBytes = boot_args_ptr->Video.v_rowBytes;
+		PE_state.video.v_width = boot_args_ptr->Video.v_width;
+		PE_state.video.v_height = boot_args_ptr->Video.v_height;
+		PE_state.video.v_depth = (boot_args_ptr->Video.v_depth >> kBootVideoDepthDepthShift) & kBootVideoDepthMask;
+		PE_state.video.v_rotate = (boot_args_ptr->Video.v_depth >> kBootVideoDepthRotateShift) & kBootVideoDepthMask;
+		PE_state.video.v_scale = ((boot_args_ptr->Video.v_depth >> kBootVideoDepthScaleShift) & kBootVideoDepthMask) + 1;
+		PE_state.video.v_display = boot_args_ptr->Video.v_display;
+	}
+
+	if (!vm_initialized) {
+		DTInit(PE_state.deviceTreeHead);
+		pe_init_debug();
+	} else {
+		/* pe_arm_init_interrupts and pe_arm_init_debug */
+	}
+}
+
+void
+PE_create_console(void)
+{
+	if (PE_state.video.v_display)
+		PE_initialize_console(&PE_state.video, kPEGraphicsMode);
+	else
+		PE_initialize_console(&PE_state.video, kPETextMode);
+}
+
+int
+PE_current_console(PE_Video * info)
+{
+	*info = PE_state.video;
+	return (0);
+}

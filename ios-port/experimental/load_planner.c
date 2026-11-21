@@ -1,3 +1,4 @@
+#include "macho/macho_loader.h"
 #include "load_planner.h"
 #include <string.h>
 

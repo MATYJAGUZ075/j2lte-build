@@ -119,8 +119,12 @@ int main(void) {
     CHECK(j2_va_to_pa(0x80100000, 0x80000000, 0x20000000, &(uint32_t){0}) == 1, "va_to_pa ok");
 
     if (failures == 0) {
-        CHECK(j2_uart_base_valid(J2_UART0_BASE) == 1, "uart0 valid");
-    CHECK(j2_uart_base_valid(0x12345678) == 0, "uart invalid");
+        /* UART host test */
+    volatile uint32_t uartmem[64] = {0};
+    uartmem[J2_UART_UTRSTAT / 4] = J2_UART_UTRSTAT_TX_EMPTY;
+    j2_uart_init(uartmem);
+    CHECK(j2_uart_putc(uartmem, 'A', 10) == 1, "uart putc");
+    CHECK(uartmem[J2_UART_UTXH / 4] == 'A', "uart txh");
     CHECK(j2_gic_base_valid(J2_GIC_BASE) == 1, "gic valid");
     CHECK(j2_mct_base_valid(J2_MCT_BASE) == 1, "mct valid");
 

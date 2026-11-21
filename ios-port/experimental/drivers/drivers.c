@@ -1,9 +1,26 @@
 #include "drivers/uart.h"
-#include "drivers/gic.h"
-#include "drivers/mct.h"
 
 int j2_uart_base_valid(uint32_t base) {
     return base == J2_UART0_BASE || base == J2_UART1_BASE || base == J2_UART2_BASE;
 }
-int j2_gic_base_valid(uint32_t base) { return base == J2_GIC_BASE; }
-int j2_mct_base_valid(uint32_t base) { return base == J2_MCT_BASE; }
+
+void j2_uart_init(volatile uint32_t *base) {
+    if (!base) return;
+    base[J2_UART_ULCON / 4] = 0x03;   /* 8N1 */
+    base[J2_UART_UCON / 4] = 0x05;    /* TX/RX enable, no interrupts */
+    base[J2_UART_UFCON / 4] = 0x01;   /* FIFO enable */
+    base[J2_UART_UBRDIV / 4] = 26;     /* ~115200 @ 48MHz-ish */
+    base[J2_UART_UDIVSLOT / 4] = 0x0000;
+}
+
+int j2_uart_putc(volatile uint32_t *base, char c, uint32_t timeout_iters) {
+    if (!base) return 0;
+    uint32_t i;
+    for (i = 0; i < timeout_iters; i++) {
+        if (base[J2_UART_UTRSTAT / 4] & J2_UART_UTRSTAT_TX_EMPTY) {
+            base[J2_UART_UTXH / 4] = (uint32_t)c;
+            return 1;
+        }
+    }
+    return 0;
+}

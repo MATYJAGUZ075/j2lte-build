@@ -33,8 +33,10 @@ int j2_dt_serialize_tree(uint8_t *buf, size_t bufsize, const j2_dt_tree_node_t *
     size_t off = sizeof(j2_dt_node_t);
     /* props (values zeroed; caller fills externally if needed) */
     for (size_t i = 0; i < node->nprops; i++) {
-        memcpy(buf + off, &node->props[i], sizeof(j2_dt_prop_t));
-        off += sizeof(j2_dt_prop_t);
+        memcpy(buf + off, &node->props[i], sizeof(j2_dt_prop_t) - sizeof(const uint8_t*));
+        off += sizeof(j2_dt_prop_t) - sizeof(const uint8_t*);
+        if (node->props[i].value && node->props[i].length > 0)
+            memcpy(buf + off, node->props[i].value, node->props[i].length);
         off += j2_dt_align4(node->props[i].length);
     }
     /* children contiguous */
@@ -194,8 +196,16 @@ int j2_dt_tree_from_buffer(const uint8_t *buf, size_t bufsize, j2_dt_tree_node_t
     for (size_t i = 0; i < n->nprops; i++) {
         j2_dt_prop_t *p = NULL; const uint8_t *val = NULL;
         if (!j2_dt_prop_at(buf, bufsize, i, &p, &val)) { j2_dt_free_tree(n); return 0; }
-        memcpy(&n->props[i], p, sizeof(j2_dt_prop_t));
-        /* name property -> node name */
+        memcpy(&n->props[i], p, sizeof(j2_dt_prop_t) - sizeof(const uint8_t*));
+        n->props[i].value = NULL;
+        if (p->length > 0) {
+            n->props[i].value = malloc(p->length);
+            if (!n->props[i].value) { j2_dt_free_tree(n); return 0; }
+            const uint8_t *val = NULL;
+            j2_dt_prop_t *pp = NULL;
+            if (!j2_dt_prop_at(buf, bufsize, i, &pp, &val)) { j2_dt_free_tree(n); return 0; }
+            memcpy((void*)n->props[i].value, val, p->length);
+        }
         if (strcmp(p->name, "name") == 0 && p->length < 64 && val) {
             memcpy(n->name, val, p->length);
             n->name[p->length] = 0;
@@ -223,9 +233,27 @@ int j2_dt_tree_from_buffer(const uint8_t *buf, size_t bufsize, j2_dt_tree_node_t
     return 1;
 }
 
-void j2_dt_free_tree(j2_dt_tree_node_t *node) {
+int j2_dt_trees_equal(const j2_dt_tree_node_t *a, const j2_dt_tree_node_t *b) {
+    if (a == b) return 1;
+    if (!a || !b) return 0;
+    if (a->nprops != b->nprops) return 0;
+    if (a->nchildren != b->nchildren) return 0;
+    for (size_t i = 0; i < a->nprops; i++) {
+        if (strcmp(a->props[i].name, b->props[i].name) != 0) return 0;
+        if (a->props[i].length != b->props[i].length) return 0;
+        if (a->props[i].length > 0 && (a->props[i].value == NULL || b->props[i].value == NULL)) return 0;
+        if (a->props[i].length > 0 && memcmp(a->props[i].value, b->props[i].value, a->props[i].length) != 0) return 0;
+    }
+    for (size_t i = 0; i < a->nchildren; i++) {
+        if (!j2_dt_trees_equal(a->children[i], b->children[i])) return 0;
+    }
+    return 1;
+}
     if (!node) return;
-    if (node->props) free(node->props);
+    if (node->props) {
+        for (size_t i = 0; i < node->nprops; i++) free((void*)node->props[i].value);
+        free(node->props);
+    }
     if (node->children) {
         for (size_t i = 0; i < node->nchildren; i++) j2_dt_free_tree(node->children[i]);
         free(node->children);

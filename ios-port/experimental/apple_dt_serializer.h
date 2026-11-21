@@ -9,6 +9,7 @@
 typedef struct {
     char name[J2_DT_PROP_NAME_LEN];
     uint32_t length;
+    const uint8_t *value;
 } j2_dt_prop_t;
 
 typedef struct {
@@ -38,5 +39,6 @@ size_t j2_dt_subtree_size(const uint8_t *buf, size_t bufsize);
 int j2_dt_parse_tree(const uint8_t *buf, size_t bufsize, j2_dt_tree_node_t *out, int max_depth);
 int j2_dt_tree_from_buffer(const uint8_t *buf, size_t bufsize, j2_dt_tree_node_t **out, int max_depth);
 void j2_dt_free_tree(j2_dt_tree_node_t *node);
+int j2_dt_trees_equal(const j2_dt_tree_node_t *a, const j2_dt_tree_node_t *b);
 
 #endif

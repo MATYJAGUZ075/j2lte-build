@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
@@ -68,6 +69,41 @@ int main(void) {
 
     CHECK(j2_dt_align4(5) == 8, "dt align");
     CHECK(j2_dt_node_header_size() == 8, "dt node header size");
+
+    /* round-trip multinivel */
+    j2_dt_tree_node_t root; memset(&root, 0, sizeof(root));
+    strcpy(root.name, "root");
+    j2_dt_prop_t rprops[2];
+    memset(rprops, 0, sizeof(rprops));
+    strcpy(rprops[0].name, "name"); rprops[0].length = 4; rprops[0].value = (const uint8_t*)"root";
+    strcpy(rprops[1].name, "prop"); rprops[1].length = 3; rprops[1].value = (const uint8_t*)"abc";
+    root.props = rprops; root.nprops = 2;
+    j2_dt_tree_node_t child; memset(&child, 0, sizeof(child));
+    strcpy(child.name, "child");
+    j2_dt_prop_t cprops[1];
+    memset(cprops, 0, sizeof(cprops));
+    strcpy(cprops[0].name, "name"); cprops[0].length = 5; cprops[0].value = (const uint8_t*)"child";
+    child.props = cprops; child.nprops = 1;
+    j2_dt_tree_node_t *children[1] = { &child };
+    root.children = children; root.nchildren = 1;
+
+    size_t sz = 0;
+    CHECK(j2_dt_serialize_tree(NULL, 0, &root, &sz) == 1, "dt serialize size");
+    CHECK(sz > 0, "dt size >0");
+    uint8_t *dbuf = (uint8_t*)malloc(sz);
+    CHECK(dbuf != NULL, "dt buf alloc");
+    size_t outsz = 0;
+    CHECK(j2_dt_serialize_tree(dbuf, sz, &root, &outsz) == 1, "dt serialize");
+    CHECK(outsz == sz, "dt size match");
+    CHECK(j2_dt_validate_tree(dbuf, sz, 8) == 1, "dt validate");
+    size_t tsz = j2_dt_subtree_size(dbuf, sz);
+    CHECK(tsz == sz, "dt subtree size");
+    j2_dt_tree_node_t *recon = NULL;
+    CHECK(j2_dt_tree_from_buffer(dbuf, sz, &recon, 8) == 1, "dt from buffer");
+    CHECK(recon != NULL, "dt recon not null");
+    CHECK(j2_dt_trees_equal(&root, recon) == 1, "dt roundtrip equal");
+    j2_dt_free_tree(recon);
+    free(dbuf);
 
     j2_shim_memory_t mem = { in.physBase, in.virtBase, in.memSize, in.topOfKernelData };
     CHECK(j2_shim_prepare(&mem) == 1, "shim prepare");

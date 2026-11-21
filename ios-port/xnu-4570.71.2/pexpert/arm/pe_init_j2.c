@@ -73,8 +73,8 @@ PE_display_icon(__unused unsigned int flags, __unused const char *name)
 	/* No-op on J2 bring-up */
 }
 
-void *
+uint32_t
 PE_get_offset_into_panic_region(__unused void *base, __unused size_t size)
 {
-	return NULL;
+	return (0);
 }

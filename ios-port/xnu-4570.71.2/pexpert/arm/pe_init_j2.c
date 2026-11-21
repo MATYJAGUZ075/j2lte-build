@@ -107,6 +107,12 @@ PE_sync_panic_buffers(void)
 	/* No-op on J2 bring-up */
 }
 
+void
+PE_update_panicheader_nestedpanic(void)
+{
+	/* No-op on J2 bring-up */
+}
+
 int
 PE_current_console(PE_Video * info)
 {

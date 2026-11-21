@@ -66,6 +66,13 @@ PE_i_can_has_debugger(void)
 	return (FALSE);
 }
 
+int
+PE_current_console(PE_Video * info)
+{
+	*info = PE_state.video;
+	return (0);
+}
+
 void
 PE_display_icon(__unused unsigned int flags, __unused const char *name)
 {

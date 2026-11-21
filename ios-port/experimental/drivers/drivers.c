@@ -27,6 +27,23 @@ int j2_uart_putc(volatile uint32_t *base, char c, uint32_t timeout_iters) {
     return 0;
 }
 
+int j2_uart_getc(volatile uint32_t *base, uint32_t timeout_iters) {
+    if (!base) return -1;
+    uint32_t i;
+    for (i = 0; i < timeout_iters; i++) {
+        if (base[J2_UART_UTRSTAT / 4] & J2_UART_UTRSTAT_RX_READY) {
+            return (int)(base[J2_UART_URXH / 4] & 0xFFU);
+        }
+    }
+    return -1;
+}
+
+void j2_uart_set_baud(volatile uint32_t *base, uint32_t div, uint32_t slot) {
+    if (!base) return;
+    base[J2_UART_UBRDIV / 4] = div;
+    base[J2_UART_UDIVSLOT / 4] = slot;
+}
+
 int j2_gic_base_valid(uint32_t base) { return base == J2_GIC_BASE; }
 
 void j2_gic_init(volatile uint32_t *dist, volatile uint32_t *cpu) {
@@ -57,6 +74,16 @@ void j2_gic_eoi(volatile uint32_t *cpu, uint32_t iar) {
     cpu[J2_GICC_EOIR / 4] = iar;
 }
 
+void j2_gic_set_priority(volatile uint32_t *dist, uint32_t irq, uint8_t prio) {
+    if (!dist) return;
+    dist[(J2_GICD_IPRIORITYR + irq) / 4] = prio;
+}
+
+uint32_t j2_gic_get_priority(volatile uint32_t *dist, uint32_t irq) {
+    if (!dist) return 0;
+    return dist[(J2_GICD_IPRIORITYR + irq) / 4];
+}
+
 int j2_mct_base_valid(uint32_t base) { return base == J2_MCT_BASE; }
 
 uint64_t j2_mct_read_counter(volatile uint32_t *base) {
@@ -64,4 +91,12 @@ uint64_t j2_mct_read_counter(volatile uint32_t *base) {
     uint32_t hi = base[J2_MCT_G_CNT_U / 4];
     uint32_t lo = base[J2_MCT_G_CNT_L / 4];
     return ((uint64_t)hi << 32) | lo;
+}
+
+uint64_t j2_mct_ticks_to_ns(uint64_t ticks) {
+    return ticks * 1000000000ULL / J2_MCT_FREQ_HZ;
+}
+
+uint64_t j2_mct_ns_to_ticks(uint64_t ns) {
+    return ns * J2_MCT_FREQ_HZ / 1000000000ULL;
 }

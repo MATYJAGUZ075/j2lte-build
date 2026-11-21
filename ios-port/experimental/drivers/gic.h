@@ -26,5 +26,6 @@ void j2_gic_init(volatile uint32_t *dist, volatile uint32_t *cpu);
 void j2_gic_enable_irq(volatile uint32_t *dist, uint32_t irq);
 void j2_gic_disable_irq(volatile uint32_t *dist, uint32_t irq);
 uint32_t j2_gic_ack(volatile uint32_t *cpu);
-void j2_gic_eoi(volatile uint32_t *cpu, uint32_t iar);
+void j2_gic_set_priority(volatile uint32_t *dist, uint32_t irq, uint8_t prio);
+uint32_t j2_gic_get_priority(volatile uint32_t *dist, uint32_t irq);
 #endif

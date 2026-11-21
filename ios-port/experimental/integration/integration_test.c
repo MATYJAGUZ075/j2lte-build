@@ -119,6 +119,8 @@ int main(void) {
     CHECK(j2_memplan_compute_topk(&mp) == 1, "memplan compute");
     CHECK(mp.topOfKernelData != 0, "memplan topk nonzero");
     CHECK(mp.topk_known == 0, "memplan topk unknown (not confirmed)");
+    CHECK(mp.topOfKernelData >= 0x20DA6000, "memplan topk >= observed min");
+    CHECK(mp.topOfKernelData % 4096 == 0, "memplan topk aligned");
 
     CHECK(j2_boot_args_validate(in.physBase, in.virtBase, in.memSize, in.topOfKernelData) == 1, "boot_args validate");
     CHECK(j2_boot_args_validate(0x20000000, 0x80000000, 0x3F500000, 0x80536000) == 0, "VA-as-PA rejected");

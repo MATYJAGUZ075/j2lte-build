@@ -46,7 +46,7 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -c load_planner.c -I. -I macho -I macho/full -I memory
           cc -std=c11 -Wall -Wextra -Werror -I. -I macho -I macho/full -I memory -I shim \
              integration/integration_test.c boot_args_builder.c apple_dt_serializer.c boot_args_validator.c \
-             macho/macho_loader.c macho/full/macho_full.c memory/memory_manager.c shim/shim.c load_planner.c drivers/drivers.c platform/platform.c memplan/memplan.c \
+             macho/macho_loader.c macho/full/macho_full.c memory/memory_manager.c shim/shim.c load_planner.c drivers/drivers.c platform/platform.c memplan/memplan.c pe_j2_adapter.c \
              -o integration_test
           ./integration_test
 

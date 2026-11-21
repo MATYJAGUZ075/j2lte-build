@@ -60,10 +60,10 @@ PE_create_console(void)
 		PE_initialize_console(&PE_state.video, kPETextMode);
 }
 
-boolean_t
-PE_i_can_has_debugger(void)
+uint32_t
+PE_i_can_has_debugger(uint32_t *arg)
 {
-	return (FALSE);
+	return (0);
 }
 
 int

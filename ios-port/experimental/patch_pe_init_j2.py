@@ -123,6 +123,13 @@ j2_pe_init_platform(void *args)
 }
 
 
+/* XNU ARM cnputc: connect to J2 UART0 */
+void cnputc(char c)
+{
+	j2_uart_console_putc(c);
+}
+
+
 '''
 
 open(p, "w").write(s)

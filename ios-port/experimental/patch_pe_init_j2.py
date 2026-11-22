@@ -18,32 +18,8 @@ s += '''
 
 /* ---- J2 (Exynos 3475) platform adapter (incremental, appended) ---- */
 
-/* UART console output function - can be called from XNU console subsystem */
-static int j2_uart_console_putc(char c)
-{
-	volatile unsigned int *uart = (volatile unsigned int *)J2_UART0_BASE;
-	unsigned int timeout = 100000;
-	while (timeout--) {
-		if (uart[J2_UART_UTRSTAT / 4] & J2_UART_UTRSTAT_TX_EMPTY) {
-			uart[J2_UART_UTXH / 4] = (unsigned int)c;
-			return 0;
-		}
-	}
-	return -1; /* timeout */
-}
-
-/* UART console input function - can be called from XNU console subsystem */
-static int j2_uart_console_getc(void)
-{
-	volatile unsigned int *uart = (volatile unsigned int *)J2_UART0_BASE;
-	unsigned int timeout = 100000;
-	while (timeout--) {
-		if (uart[J2_UART_UTRSTAT / 4] & J2_UART_UTRSTAT_RX_READY) {
-			return (int)(uart[J2_UART_URXH / 4] & 0xFF);
-		}
-	}
-	return -1; /* timeout */
-}
+/* UART0 base (verified via /proc/iomem on SM-J200M) */
+#define J2_UART0_BASE     0x13800000U
 #define J2_UART_ULCON     0x00U
 #define J2_UART_UCON      0x04U
 #define J2_UART_UFCON     0x08U
@@ -55,9 +31,7 @@ static int j2_uart_console_getc(void)
 #define J2_UART_UTRSTAT_TX_EMPTY (1U << 2)
 #define J2_UART_UTRSTAT_RX_READY (1U << 0)
 
-/* GIC-400 bases (VERIFIED via /proc/device-tree on SM-J200M)
- * Distributor: 0x10C01000, CPU Interface: 0x10C02000
- * Compatible: arm,cortex-a15-gic */
+/* GIC-400 bases (VERIFIED via /proc/device-tree on SM-J200M) */
 #define J2_GIC_DIST_BASE  0x10C01000U
 #define J2_GIC_CPU_BASE   0x10C02000U
 #define J2_GICD_CTLR      0x000U
@@ -74,11 +48,38 @@ static int j2_uart_console_getc(void)
 
 static void j2_uart_init(volatile unsigned int *base)
 {
-	base[J2_UART_ULCON / 4] = 0x03;   /* 8N1 */
-	base[J2_UART_UCON / 4] = 0x05;    /* TX+RX, polling */
-	base[J2_UART_UFCON / 4] = 0x00;   /* FIFO disable */
-	base[J2_UART_UBRDIV / 4] = 26;    /* ~115200 @ 24MHz (UNVERIFIED clock) */
+	base[J2_UART_ULCON / 4] = 0x03;
+	base[J2_UART_UCON / 4] = 0x05;
+	base[J2_UART_UFCON / 4] = 0x00;
+	base[J2_UART_UBRDIV / 4] = 26;
 	base[J2_UART_UDIVSLOT / 4] = 0;
+}
+
+/* UART console output - can be called from XNU console subsystem */
+int j2_uart_console_putc(char c)
+{
+	volatile unsigned int *uart = (volatile unsigned int *)J2_UART0_BASE;
+	unsigned int timeout = 100000;
+	while (timeout--) {
+		if (uart[J2_UART_UTRSTAT / 4] & J2_UART_UTRSTAT_TX_EMPTY) {
+			uart[J2_UART_UTXH / 4] = (unsigned int)c;
+			return 0;
+		}
+	}
+	return -1;
+}
+
+/* UART console input - can be called from XNU console subsystem */
+int j2_uart_console_getc(void)
+{
+	volatile unsigned int *uart = (volatile unsigned int *)J2_UART0_BASE;
+	unsigned int timeout = 100000;
+	while (timeout--) {
+		if (uart[J2_UART_UTRSTAT / 4] & J2_UART_UTRSTAT_RX_READY) {
+			return (int)(uart[J2_UART_URXH / 4] & 0xFF);
+		}
+	}
+	return -1;
 }
 
 static void j2_gic_init(volatile unsigned int *dist, volatile unsigned int *cpu)
@@ -121,4 +122,5 @@ j2_pe_init_platform(void *args)
 '''
 
 open(p, "w").write(s)
-print("patched pe_init.c (J2 adapter: UART + GIC + MCT with dynamic counter read)")
+print("patched pe_init.c (J2 adapter: UART console + GIC + MCT dynamic read)")
+PYEOF

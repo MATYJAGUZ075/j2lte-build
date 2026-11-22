@@ -11,15 +11,39 @@ s = s.replace(needle, "\tStartIOKit(PE_state.deviceTreeHead, PE_state.bootArgs, 
 
 hdr = "#include <pexpert/pexpert.h>\n"
 assert hdr in s, "header include not found"
-s = s.replace(hdr, hdr + "\nextern void j2_pe_init_platform(void *);\n", 1)
+s = s.replace(hdr, hdr + "\nextern void j2_pe_init_platform(void *);\nextern int j2_uart_console_putc(char c);\nextern int j2_uart_console_getc(void);\n", 1)
 
 # Append J2 platform adapter (UART + GIC + MCT) at end of file
 s += '''
 
 /* ---- J2 (Exynos 3475) platform adapter (incremental, appended) ---- */
 
-/* UART0 base (verified via /proc/iomem on SM-J200M) */
-#define J2_UART0_BASE     0x13800000U
+/* UART console output function - can be called from XNU console subsystem */
+static int j2_uart_console_putc(char c)
+{
+	volatile unsigned int *uart = (volatile unsigned int *)J2_UART0_BASE;
+	unsigned int timeout = 100000;
+	while (timeout--) {
+		if (uart[J2_UART_UTRSTAT / 4] & J2_UART_UTRSTAT_TX_EMPTY) {
+			uart[J2_UART_UTXH / 4] = (unsigned int)c;
+			return 0;
+		}
+	}
+	return -1; /* timeout */
+}
+
+/* UART console input function - can be called from XNU console subsystem */
+static int j2_uart_console_getc(void)
+{
+	volatile unsigned int *uart = (volatile unsigned int *)J2_UART0_BASE;
+	unsigned int timeout = 100000;
+	while (timeout--) {
+		if (uart[J2_UART_UTRSTAT / 4] & J2_UART_UTRSTAT_RX_READY) {
+			return (int)(uart[J2_UART_URXH / 4] & 0xFF);
+		}
+	}
+	return -1; /* timeout */
+}
 #define J2_UART_ULCON     0x00U
 #define J2_UART_UCON      0x04U
 #define J2_UART_UFCON     0x08U
@@ -27,7 +51,9 @@ s += '''
 #define J2_UART_UDIVSLOT  0x2CU
 #define J2_UART_UTRSTAT   0x10U
 #define J2_UART_UTXH      0x20U
+#define J2_UART_URXH      0x24U
 #define J2_UART_UTRSTAT_TX_EMPTY (1U << 2)
+#define J2_UART_UTRSTAT_RX_READY (1U << 0)
 
 /* GIC-400 bases (VERIFIED via /proc/device-tree on SM-J200M)
  * Distributor: 0x10C01000, CPU Interface: 0x10C02000

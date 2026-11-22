@@ -86,7 +86,6 @@ int uart_getc(void)
 {
 	return j2_uart_console_getc();
 }
-'''
 
 /* UART console input - can be called from XNU console subsystem */
 int j2_uart_console_getc(void)

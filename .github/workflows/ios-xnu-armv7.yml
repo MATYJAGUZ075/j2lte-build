@@ -71,8 +71,12 @@ jobs:
           grep -rln "firehose" ios-port/xnu-4570.71.2-source/pexpert/ | head -40
           echo "=== PE_init_platform function ==="
           sed -n '270,360p' ios-port/xnu-4570.71.2-source/pexpert/arm/pe_init.c
-          echo "=== console interfaces ==="
-          grep -rn "PE_initialize_console\|PE_current_console\|PE_write_console\|PE_read_console" ios-port/xnu-4570.71.2-source/pexpert/ | head -40
+          echo "=== PE_initialize_console function ==="
+          sed -n '110,160p' ios-port/xnu-4570.71.2-source/pexpert/arm/pe_init.c
+          echo "=== PE_current_console function ==="
+          sed -n '390,420p' ios-port/xnu-4570.71.2-source/pexpert/arm/pe_init.c
+          echo "=== console-related in pexpert.h ==="
+          grep -n "console\|cnputc\|PE_state" ios-port/xnu-4570.71.2-source/pexpert/pexpert/pexpert.h | head -40
 
       - name: Build XNU compat DT test
         working-directory: ios-port/experimental

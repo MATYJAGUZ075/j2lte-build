@@ -126,7 +126,7 @@ void cnputc(char c)
 {
 	j2_uart_console_putc(c);
 }
-'''
+
 {
 	volatile unsigned int *uart = (volatile unsigned int *)J2_UART0_BASE;
 	volatile unsigned int *gic_dist = (volatile unsigned int *)J2_GIC_DIST_BASE;

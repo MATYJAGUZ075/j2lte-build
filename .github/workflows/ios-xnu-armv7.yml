@@ -75,8 +75,8 @@ jobs:
           sed -n '120,180p' ios-port/xnu-4570.71.2-source/pexpert/arm/pe_init.c
           echo "=== console registration in pexpert ==="
           grep -rn "cnputc\|cngetc\|console_register\|PE_state.console\|PE_console" ios-port/xnu-4570.71.2-source/pexpert/ | head -40
-          echo "=== serial_putc definition search ==="
-          grep -rn "serial_putc" ios-port/xnu-4570.71.2-source/ | head -20
+          echo "=== pe_kprintf.c ARM full ==="
+          cat ios-port/xnu-4570.71.2-source/pexpert/arm/pe_kprintf.c
           echo "=== PE_putc/PE_kputc in ARM ==="
           grep -rn "PE_putc\|PE_kputc" ios-port/xnu-4570.71.2-source/pexpert/arm/ | head -20
           echo "=== PE_current_console function ==="

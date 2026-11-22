@@ -142,6 +142,30 @@ void cnputc(char c)
 	mct_now = j2_mct_read_counter(mct_base);
 	(void)mct_now;
 }
+
+/* XNU ARM platform console hooks (called by pe_kprintf.c) */
+int serial_init(void)
+{
+	volatile unsigned int *uart = (volatile unsigned int *)J2_UART0_BASE;
+	j2_uart_init(uart);
+	return 1;
+}
+
+void uart_putc(char c)
+{
+	j2_uart_console_putc(c);
+}
+
+int uart_getc(void)
+{
+	return j2_uart_console_getc();
+}
+
+/* XNU ARM cnputc fallback (declared in pexpert/pexpert/arm/protos.h) */
+void cnputc(char c)
+{
+	j2_uart_console_putc(c);
+}
 '''
 
 open(p, "w").write(s)

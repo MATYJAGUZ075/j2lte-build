@@ -127,6 +127,8 @@ void cnputc(char c)
 	j2_uart_console_putc(c);
 }
 
+void
+j2_pe_init_platform(void *args)
 {
 	volatile unsigned int *uart = (volatile unsigned int *)J2_UART0_BASE;
 	volatile unsigned int *gic_dist = (volatile unsigned int *)J2_GIC_DIST_BASE;
@@ -160,11 +162,6 @@ int uart_getc(void)
 	return j2_uart_console_getc();
 }
 
-/* XNU ARM cnputc fallback (declared in pexpert/pexpert/arm/protos.h) */
-void cnputc(char c)
-{
-	j2_uart_console_putc(c);
-}
 '''
 
 open(p, "w").write(s)

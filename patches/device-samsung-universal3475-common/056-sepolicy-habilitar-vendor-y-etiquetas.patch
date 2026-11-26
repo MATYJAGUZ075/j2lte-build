@@ -66,10 +66,16 @@ index c889e68..7eb7c25 100644
  genfscon sysfs /devices/i2c.26/i2c-8/8-0034/s2mu003-charger/power_supply            u:object_r:sysfs_usb_supply:s0
  genfscon sysfs /devices/13890000.hsi2c/i2c-2/2-0035/power_supply                    u:object_r:sysfs_usb_supply:s0
  genfscon sysfs /devices/platform/htc_battery/power_supply/ps                        u:object_r:sysfs_usb_supply:s0
-@@ -126,3 +127,7 @@ genfscon sysfs /devices/14800000.dsim      u:object_r:sysfs_graphics:s0
+@@ -126,3 +127,13 @@ genfscon sysfs /devices/14800000.dsim      u:object_r:sysfs_graphics:s0
  
  # video4linux
  genfscon sysfs /devices/12800000.mfc0/video4linux   u:object_r:sysfs_v4l:s0
++
++genfscon sysfs /devices/12c30000.mfc0/video4linux   u:object_r:sysfs_v4l:s0
++genfscon sysfs /devices/14400000.fimc_is/video4linux u:object_r:sysfs_v4l:s0
++genfscon sysfs /devices/fimc_is_sensor.2/video4linux u:object_r:sysfs_v4l:s0
++genfscon sysfs /devices/fimc_is_sensor.3/video4linux u:object_r:sysfs_v4l:s0
++genfscon sysfs /devices/mdev_output.6/video4linux u:object_r:sysfs_v4l:s0
 +
 +# debugfs de Mali (memtrack)
 +genfscon debugfs /mali  u:object_r:debugfs_mali:s0

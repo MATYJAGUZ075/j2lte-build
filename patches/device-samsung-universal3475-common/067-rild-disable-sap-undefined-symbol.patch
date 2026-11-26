@@ -1,30 +1,9 @@
 diff --git a/configs/init/rild.rc b/configs/init/rild.rc
-index 744ea5b..c9a1a3b 100644
 --- a/configs/init/rild.rc
 +++ b/configs/init/rild.rc
-@@ -1,6 +1,7 @@
- on boot
-     # RIL daemon
-     setprop persist.radio.multisim.config "dsds"
-+    setprop persist.radio.sap.enabled 0
-     # Ensure rild starts after radio interface is ready
+@@ -1,4 +1,5 @@
+ # Radio daemon for SIM 1
++setprop persist.radio.sap.enabled 0
  service ril-daemon /vendor/bin/hw/rild -c 1 -l ${rild.libpath}
      class main
-@@ -9,7 +10,7 @@ service ril-daemon /vendor/bin/hw/rild -c 1 -l ${rild.libpath}
      socket rild stream 660 system radio
-     socket sap_uim_socket1 stream 660 bluetooth bluetooth
-     socket rild-debug stream 660 system radio
--    socket Multiclient stream 660 radio radio
-+    # socket Multiclient stream 660 radio radio  # SAP no soportado en libsec-ril.so, símbolo RIL_SAP_Init ausente
-     user radio
-     group radio cache inet misc audio sdcard_r sdcard_rw log vpn system readproc wakelock
-     capabilities BLOCK_SUSPEND NET_ADMIN NET_RAW
-@@ -20,7 +21,7 @@ service ril-daemon1 /vendor/bin/hw/rild -c 2 -l ${rild.libpath2}
-     class main
-     socket rild2 stream 660 system radio
-     socket rild-debug2 stream 660 system radio
--    socket Multiclient2 stream 660 radio radio
-+    # socket Multiclient2 stream 660 radio radio  # SAP no soportado en libsec-ril.so, símbolo RIL_SAP_Init ausente
-     user radio
-     group radio cache inet misc audio sdcard_r sdcard_rw log vpn system readproc wakelock
-     capabilities BLOCK_SUSPEND NET_ADMIN NET_RAW

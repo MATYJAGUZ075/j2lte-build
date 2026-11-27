@@ -1,0 +1,13 @@
+diff --git a/sepolicy/vendor/hal_bluetooth_default.te b/sepolicy/vendor/hal_bluetooth_default.te
+new file mode 100644
+--- /dev/null
++++ b/sepolicy/vendor/hal_bluetooth_default.te
+@@ -0,0 +1,8 @@
++# FIX-070: hal_bluetooth_default necesita leer default_prop
++# para inicializar el servicio Bluetooth.
++# Sin esto Bluetooth no funciona.
++allow hal_bluetooth_default default_prop:file r_file_perms;
++
++# FIX-070: hal_bluetooth_default necesita leer sysfs para Bluetooth.
++allow hal_bluetooth_default sysfs:file r_file_perms;
++allow hal_bluetooth_default sysfs:dir r_dir_perms;

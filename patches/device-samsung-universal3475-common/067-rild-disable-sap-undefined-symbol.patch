@@ -1,9 +1,16 @@
 diff --git a/configs/init/rild.rc b/configs/init/rild.rc
 --- a/configs/init/rild.rc
 +++ b/configs/init/rild.rc
-@@ -1,4 +1,5 @@
+@@ -1,2 +1,5 @@
  # Radio daemon for SIM 1
-+setprop persist.radio.sap.enabled 0
++on boot
++    setprop persist.radio.multisim.config "dsds"
++    setprop persist.radio.sap.enabled 0
  service ril-daemon /vendor/bin/hw/rild -c 1 -l ${rild.libpath}
      class main
      socket rild stream 660 system radio
+     socket sap_uim_socket1 stream 660 bluetooth bluetooth
+     socket rild-debug stream 660 system radio
+     user radio
+     group radio cache inet misc audio sdcard_r sdcard_rw log vpn system readproc wakelock
+     capabilities BLOCK_SUSPEND NET_ADMIN NET_RAW

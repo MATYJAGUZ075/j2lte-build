@@ -1,13 +1,14 @@
 diff --git a/sepolicy/vendor/rild.te b/sepolicy/vendor/rild.te
-index 31dc02d..9d28292 100644
 --- a/sepolicy/vendor/rild.te
 +++ b/sepolicy/vendor/rild.te
-@@ -61,3 +61,8 @@ allow rild media_rw_data_file:dir r_dir_perms;
- # /efs
- allow rild sec_efs_file:dir search;
- allow rild sec_efs_file:file r_file_perms;
+@@ -41,3 +46,11 @@ allow rild radio_data_file:dir rw_dir_perms;
+ allow rild radio_data_file:file create_file_perms;
+ # /data/data/com.android.providers.telephony/databases/telephony.db
+ allow rild radio_data_file:lnk_file r_file_perms;
 +
 +# FIX-068: rild necesita leer default_prop para inicializar el modem
 +# (persist.radio.multisim.config, persist.radio.sap.enabled, etc).
 +# Sin esto el modem nunca se inicializa y el telefono queda en bootloop.
 +allow rild default_prop:file r_file_perms;
++
+ # sdcard/SDET_PLMN/input/MNCMCC.txt
